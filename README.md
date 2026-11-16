@@ -54,7 +54,7 @@ Generator parameters include complexity, motion and audio response. Low, mid and
 
 ## M3 — Advanced compositor
 
-- Independent layer stack with visibility, duplicate, remove and ordering.
+- Independent layer stack with visibility, duplicate, remove and ordering. Stateful simulations (cellular, reaction-diffusion and Lorenz) keep separate state per layer.
 - Per-layer generator, opacity, blend mode, transform, rotation and scale.
 - Frame, inset, ellipse and full-canvas masks.
 - Per-layer pass source and pass operation.

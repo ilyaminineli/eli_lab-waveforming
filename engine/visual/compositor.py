@@ -30,6 +30,9 @@ class VisualCompositor:
     def reset_feedback(self) -> None:
         self._feedback = None
         self._last_time = None
+        # Stateful generators restart from a deterministic initial condition on
+        # stop/seek so temporal systems do not retain a stale simulation history.
+        self.generators.reset_states()
 
     def _screen(self, name: str) -> Image.Image | None:
         if name == "No guide":
@@ -312,7 +315,7 @@ class VisualCompositor:
             target_box=frame_box
         tx0,ty0,tx1,ty1=target_box
         local_size=(max(1,tx1-tx0),max(1,ty1-ty0))
-        visual=self.generators.render(layer.generator,packet,seconds,local_size,settings)
+        visual=self.generators.render(layer.generator,packet,seconds,local_size,settings,state_key=layer.layer_id)
         visual=self._apply_pass_mode(visual,layer.pass_mode,layer.pass_strength,layer.pass_map)
         visual=self._apply_shader(visual,layer.shader,layer.shader_amount)
         center=((tx0+tx1)/2,(ty0+ty1)/2)
