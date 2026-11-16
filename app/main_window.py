@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import time_ns
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QPixmap
@@ -18,6 +19,7 @@ from engine.visual.canvas import CompositionCanvas
 from engine.visual.compositor import VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import LayerStack, VisualLayer
+from engine.visual.composition_director import create_auto_composition, vary_composition
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,8 +101,11 @@ class MainWindow(QMainWindow):
         self._apply_style()
         self._configure_analysis()
         self._render_timer = QTimer(self)
-        self._render_timer.setInterval(33)
+        self._render_timer.setInterval(50)
         self._render_timer.timeout.connect(self._render_frame)
+        self._variation_timer = QTimer(self)
+        self._variation_timer.setInterval(12000)
+        self._variation_timer.timeout.connect(self.vary_composition)
 
         initial = self.layer_stack.add("PHASE LATTICE", "PHASE LATTICE 01")
         initial.pass_mode = "PAPER RELIEF"
@@ -216,6 +221,17 @@ class MainWindow(QMainWindow):
         generator_form.addRow("COMPLEXITY", self.complexity)
         generator_form.addRow("MOTION", self.motion)
         generator_form.addRow("AUDIO RESPONSE", self.sensitivity)
+        auto_row = QHBoxLayout()
+        self.auto_compose_button = QPushButton("AUTO COMPOSE")
+        self.vary_button = QPushButton("VARIATE")
+        self.auto_variation_check = QCheckBox("AUTO VARIATE")
+        auto_row.addWidget(self.auto_compose_button)
+        auto_row.addWidget(self.vary_button)
+        auto_row.addWidget(self.auto_variation_check)
+        generator_form.addRow(auto_row)
+        self.auto_compose_button.clicked.connect(self.auto_compose)
+        self.vary_button.clicked.connect(self.vary_composition)
+        self.auto_variation_check.toggled.connect(self._auto_variation_changed)
         left.addWidget(generator_box)
         self.complexity.valueChanged.connect(self._settings_changed)
         self.motion.valueChanged.connect(self._settings_changed)
@@ -251,6 +267,10 @@ class MainWindow(QMainWindow):
         layer_form = QFormLayout(layer_box)
         self.layer_generator = QComboBox()
         self.layer_generator.addItems(self.compositor.generator_names())
+        self.layer_source = QComboBox()
+        self.layer_source.addItem("MIX / ALL", "")
+        self.layer_palette = QComboBox()
+        self.layer_palette.addItems(["MUTED PRIDE", "MONOCHROME"])
         self.layer_blend = QComboBox()
         self.layer_blend.addItems(["Normal", "Add", "Screen", "Multiply", "Difference", "Overlay", "Lighten", "Darken"])
         self.layer_opacity = self._make_slider(0, 100, 100)
@@ -263,13 +283,12 @@ class MainWindow(QMainWindow):
         self.layer_pass_map = QComboBox()
         self.layer_pass_map.addItems(self.compositor.pass_names())
         self.layer_pass_mode = QComboBox()
-        self.layer_pass_mode.addItems(["PAPER RELIEF", "DISPLACE", "NORMAL LIGHT", "TEXTURE", "EDGE", "NONE"])
+        self.layer_pass_mode.addItems(["PAPER RELIEF", "DISPLACE", "NORMAL LIGHT", "TEXTURE", "NONE"])
         self.layer_pass_strength = self._make_slider(0, 100, 55)
-        self.layer_shader = QComboBox()
-        self.layer_shader.addItems(["NONE", "HALFTONE", "DITHER", "POSTERIZE", "SCANLINES", "WAVE WARP", "EDGE"])
-        self.layer_shader_amount = self._make_slider(0, 100, 45)
 
         layer_form.addRow("GENERATOR", self.layer_generator)
+        layer_form.addRow("SOURCE CHANNEL", self.layer_source)
+        layer_form.addRow("INK PALETTE", self.layer_palette)
         layer_form.addRow("BLEND MODE", self.layer_blend)
         layer_form.addRow("OPACITY", self.layer_opacity)
         layer_form.addRow("X OFFSET", self.layer_x)
@@ -280,8 +299,6 @@ class MainWindow(QMainWindow):
         layer_form.addRow("PASS MAP", self.layer_pass_map)
         layer_form.addRow("PASS OPERATION", self.layer_pass_mode)
         layer_form.addRow("RELIEF AMOUNT", self.layer_pass_strength)
-        layer_form.addRow("SHADER EFFECT", self.layer_shader)
-        layer_form.addRow("SHADER AMOUNT", self.layer_shader_amount)
         left.addWidget(layer_box)
 
         feedback_box = QGroupBox("TEMPORAL FEEDBACK")
@@ -368,13 +385,14 @@ class MainWindow(QMainWindow):
 
         # All layer property edits update the selected layer, never the audio callback.
         for control in (
-            self.layer_generator, self.layer_blend, self.layer_mask,
-            self.layer_pass_map, self.layer_pass_mode, self.layer_shader,
+            self.layer_generator, self.layer_source, self.layer_palette,
+            self.layer_blend, self.layer_mask, self.layer_pass_map,
+            self.layer_pass_mode,
         ):
             control.currentTextChanged.connect(self._layer_property_changed)
         for control in (
             self.layer_opacity, self.layer_x, self.layer_y, self.layer_scale,
-            self.layer_rotation, self.layer_pass_strength, self.layer_shader_amount,
+            self.layer_rotation, self.layer_pass_strength,
         ):
             control.valueChanged.connect(self._layer_property_changed)
         for control in (self.feedback_enabled,):
@@ -401,7 +419,10 @@ class MainWindow(QMainWindow):
         self.layer_list.clear()
         self._item_ids.clear()
         for layer in self.layer_stack.layers:
-            item = QListWidgetItem(layer.name)
+            channel = ""
+            if layer.source_id and layer.source_id in self.sources:
+                channel = f"  ·  CH {list(self.sources).index(layer.source_id) + 1:02d}"
+            item = QListWidgetItem(layer.name + channel)
             item.setData(Qt.ItemDataRole.UserRole, layer.layer_id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
             item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
@@ -417,8 +438,41 @@ class MainWindow(QMainWindow):
     def add_layer(self) -> None:
         generator = self.layer_generator.currentText()
         layer = self.layer_stack.add(generator)
+        layer.palette_index = len(self.layer_stack.layers) - 1
         self._refresh_layer_list(layer.layer_id)
         self._render_frame()
+
+    def auto_compose(self) -> None:
+        seed = int(time_ns() & 0x7FFFFFFF)
+        self.layer_stack.layers = create_auto_composition(
+            self.compositor.generator_names(), list(self.sources.keys()), seed
+        )
+        self._settings.seed = seed
+        self.compositor.reset_feedback()
+        selected = self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+        self._refresh_layer_list(selected)
+        self._render_frame()
+
+    def vary_composition(self) -> None:
+        if not self.layer_stack.layers:
+            self.auto_compose()
+            return
+        seed = int(time_ns() & 0x7FFFFFFF)
+        selected = self._current_layer()
+        selected_id = selected.layer_id if selected else self.layer_stack.layers[0].layer_id
+        self.layer_stack.layers = vary_composition(
+            self.layer_stack.layers, self.compositor.generator_names(), seed
+        )
+        self._settings.seed = seed
+        self.compositor.reset_feedback()
+        self._refresh_layer_list(selected_id)
+        self._render_frame()
+
+    def _auto_variation_changed(self, enabled: bool) -> None:
+        if enabled and self.audio.is_playing:
+            self._variation_timer.start()
+        else:
+            self._variation_timer.stop()
 
     def duplicate_layer(self) -> None:
         layer = self._current_layer()
@@ -459,15 +513,18 @@ class MainWindow(QMainWindow):
         layer = self._current_layer()
         self._updating_layer_controls = True
         controls = (
-            self.layer_generator, self.layer_blend, self.layer_opacity,
-            self.layer_x, self.layer_y, self.layer_scale, self.layer_rotation,
-            self.layer_mask, self.layer_pass_map, self.layer_pass_mode,
-            self.layer_pass_strength, self.layer_shader, self.layer_shader_amount,
+            self.layer_generator, self.layer_source, self.layer_palette,
+            self.layer_blend, self.layer_opacity, self.layer_x, self.layer_y,
+            self.layer_scale, self.layer_rotation, self.layer_mask,
+            self.layer_pass_map, self.layer_pass_mode, self.layer_pass_strength,
         )
         for control in controls:
             control.setEnabled(layer is not None)
         if layer is not None:
             self.layer_generator.setCurrentText(layer.generator)
+            source_index = self.layer_source.findData(layer.source_id)
+            self.layer_source.setCurrentIndex(max(0, source_index))
+            self.layer_palette.setCurrentText(layer.palette_mode)
             self.layer_blend.setCurrentText(layer.blend_mode)
             self.layer_opacity.setValue(int(layer.opacity*100))
             self.layer_x.setValue(int(layer.x_offset*100))
@@ -478,8 +535,6 @@ class MainWindow(QMainWindow):
             self.layer_pass_map.setCurrentText(layer.pass_map)
             self.layer_pass_mode.setCurrentText(layer.pass_mode)
             self.layer_pass_strength.setValue(int(layer.pass_strength*100))
-            self.layer_shader.setCurrentText(layer.shader)
-            self.layer_shader_amount.setValue(int(layer.shader_amount*100))
         self._updating_layer_controls = False
 
     def _layer_property_changed(self, *_args) -> None:
@@ -488,7 +543,12 @@ class MainWindow(QMainWindow):
         layer = self._current_layer()
         if layer is None:
             return
-        layer.generator = self.layer_generator.currentText()
+        new_generator = self.layer_generator.currentText()
+        if new_generator != layer.generator:
+            self.compositor.generators.release_state(layer.layer_id)
+        layer.generator = new_generator
+        layer.source_id = str(self.layer_source.currentData() or "")
+        layer.palette_mode = self.layer_palette.currentText()
         layer.blend_mode = self.layer_blend.currentText()
         layer.opacity = self.layer_opacity.value()/100.0
         layer.x_offset = self.layer_x.value()/100.0
@@ -499,12 +559,14 @@ class MainWindow(QMainWindow):
         layer.pass_map = self.layer_pass_map.currentText()
         layer.pass_mode = self.layer_pass_mode.currentText()
         layer.pass_strength = self.layer_pass_strength.value()/100.0
-        layer.shader = self.layer_shader.currentText()
-        layer.shader_amount = self.layer_shader_amount.value()/100.0
         item = self._item_ids.get(layer.layer_id)
         if item is not None:
+            channel = ""
+            if layer.source_id and layer.source_id in self.sources:
+                channel = f"  ·  CH {list(self.sources).index(layer.source_id) + 1:02d}"
+            label = layer.name + ("  ·  " + layer.generator if layer.name != layer.generator else "")
             self.layer_list.blockSignals(True)
-            item.setText(layer.name + ("  ·  " + layer.generator if layer.name != layer.generator else ""))
+            item.setText(label + channel)
             self.layer_list.blockSignals(False)
         self._render_frame()
 
@@ -534,14 +596,33 @@ class MainWindow(QMainWindow):
                 self.source_rows.insertWidget(self.source_rows.count()-1, row)
             except Exception as exc:
                 QMessageBox.warning(self, "Audio import failed", f"{Path(filename).name}\n{exc}")
+        self._refresh_source_options()
         self._update_status()
         self._update_time_label()
         self._render_frame()
 
+    def _refresh_source_options(self) -> None:
+        if not hasattr(self, "layer_source"):
+            return
+        current = str(self.layer_source.currentData() or "")
+        self.layer_source.blockSignals(True)
+        self.layer_source.clear()
+        self.layer_source.addItem("MIX / ALL", "")
+        for track_id, source in self.sources.items():
+            self.layer_source.addItem(source.name, track_id)
+        index = self.layer_source.findData(current)
+        self.layer_source.setCurrentIndex(max(0, index))
+        self.layer_source.blockSignals(False)
+
     def _remove_source(self, track_id: str, row: SourceRow) -> None:
         self.audio.remove_source(track_id)
         self.sources.pop(track_id, None)
+        for layer in self.layer_stack.layers:
+            if layer.source_id == track_id:
+                layer.source_id = ""
         row.deleteLater()
+        self._refresh_source_options()
+        self._refresh_layer_list(self._current_layer().layer_id if self._current_layer() else None)
         self._update_status()
         self._update_time_label()
         self._render_frame()
@@ -584,8 +665,11 @@ class MainWindow(QMainWindow):
         self.play_button.setText("Ⅱ  PAUSE" if playing else "▶  PLAY")
         if playing:
             self._render_timer.start()
+            if self.auto_variation_check.isChecked():
+                self._variation_timer.start()
         else:
             self._render_timer.stop()
+            self._variation_timer.stop()
         self._update_status()
 
     def _on_position(self, seconds: float) -> None:
@@ -662,5 +746,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._render_timer.stop()
+        self._variation_timer.stop()
         self.audio.close()
         super().closeEvent(event)

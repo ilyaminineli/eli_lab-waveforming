@@ -59,17 +59,39 @@ Generator parameters include complexity, motion and audio response. Low, mid and
 - Frame, inset, ellipse and full-canvas masks.
 - Per-layer pass source and pass operation.
 - **Paper Relief** combines the repository's displacement map, normal map (with derived-normal fallback) and paper texture to displace and shade generated pixels against the paper surface.
-- Separate displacement, normal-lighting, texture and edge operations.
-- Image-space shader filters: halftone, ordered dither, posterize, scanlines, wave warp and edge extraction.
+- Separate displacement, normal-lighting and texture pass operations.
 - Temporal feedback with return mix, decay and drift controls.
 - Alpha-aware blend modes: Normal, Add, Screen, Multiply, Difference, Overlay, Lighten and Darken.
 
 The screen templates use explicit normalized printable-area boxes. FRAME mode clips generated geometry to the corresponding content region so the registration marks, outer frame and paper annotations remain visible. FULL mode is available when a layer is intentionally meant to cover the whole plate.
 
+## M4 — Generative composition and performance
+
+The composition system now adds geometric and pseudo-3D structures designed for layered print-like MV plates:
+
+- **Geometric Plate** — offset paper planes, registration geometry, technical bars and editorial block arrangements.
+- **Geometric Field** — superformula contours, orbital arcs, radial constructions and spectral nodes.
+- **Axonometric Field** — pseudo-3D isometric prisms with band-driven extrusion.
+- **Polyhedral Field** — rotating wireframe polyhedra with channel-sensitive orientation.
+
+Each layer can bind to **MIX / ALL** or one independent audio source. A muted pride-inspired seven-channel palette distinguishes source layers without using bright digital rainbow colours; white paper automatically uses darker ink colours, and monochrome scopes invert to dark ink.
+
+**AUTO COMPOSE** builds a multi-layer layout from currently loaded sources. **VARIATE** changes its structure while keeping channel assignments; optional **AUTO VARIATE** performs a variation every 12 seconds during playback.
+
+Preview performance changes:
+
+- Interactive preview is **720 × 540 at up to 20 fps**; the native project remains **1920 × 1440**.
+- Blend operations work on each layer's clipped rectangle rather than repeatedly converting the full canvas to float arrays.
+- Frame masks, screen plates, resized pass maps, coordinate grids and paper-relief derivatives are cached.
+- Paper relief remains active but its height, normal-lighting and texture fields are prepared once per layer-size/pass combination.
+- Dedicated shader-effect controls have been removed.
+
+The automatic variation is intentionally a composition jump, not a crossfade. Beat/bar-aware transitions, GPU rendering and full-resolution export remain future work.
+
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
-- Interactive preview: **960 × 720**, scaled into the application window without changing the project aspect ratio.
+- Interactive preview: **720 × 540**, scaled into the application window without changing the project aspect ratio.
 - The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
 - Full-resolution offline rendering, frame-rate selection, video export and keyframe automation are subsequent milestones.
 

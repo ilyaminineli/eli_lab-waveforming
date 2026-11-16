@@ -61,3 +61,36 @@ def test_cellular_system_keeps_evolving_after_repeated_steps():
 
     assert generator._grid is not None
     assert float(generator._grid.sum()) > 20.0
+
+
+
+def test_source_routing_creates_independent_feature_frames():
+    from engine.visual.generators import VisualMetrics
+
+    packet = make_packet()
+    source_a = VisualMetrics.from_packet(packet, "a")
+    source_b = VisualMetrics.from_packet(packet, "b")
+
+    assert source_a.source_count == 1
+    assert source_b.source_count == 1
+    assert abs(source_a.centroid - source_b.centroid) > 0.005
+    assert VisualMetrics.from_packet(packet, "not-present").source_count == 0
+
+
+def test_geometric_and_axonometric_generators_render():
+    bank = GeneratorBank()
+    packet = make_packet()
+    settings = GeneratorSettings(complexity=52, motion=30, sensitivity=105)
+    expected = {
+        "GEOMETRIC PLATE",
+        "GEOMETRIC FIELD",
+        "AXONOMETRIC FIELD",
+        "POLYHEDRAL FIELD",
+    }
+    assert expected.issubset(set(bank.names()))
+    for name in expected:
+        image = bank.render(name, packet, 2.0, (360, 270), settings, state_key=name)
+        alpha = np.asarray(image)[..., 3]
+        assert image.mode == "RGBA"
+        assert alpha.max() > 0
+        assert np.count_nonzero(alpha) > 20
