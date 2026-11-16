@@ -91,7 +91,7 @@ The automatic variation is intentionally a composition jump, not a crossfade. Be
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
-- Interactive preview: **960 × 720**, scaled into the application window without changing the project aspect ratio.
+- Interactive preview: **720 × 540**, scaled into the application window without changing the project aspect ratio.
 - The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
 - Full-resolution offline rendering, frame-rate selection, video export and keyframe automation are subsequent milestones.
 
