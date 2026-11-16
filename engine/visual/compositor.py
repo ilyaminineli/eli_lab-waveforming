@@ -357,8 +357,7 @@ class VisualCompositor:
         for layer in layers:
             if not layer.visible:
                 continue
-            visual=self._render_layer(layer,packet,seconds,settings,frame_box,
-                                      self._mask(layer.mask_mode,frame_box))
+            visual=self._render_layer(layer,packet,seconds,settings,frame_box)
             stack=self._blend_into(stack,visual,layer.blend_mode,layer.opacity)
 
         if feedback_enabled:
