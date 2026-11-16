@@ -443,6 +443,7 @@ class MainWindow(QMainWindow):
             return
         layer_id = layer.layer_id
         self.layer_stack.remove(layer_id)
+        self.compositor.generators.release_state(layer_id)
         selected = self.layer_stack.layers[-1].layer_id if self.layer_stack.layers else None
         self._refresh_layer_list(selected)
         self._render_frame()

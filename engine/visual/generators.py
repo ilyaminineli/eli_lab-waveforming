@@ -244,10 +244,14 @@ class CellularSystem(VisualGenerator):
                  np.cos(xx*(1+metrics.high*7)-phase)*metrics.high)*0.5
         forcing=forcing+metrics.mid*np.sin((xx+yy)*2+phase)
         transient=metrics.transient*settings.response
-        birth_threshold=2+(1 if metrics.centroid>0.58 else 0)
-        births=(neighbors==3) | ((neighbors==birth_threshold) & (forcing>0.35))
-        survival=(neighbors>=2) & (neighbors<=3+(1 if metrics.energy>0.45 else 0))
-        next_grid=np.where(births,1.0,np.where(survival,grid*0.985,grid*0.02))
+        # The field is continuous and decays slightly, so use tolerant neighbour
+        # bands instead of exact integer comparisons (which would stop births).
+        birth_target=2.75 if metrics.centroid>0.58 else 3.0
+        birth_tolerance=0.42+metrics.low*0.12
+        births=(neighbors>=birth_target-birth_tolerance) & (neighbors<=birth_target+birth_tolerance)
+        births |= (neighbors>=2.0) & (neighbors<=2.45) & (forcing>0.55+metrics.mid*0.15)
+        survival=(neighbors>=1.55) & (neighbors<=3.75+(1 if metrics.energy>0.45 else 0))
+        next_grid=np.where(births,1.0,np.where(survival,grid*0.992,grid*0.015))
         # Transients excite short radial and diagonal fronts, rather than merely
         # changing the output brightness.
         probability=0.0007+min(0.045,transient*0.055)+metrics.energy*0.003
@@ -531,18 +535,35 @@ class MobiusField(VisualGenerator):
 class GeneratorBank:
     def __init__(self):
         self._generators: dict[str, VisualGenerator] = {}
+        self._generator_types: dict[str, type[VisualGenerator]] = {}
+        self._instances: dict[tuple[str, str], VisualGenerator] = {}
         for generator in (
             InterferenceField(), PhaseOrbit(), ParticleField(), CellularSystem(),
             PhaseLattice(), ReactionDiffusion(), LorenzAttractor(),
             SpectralTopography(), Phyllotaxis(), MobiusField(),
         ):
             self._generators[generator.name] = generator
+            self._generator_types[generator.name] = type(generator)
 
     def names(self) -> list[str]:
         return list(self._generators)
 
+    def reset_states(self) -> None:
+        self._instances.clear()
+
+    def release_state(self, state_key: str) -> None:
+        for key in [key for key in self._instances if key[0] == state_key]:
+            self._instances.pop(key, None)
+
     def render(self,name:str,packet:dict|None,seconds:float,size:tuple[int,int],
-               settings:GeneratorSettings)->Image.Image:
-        generator=self._generators.get(name,self._generators["INTERFERENCE FIELD"])
+               settings:GeneratorSettings,state_key:str|None=None)->Image.Image:
+        selected=name if name in self._generators else "INTERFERENCE FIELD"
+        if state_key is None:
+            generator=self._generators[selected]
+        else:
+            key=(state_key,selected)
+            if key not in self._instances:
+                self._instances[key]=self._generator_types[selected]()
+            generator=self._instances[key]
         metrics=VisualMetrics.from_packet(packet)
         return generator.render(metrics,seconds,size,settings)

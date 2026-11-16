@@ -27,3 +27,37 @@ def test_all_generators_return_transparent_rgba_frames():
         assert image.size == (480, 360)
         assert image.mode == "RGBA"
         assert np.asarray(image)[..., 3].max() > 0
+
+
+def test_stateful_generators_keep_independent_layer_instances():
+    bank = GeneratorBank()
+    packet = make_packet()
+    settings = GeneratorSettings(complexity=40, motion=45, sensitivity=120)
+
+    bank.render("CELLULAR SYSTEM", packet, 0.0, (240, 180), settings, state_key="layer-a")
+    bank.render("CELLULAR SYSTEM", packet, 0.0, (240, 180), settings, state_key="layer-b")
+
+    first = bank._instances[("layer-a", "CELLULAR SYSTEM")]
+    second = bank._instances[("layer-b", "CELLULAR SYSTEM")]
+    assert first is not second
+    assert first._grid is not second._grid
+
+    bank.release_state("layer-a")
+    assert ("layer-a", "CELLULAR SYSTEM") not in bank._instances
+    assert ("layer-b", "CELLULAR SYSTEM") in bank._instances
+
+
+def test_cellular_system_keeps_evolving_after_repeated_steps():
+    from engine.visual.generators import CellularSystem, VisualMetrics
+
+    generator = CellularSystem()
+    metrics = VisualMetrics(
+        energy=0.62, transient=0.72, centroid=0.35,
+        low=0.7, mid=0.5, high=0.35,
+    )
+    settings = GeneratorSettings(complexity=50, motion=45, sensitivity=125)
+    for frame in range(16):
+        generator.render(metrics, frame * 0.075, (240, 180), settings)
+
+    assert generator._grid is not None
+    assert float(generator._grid.sum()) > 20.0
