@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from engine.visual.assets import AssetCatalog
-from engine.visual.compositor import VisualCompositor
+from engine.visual.compositor import PREVIEW_SIZE, VisualCompositor
 from engine.visual.layers import LayerStack, VisualLayer
 
 
@@ -66,7 +66,7 @@ def test_frame_mask_constrains_layer_to_printable_area():
     frame = np.asarray(output.convert("RGB"))
 
     assert tuple(frame[4, 4]) == (10, 10, 10)
-    assert output.size == (960, 720)
+    assert output.size == PREVIEW_SIZE
 
 
 def test_paper_relief_pass_produces_a_valid_rgba_layer(tmp_path):
@@ -91,3 +91,29 @@ def test_paper_relief_pass_produces_a_valid_rgba_layer(tmp_path):
     assert result.size == image.size
     assert result.mode == "RGBA"
     assert np.asarray(result)[..., :3].std() > 0
+
+
+
+def test_white_paper_uses_dark_ink_palette():
+    compositor = VisualCompositor(AssetCatalog(Path("missing-assets")))
+    source = Image.new("RGBA", (24, 16), (245, 245, 245, 255))
+    layer = VisualLayer("Channel", "GEOMETRIC FIELD", palette_mode="MUTED PRIDE")
+
+    black_paper = compositor._apply_palette(
+        source, layer, {"source_ids": ["source-a"]}, white_plate=False
+    )
+    white_paper = compositor._apply_palette(
+        source, layer, {"source_ids": ["source-a"]}, white_plate=True
+    )
+
+    assert np.asarray(white_paper)[..., :3].mean() < np.asarray(black_paper)[..., :3].mean()
+
+
+def test_monochrome_scope_inverts_on_white_paper():
+    compositor = VisualCompositor(AssetCatalog(Path("missing-assets")))
+    source = Image.new("RGBA", (12, 12), (245, 245, 245, 255))
+    layer = VisualLayer("Mono", "PHASE ORBIT", palette_mode="MONOCHROME")
+
+    result = compositor._apply_palette(source, layer, {}, white_plate=True)
+
+    assert result.getpixel((4, 4))[:3] == (10, 10, 10)

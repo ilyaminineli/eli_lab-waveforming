@@ -20,8 +20,9 @@ class VisualLayer:
     pass_map: str = "DISPLACEMENT"
     pass_mode: str = "PAPER RELIEF"
     pass_strength: float = 0.55
-    shader: str = "NONE"
-    shader_amount: float = 0.45
+    source_id: str = ""
+    palette_mode: str = "MUTED PRIDE"
+    palette_index: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)

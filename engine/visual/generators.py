@@ -31,20 +31,36 @@ class VisualMetrics:
     source_count: int = 0
 
     @classmethod
-    def from_packet(cls, packet: dict | None) -> "VisualMetrics":
+    def from_packet(cls, packet: dict | None, source_id: str | None = None) -> "VisualMetrics":
         packet = packet or {}
-        frames = list(packet.get("frames", {}).values())
+        frame_map = packet.get("frames", {})
+        source_ids = list(packet.get("source_ids") or frame_map.keys())
+        if source_id:
+            if source_id not in frame_map:
+                return cls()
+            frames = [frame_map[source_id]]
+            indices = [source_ids.index(source_id)] if source_id in source_ids else [0]
+        else:
+            frames = list(frame_map.values())
+            indices = list(range(len(frames)))
         if not frames:
             return cls()
+
         def mean(field: str) -> float:
             return float(np.mean([getattr(frame, field) for frame in frames]))
+
         bands = np.mean(np.stack([frame.bands for frame in frames]), axis=0).astype(np.float32)
         n = len(bands)
         low = float(np.mean(bands[:max(1, n // 4)]))
         mid = float(np.mean(bands[n // 4:max(n // 4 + 1, 3 * n // 4)]))
         high = float(np.mean(bands[3 * n // 4:])) if n else 0.0
         energies = np.asarray([frame.rms for frame in frames], dtype=np.float32)
-        corr = np.asarray(packet.get("correlation", np.eye(len(frames))), dtype=np.float32)
+
+        full_corr = np.asarray(packet.get("correlation", np.eye(len(source_ids))), dtype=np.float32)
+        if full_corr.ndim == 2 and full_corr.shape[0] >= max(indices, default=-1) + 1:
+            corr = full_corr[np.ix_(indices, indices)]
+        else:
+            corr = np.eye(len(frames), dtype=np.float32)
         if corr.ndim != 2 or corr.size == 0 or corr.shape[0] <= 1:
             cross, coherence = 0.0, 1.0
         else:
@@ -532,6 +548,221 @@ class MobiusField(VisualGenerator):
         return image
 
 
+
+class GeometricPlate(VisualGenerator):
+    """Editorial plate: offset planes, registration geometry and measured grid marks."""
+    name = "GEOMETRIC PLATE"
+
+    def render(self, metrics, seconds, size, settings):
+        w, h = size
+        image = self._blank(size)
+        draw = ImageDraw.Draw(image)
+        cx, cy = w * 0.5, h * 0.5
+        unit = min(w, h)
+        energy = metrics.energy * settings.response
+        phase = seconds * (0.035 + settings.speed * 0.12) + metrics.centroid * 0.7
+        inset = unit * (0.10 + metrics.low * 0.035)
+        x0, y0, x1, y1 = inset, inset * 0.72, w - inset, h - inset * 0.72
+        line = (236, 236, 232, 205)
+        soft = (190, 190, 188, 125)
+
+        # Offset rectangular plates inspired by print registration and editorial layouts.
+        for index in range(3):
+            dx = math.sin(phase + index * 1.7) * unit * (0.025 + metrics.transient * 0.025)
+            dy = math.cos(phase * 0.83 + index) * unit * 0.018
+            pad = index * unit * 0.045
+            rect = (x0 + pad + dx, y0 + pad + dy, x1 - pad + dx, y1 - pad + dy)
+            draw.rectangle(tuple(map(int, rect)), outline=line if index == 0 else soft,
+                           width=max(1, int(unit / 480)))
+
+        # One offset slab and one outlined counter-plane, balanced by the current bands.
+        slab_w = w * (0.20 + metrics.mid * 0.10)
+        slab_h = h * (0.18 + metrics.high * 0.10)
+        shift = math.sin(phase) * w * 0.05
+        left_rect = (int(cx - slab_w - shift), int(cy - slab_h * 0.42),
+                     int(cx - shift), int(cy + slab_h * 0.58))
+        right_rect = (int(cx + shift), int(cy - slab_h * 0.60),
+                      int(cx + slab_w + shift), int(cy + slab_h * 0.40))
+        draw.rectangle(left_rect, fill=(220, 220, 218, int(22 + energy * 28)),
+                       outline=(235, 235, 232, 195), width=2)
+        draw.rectangle(right_rect, outline=(215, 215, 212, 180), width=2)
+
+        # Technical bars behave like abstract typography, not rendered text.
+        bar_count = 7 + int(settings.density * 11)
+        bar_x = int(w * 0.14)
+        bar_y = int(h * 0.76)
+        for index in range(bar_count):
+            band = float(metrics.bands[index % len(metrics.bands)]) if metrics.bands is not None else 0.0
+            height = int(h * (0.012 + band * 0.085 + metrics.transient * 0.02))
+            x = bar_x + index * int(w * 0.034)
+            draw.line((x, bar_y - height, x, bar_y), fill=soft, width=2)
+        # Crosshair and small corner cuts.
+        mark = max(3, int(unit * 0.012))
+        for px, py in ((int(w*0.12), int(h*0.17)), (int(w*0.88), int(h*0.17)),
+                       (int(w*0.12), int(h*0.83)), (int(w*0.88), int(h*0.83))):
+            draw.line((px-mark, py, px+mark, py), fill=line, width=1)
+            draw.line((px, py-mark, px, py+mark), fill=line, width=1)
+        return image
+
+
+class GeometricField(VisualGenerator):
+    """Superformula contours, orbital arcs and non-uniform radial constructions."""
+    name = "GEOMETRIC FIELD"
+
+    def render(self, metrics, seconds, size, settings):
+        w, h = size
+        image = self._blank(size)
+        draw = ImageDraw.Draw(image)
+        cx, cy = w * 0.5, h * 0.5
+        unit = min(w, h)
+        theta = np.linspace(0, math.tau, 360, endpoint=True, dtype=np.float32)
+        motion = seconds * (0.025 + settings.speed * 0.12)
+        base = unit * (0.12 + metrics.energy * 0.11)
+        rings = 3 + int(settings.density * 5)
+        for ring in range(rings):
+            m = 3 + ((ring * 2 + int(metrics.centroid * 8)) % 9)
+            n1 = 0.55 + metrics.low * 1.1 + ring * 0.07
+            n2 = 1.2 + metrics.mid * 2.2
+            n3 = 1.2 + metrics.high * 2.5
+            phase = motion * (1 + ring * 0.13) + ring * 0.31
+            angle = theta + phase
+            radial = (
+                np.abs(np.cos(m * angle / 4.0)) ** n2
+                + np.abs(np.sin(m * angle / 4.0)) ** n3
+            ) ** (-1.0 / max(0.35, n1))
+            radial = np.clip(radial, 0.0, 2.6)
+            radius = base * (0.50 + ring * 0.24) * radial
+            x = cx + radius * np.cos(angle)
+            y = cy + radius * np.sin(angle) * (0.78 + metrics.width * 0.22)
+            points = [(int(px), int(py)) for px, py in zip(x, y)]
+            alpha = int(72 + 25 * ring + metrics.transient * 65)
+            draw.line(points, fill=(235, 235, 232, min(220, alpha)), width=1 + (ring % 2))
+
+        spokes = 10 + int(settings.density * 22)
+        for spoke in range(spokes):
+            angle = math.tau * spoke / spokes + motion * 0.7
+            inner = base * (0.18 + metrics.low * 0.14)
+            outer = base * (1.05 + metrics.high * 0.30)
+            start = (cx + math.cos(angle) * inner, cy + math.sin(angle) * inner)
+            stop = (cx + math.cos(angle) * outer, cy + math.sin(angle) * outer)
+            draw.line((*map(int, start), *map(int, stop)), fill=(205, 205, 202, 70), width=1)
+
+        node_count = 8 + int(settings.density * 16)
+        for index in range(node_count):
+            angle = math.tau * index / node_count + motion
+            radius = base * (0.72 + 0.16 * math.sin(angle * 3 + metrics.centroid * 4))
+            px = cx + math.cos(angle) * radius
+            py = cy + math.sin(angle) * radius
+            r = max(1, int(unit * (0.003 + metrics.transient * 0.006)))
+            draw.rectangle((int(px-r), int(py-r), int(px+r), int(py+r)),
+                           fill=(244, 244, 240, 165))
+        return image
+
+
+class AxonometricField(VisualGenerator):
+    """Pseudo-3D isometric volumes with audio-controlled extrusion and skew."""
+    name = "AXONOMETRIC FIELD"
+
+    def render(self, metrics, seconds, size, settings):
+        w, h = size
+        image = self._blank(size)
+        draw = ImageDraw.Draw(image)
+        cx, cy = w * 0.5, h * 0.54
+        unit = min(w, h)
+        cos30 = 0.8660254
+        sin30 = 0.5
+        cols = 3 + int(settings.density * 3)
+        rows = 2 + int(settings.density * 2)
+        spacing = unit * (0.085 + settings.density * 0.018)
+        phase = seconds * (0.025 + settings.speed * 0.11)
+
+        def project(x, y, z):
+            return (
+                cx + (x-y) * cos30 * spacing,
+                cy + (x+y) * sin30 * spacing - z * unit * 0.12,
+            )
+
+        # A sparse field of extruded rectangular cells, not a noisy particle cloud.
+        for row in range(rows):
+            for col in range(cols):
+                idx = row * cols + col
+                bands = metrics.bands if metrics.bands is not None else np.zeros(64, np.float32)
+                band = float(bands[(idx * 7) % len(bands)]) if len(bands) else 0.0
+                wave = 0.5 + 0.5 * math.sin(phase + col * 0.72 - row * 0.51)
+                height = 0.22 + band * 1.35 + metrics.energy * 0.75 + wave * metrics.transient * 0.9
+                x, y = col - (cols-1)/2, row - (rows-1)/2
+                p0 = project(x, y, 0.0)
+                p1 = project(x+0.78, y, 0.0)
+                p2 = project(x+0.78, y+0.78, 0.0)
+                p3 = project(x, y+0.78, 0.0)
+                q0 = project(x, y, height)
+                q1 = project(x+0.78, y, height)
+                q2 = project(x+0.78, y+0.78, height)
+                q3 = project(x, y+0.78, height)
+                base_alpha = int(100 + metrics.energy * 70)
+                draw.polygon([tuple(map(int,p0)),tuple(map(int,p1)),tuple(map(int,q1)),tuple(map(int,q0))],
+                             fill=(215,215,212,int(base_alpha*0.18)), outline=(224,224,220,base_alpha))
+                draw.polygon([tuple(map(int,p1)),tuple(map(int,p2)),tuple(map(int,q2)),tuple(map(int,q1))],
+                             fill=(185,185,182,int(base_alpha*0.12)), outline=(210,210,206,int(base_alpha*0.8)))
+                draw.polygon([tuple(map(int,q0)),tuple(map(int,q1)),tuple(map(int,q2)),tuple(map(int,q3))],
+                             outline=(244,244,240,min(235,base_alpha+25)))
+                if idx % 2 == 0:
+                    draw.line((*map(int,q0),*map(int,q2)), fill=(220,220,216,90), width=1)
+        # Perspective-like construction axes anchor the volume in the frame.
+        extent = spacing * max(cols, rows) * 0.62
+        for direction in (-1, 1):
+            a = project(-direction*cols*0.4, -rows*0.45, 0)
+            b = project(direction*cols*0.7, rows*0.65, 0)
+            draw.line((*map(int,a),*map(int,b)), fill=(190,190,186,75), width=1)
+        return image
+
+
+class PolyhedralField(VisualGenerator):
+    """Rotating nested polyhedra, with audio-controlled 3D projection."""
+    name = "POLYHEDRAL FIELD"
+
+    def render(self, metrics, seconds, size, settings):
+        w, h = size
+        image = self._blank(size)
+        draw = ImageDraw.Draw(image)
+        cx, cy = w * 0.5, h * 0.5
+        unit = min(w, h)
+        motion = seconds * (0.025 + settings.speed * 0.10)
+        rings = 2 + int(settings.density * 4)
+        vertices = []
+        for index in range(12):
+            angle = math.tau * index / 6
+            z = 1.0 if index < 6 else -1.0
+            vertices.append((math.cos(angle), math.sin(angle), z*0.62))
+        edges = []
+        for a in range(12):
+            for b in range(a+1,12):
+                if (a < 6 and b < 6 and (b-a) in (1,5)) or (a>=6 and b>=6 and (b-a) in (1,5)):
+                    edges.append((a,b))
+                elif (a<6 and b>=6 and (b-6-a) in (0,1,5)):
+                    edges.append((a,b))
+        for ring in range(rings):
+            azimuth = motion * (1 + ring * 0.21) + ring * 0.46 + metrics.centroid
+            elevation = 0.48 + metrics.high * 0.36 + ring * 0.035
+            scale = unit * (0.10 + ring * 0.075 + metrics.energy * 0.035)
+            projected = []
+            for x,y,z in vertices:
+                xr = x*math.cos(azimuth)-y*math.sin(azimuth)
+                yr = x*math.sin(azimuth)+y*math.cos(azimuth)
+                yy = yr*math.cos(elevation)-z*math.sin(elevation)
+                zz = yr*math.sin(elevation)+z*math.cos(elevation)
+                projected.append((cx+xr*scale, cy+yy*scale))
+            alpha = min(220, 100+ring*20+int(metrics.transient*45))
+            for a,b in edges:
+                pa,pb=projected[a],projected[b]
+                draw.line((*map(int,pa),*map(int,pb)),fill=(225,225,220,alpha),width=1+(ring==rings-1))
+            for px,py in projected:
+                rr=max(1,int(unit*0.003))
+                draw.ellipse((int(px-rr),int(py-rr),int(px+rr),int(py+rr)),
+                             fill=(245,245,238,alpha))
+        return image
+
+
 class GeneratorBank:
     def __init__(self):
         self._generators: dict[str, VisualGenerator] = {}
@@ -541,6 +772,7 @@ class GeneratorBank:
             InterferenceField(), PhaseOrbit(), ParticleField(), CellularSystem(),
             PhaseLattice(), ReactionDiffusion(), LorenzAttractor(),
             SpectralTopography(), Phyllotaxis(), MobiusField(),
+            GeometricPlate(), GeometricField(), AxonometricField(), PolyhedralField(),
         ):
             self._generators[generator.name] = generator
             self._generator_types[generator.name] = type(generator)
@@ -555,15 +787,16 @@ class GeneratorBank:
         for key in [key for key in self._instances if key[0] == state_key]:
             self._instances.pop(key, None)
 
-    def render(self,name:str,packet:dict|None,seconds:float,size:tuple[int,int],
-               settings:GeneratorSettings,state_key:str|None=None)->Image.Image:
-        selected=name if name in self._generators else "INTERFERENCE FIELD"
+    def render(self, name: str, packet: dict | None, seconds: float,
+               size: tuple[int, int], settings: GeneratorSettings,
+               state_key: str | None = None, source_id: str | None = None) -> Image.Image:
+        selected = name if name in self._generators else "INTERFERENCE FIELD"
         if state_key is None:
-            generator=self._generators[selected]
+            generator = self._generators[selected]
         else:
-            key=(state_key,selected)
+            key = (state_key, selected)
             if key not in self._instances:
-                self._instances[key]=self._generator_types[selected]()
-            generator=self._instances[key]
-        metrics=VisualMetrics.from_packet(packet)
-        return generator.render(metrics,seconds,size,settings)
+                self._instances[key] = self._generator_types[selected]()
+            generator = self._instances[key]
+        metrics = VisualMetrics.from_packet(packet, source_id=source_id)
+        return generator.render(metrics, seconds, size, settings)
