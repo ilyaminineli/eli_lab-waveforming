@@ -1,4 +1,4 @@
-# ELI LAB — WAVEFORMING
+# eli_lab — WAVEFORMING
 
 An experimental audio-reactive visual composition workstation. Not a conventional waveform visualiser.
 

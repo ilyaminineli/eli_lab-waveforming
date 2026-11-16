@@ -10,10 +10,10 @@ from PySide6.QtWidgets import (
     QMessageBox, QGroupBox, QFormLayout, QScrollArea,
 )
 
-from engine.audio.source import AudioSource
 from engine.audio.playback import PlaybackEngine
-from engine.visual.canvas import CompositionCanvas
+from engine.audio.source import AudioSource
 from engine.visual.assets import AssetCatalog
+from engine.visual.canvas import CompositionCanvas
 from engine.visual.compositor import VisualCompositor
 from engine.visual.generators import GeneratorSettings
 
@@ -35,7 +35,8 @@ class SourceRow(QWidget):
         row.setSpacing(5)
 
         name = QLabel(source.name)
-        name.setToolTip(f"{source.path}\n{source.sample_rate} Hz · {source.channels} ch · {format_time(source.duration)}")
+        name.setToolTip(
+            f"{source.path}\n{source.sample_rate} Hz · {source.channels} ch · {format_time(source.duration)}")
         name.setMinimumWidth(110)
         name.setMaximumWidth(180)
         name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -71,7 +72,7 @@ class SourceRow(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ELI LAB / WAVEFORMING")
+        self.setWindowTitle("eli_lab / WAVEFORMING")
         self.resize(1560, 980)
         self.sources: dict[str, AudioSource] = {}
         self._last_packet: dict = {}
@@ -128,8 +129,8 @@ class MainWindow(QMainWindow):
                 Qt.TransformationMode.SmoothTransformation,
             ))
             logo.setStyleSheet("background:#e8e8e8; padding:3px; border:1px solid #555;")
-            logo.setToolTip("ELI LAB / WAVEFORMING")
-        brand = QLabel("ELI LAB  /  WAVEFORMING")
+            logo.setToolTip("eli_lab / WAVEFORMING")
+        brand = QLabel("eli_lab  /  WAVEFORMING")
         brand.setObjectName("brand")
         subtitle = QLabel("ABSTRACT AUDIO-VISUAL COMPOSITION  ·  1920 × 1440")
         subtitle.setObjectName("muted")

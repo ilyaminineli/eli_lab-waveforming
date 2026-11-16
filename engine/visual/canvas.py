@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from PIL import Image
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
-from PIL import Image
-
 
 CANVAS_SIZE = (1920, 1440)
 

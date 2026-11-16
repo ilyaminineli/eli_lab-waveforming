@@ -1,8 +1,11 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
+
 import numpy as np
 import soundfile as sf
+
 
 @dataclass
 class AudioSource:

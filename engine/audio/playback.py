@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from math import gcd
-from queue import Queue, Empty, Full
 import threading
 import time
 import uuid
+from dataclasses import dataclass
+from math import gcd
+from queue import Queue, Empty, Full
 
 import numpy as np
 import sounddevice as sd
-from scipy.signal import resample_poly
 from PySide6.QtCore import QObject, Signal
+from scipy.signal import resample_poly
 
 from .analyzer import AudioAnalyzer, FeatureFrame
 from .source import AudioSource

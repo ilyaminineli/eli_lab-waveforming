@@ -6,7 +6,6 @@ from PIL import Image
 from .assets import AssetCatalog
 from .generators import GeneratorBank, GeneratorSettings
 
-
 PREVIEW_SIZE = (960, 720)
 
 
@@ -73,14 +72,14 @@ class VisualCompositor:
             rgb *= (0.35 + map_rgb * (0.65 + amount * 0.35))
         elif blend == "Screen":
             overlay = map_rgb * (0.25 + amount * 0.55)
-            rgb = 255.0 - (255.0-rgb) * (1.0-overlay)
+            rgb = 255.0 - (255.0 - rgb) * (1.0 - overlay)
         elif blend == "Difference":
             rgb = np.abs(rgb - map_rgb * 255.0 * (0.35 + amount * 0.65))
         elif blend == "Overlay":
             normalized = rgb / 255.0
             rgb = np.where(normalized < 0.5,
                            2.0 * normalized * map_rgb,
-                           1.0 - 2.0 * (1.0-normalized) * (1.0-map_rgb)) * 255.0
+                           1.0 - 2.0 * (1.0 - normalized) * (1.0 - map_rgb)) * 255.0
         visual[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
         return Image.fromarray(visual, "RGBA")
 
