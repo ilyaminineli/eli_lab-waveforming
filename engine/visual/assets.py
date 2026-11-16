@@ -11,8 +11,8 @@ class AssetCatalog:
         "SCREEN 1 / BLACK": (0.075, 0.085, 0.925, 0.835),
         "SCREEN 1 / WHITE": (0.075, 0.085, 0.925, 0.835),
         # Screen 2 has a central inset frame. The box describes its interior.
-        "SCREEN 2 / BLACK": (0.145, 0.155, 0.855, 0.835),
-        "SCREEN 2 / WHITE": (0.145, 0.155, 0.855, 0.835),
+        "SCREEN 2 / BLACK": (0.172, 0.133, 0.755, 0.855),
+        "SCREEN 2 / WHITE": (0.172, 0.133, 0.755, 0.855),
     }
 
     def __init__(self, root: Path):
