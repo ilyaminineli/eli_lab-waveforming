@@ -132,7 +132,7 @@ def test_transform_skips_identity_resampling_and_snaps_to_quarter_turns():
     turned, _ = compositor._transform(source, (40, 30), 0, 0, 1.0, 87)
     assert turned.size == (12, 20)
     # 87 degrees is snapped to an exact 90-degree transpose.
-    assert turned.getpixel((12 - 1 - 3, 2)) == source.getpixel((2, 3))
+    assert turned.getpixel((3, 20 - 1 - 2)) == source.getpixel((2, 3))
 
 
 def test_editorial_palette_uses_blue_yellow_violet_ink_families():
