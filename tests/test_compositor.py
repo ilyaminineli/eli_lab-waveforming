@@ -117,3 +117,36 @@ def test_monochrome_scope_inverts_on_white_paper():
     result = compositor._apply_palette(source, layer, {}, white_plate=True)
 
     assert result.getpixel((4, 4))[:3] == (10, 10, 10)
+
+
+
+def test_transform_skips_identity_resampling_and_snaps_to_quarter_turns():
+    compositor = VisualCompositor(AssetCatalog(Path("missing-assets")))
+    source = Image.new("RGBA", (20, 12), (0, 0, 0, 0))
+    source.putpixel((2, 3), (240, 240, 240, 255))
+
+    identity, origin = compositor._transform(source, (40, 30), 0, 0, 1.0, 0)
+    assert identity is source
+    assert origin == (30, 24)
+
+    turned, _ = compositor._transform(source, (40, 30), 0, 0, 1.0, 87)
+    assert turned.size == (12, 20)
+    # 87 degrees is snapped to an exact 90-degree transpose.
+    assert turned.getpixel((12 - 1 - 3, 2)) == source.getpixel((2, 3))
+
+
+def test_editorial_palette_uses_blue_yellow_violet_ink_families():
+    compositor = VisualCompositor(AssetCatalog(Path("missing-assets")))
+    source = Image.new("RGBA", (8, 8), (230, 230, 230, 255))
+    rgb = []
+    for index in range(3):
+        layer = VisualLayer(
+            f"Channel {index + 1}", "GEOMETRIC FIELD",
+            palette_mode="EDITORIAL TRICOLOR", palette_index=index,
+        )
+        rgb.append(compositor._apply_palette(source, layer, {}, False).getpixel((3, 3))[:3])
+
+    blue, yellow, violet = rgb
+    assert blue[2] > blue[0] + 35
+    assert yellow[0] > yellow[2] + 55 and yellow[1] > yellow[2] + 45
+    assert violet[0] > violet[1] + 20 and violet[2] > violet[1] + 35

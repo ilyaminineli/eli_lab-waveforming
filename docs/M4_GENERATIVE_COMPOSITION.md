@@ -116,3 +116,18 @@ Noise remains one possible texture or generator family, not the default visual l
 - Deterministic offline frame rendering at 1920×1440.
 - Audio/video muxing and export presets.
 - Preview and export must share the same composition graph and seed state.
+
+
+## M4 visual/performance stability patch
+
+Following the first Windows test session, the following corrections were added:
+
+- Reaction Diffusion now renders the activator field and narrow iso-contours. The inactive U/V background is transparent; it no longer creates a nearly opaque tinted rectangle.
+- Geometric Plate uses outlined planes rather than broad translucent fills.
+- Layer transforms use exact 0°, 90°, 180° or 270° turns. Arbitrary legacy angles are snapped to quarter turns, and an identity transform bypasses image resampling.
+- The interactive preview is reduced to 600×450 and refreshed at approximately 15 fps. The project coordinate system remains 1920×1440.
+- Reaction Diffusion advances at a capped simulation rate; Cellular System and Reaction Diffusion use padded neighbour stencils instead of repeated full-frame array rolls.
+- The former seven-hue rainbow is replaced with a restrained three-ink editorial palette based on dusty cobalt, aged yellow and violet. Existing project layers that still store the legacy palette label are interpreted using this new palette.
+- `pytest.ini` and `tests/conftest.py` make the repository root importable during test collection. A GitHub Actions workflow runs the test suite on Python 3.12.
+
+The preview is still CPU-rendered. The reduced preview and smaller simulation workload are intended to lower load, but frame time must still be measured on the target Windows machine with the actual layer count and source recordings.

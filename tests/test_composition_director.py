@@ -14,7 +14,8 @@ def test_auto_composition_assigns_independent_source_channels():
     assert layers[0].generator == "GEOMETRIC PLATE"
     assert [layer.source_id for layer in layers[1:]] == source_ids
     assert [layer.palette_index for layer in layers[1:]] == list(range(len(source_ids)))
-    assert all(layer.palette_mode == "MUTED PRIDE" for layer in layers[1:])
+    assert all(layer.rotation == 0 for layer in layers)
+    assert all(layer.palette_mode == "EDITORIAL TRICOLOR" for layer in layers[1:])
 
 
 def test_variation_keeps_layer_count_and_source_routing():
@@ -31,3 +32,4 @@ def test_variation_keeps_layer_count_and_source_routing():
     assert [layer.source_id for layer in varied] == routing_before
     assert all(0.0 <= layer.opacity <= 1.0 for layer in varied)
     assert all(0.1 <= layer.scale <= 3.0 for layer in varied)
+    assert all(layer.rotation in (0, 90, 180, 270) for layer in varied)

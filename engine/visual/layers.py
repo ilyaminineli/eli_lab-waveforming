@@ -21,7 +21,7 @@ class VisualLayer:
     pass_mode: str = "PAPER RELIEF"
     pass_strength: float = 0.55
     source_id: str = ""
-    palette_mode: str = "MUTED PRIDE"
+    palette_mode: str = "EDITORIAL TRICOLOR"
     palette_index: int = 0
 
     def to_dict(self) -> dict:
