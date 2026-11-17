@@ -419,6 +419,7 @@ class MainWindow(QMainWindow):
         self.add_section_button = QPushButton("+ SECTION")
         self.delete_marker_button = QPushButton("- MARKER")
         self.record_automation = QCheckBox("RECORD AUTOMATION")
+        self.record_automation.toggled.connect(self._record_automation_toggled)
         self.export_fps = QComboBox()
         self.export_fps.addItems(["15", "24", "25", "30"])
         self.export_fps.setCurrentText("24")
@@ -932,6 +933,19 @@ class MainWindow(QMainWindow):
     def _on_export_cancelled(self) -> None:
         self._close_export_progress()
         self.status.setText("EXPORT CANCELLED")
+
+    def _record_automation_toggled(self, enabled: bool) -> None:
+        if not enabled:
+            return
+        # Anchor each empty lane to the current base value at t=0. Later
+        # edits then interpolate from the original setting rather than
+        # changing the composition retroactively before the first edit.
+        for target in Timeline.TARGETS:
+            lane = self.timeline.lanes[target]
+            if not lane.points:
+                self.timeline.record(target, 0.0, float(getattr(self._settings, target)))
+        self.timeline_widget.set_timeline(self.timeline)
+        self._render_frame()
 
     def _settings_changed(self, *_args) -> None:
         self._settings.complexity = float(self.complexity.value())

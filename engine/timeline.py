@@ -60,7 +60,9 @@ class AutomationLane:
         if not self.points:
             return float(default)
         t = max(0.0, float(seconds))
-        if t <= self.points[0].time:
+        if t < self.points[0].time:
+            return float(default)
+        if t == self.points[0].time:
             return float(self.points[0].value)
         if t >= self.points[-1].time:
             return float(self.points[-1].value)

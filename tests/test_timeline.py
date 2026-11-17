@@ -45,3 +45,13 @@ def test_automation_hold_interpolation_and_beat_snap():
 
     assert timeline.value_at("motion", 1.0, 0.0) == 10.0
     assert timeline.snap_to_beat(1.12) == 1.0
+
+
+
+def test_automation_before_first_keyframe_uses_base_value():
+    timeline = Timeline()
+    timeline.record("motion", 3.0, 90.0)
+
+    assert timeline.value_at("motion", 0.0, 42.0) == 42.0
+    assert timeline.value_at("motion", 2.99, 42.0) == 42.0
+    assert timeline.value_at("motion", 3.0, 42.0) == 90.0
