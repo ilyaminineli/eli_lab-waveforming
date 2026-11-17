@@ -70,16 +70,17 @@ class TimelineWidget(QWidget):
             painter.setFont(QFont("Segoe UI", 7))
             painter.drawText(x + 2, 13, f"{second // 60:02d}:{second % 60:02d}")
 
-        bar_step = self.timeline.bar_duration
-        if 0.05 < bar_step < duration:
-            bar = 0
+        beat_step = self.timeline.beat_duration
+        if 0.05 < beat_step < duration:
+            beat = 0
             t = 0.0
             while t < duration:
                 x = int(x_for(t))
-                painter.setPen(QPen(QColor("#343434"), 1))
+                is_bar = beat % self.timeline.beats_per_bar == 0
+                painter.setPen(QPen(QColor("#343434" if is_bar else "#252525"), 1))
                 painter.drawLine(x, 28, x, self.height() - 6)
-                bar += 1
-                t = bar * bar_step
+                beat += 1
+                t = beat * beat_step
 
         rows = (
             ("complexity", 39, 56, 5.0, 100.0, "#8798c8"),
