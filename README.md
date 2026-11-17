@@ -24,7 +24,9 @@ The shared run configuration launches $PROJECT_DIR$/main.py with $PROJECT_DIR$ a
 For the test dependencies:
 
     pip install -r requirements-dev.txt
-    pytest -q
+    python -m pytest -q
+
+The repository includes `pytest.ini` and `tests/conftest.py` so imports such as `engine.audio` resolve from the repository root in terminal and PyCharm test runs.
 
 ## M1 — Synchronized audio and analysis
 
@@ -74,24 +76,27 @@ The composition system now adds geometric and pseudo-3D structures designed for 
 - **Axonometric Field** — pseudo-3D isometric prisms with band-driven extrusion.
 - **Polyhedral Field** — rotating wireframe polyhedra with channel-sensitive orientation.
 
-Each layer can bind to **MIX / ALL** or one independent audio source. A muted pride-inspired seven-channel palette distinguishes source layers without using bright digital rainbow colours; white paper automatically uses darker ink colours, and monochrome scopes invert to dark ink.
+Each layer can bind to **MIX / ALL** or one independent audio source. A restrained three-ink editorial palette (dusty cobalt, aged yellow and violet, with tonal variants) distinguishes channels; white paper automatically uses darker inks, and monochrome scopes invert to dark ink.
 
 **AUTO COMPOSE** builds a multi-layer layout from currently loaded sources. **VARIATE** changes its structure while keeping channel assignments; optional **AUTO VARIATE** performs a variation every 12 seconds during playback.
 
 Preview performance changes:
 
-- Interactive preview is **720 × 540 at up to 20 fps**; the native project remains **1920 × 1440**.
+- Interactive preview is **600 × 450 at up to 15 fps**; the native project remains **1920 × 1440**.
 - Blend operations work on each layer's clipped rectangle rather than repeatedly converting the full canvas to float arrays.
 - Frame masks, screen plates, resized pass maps, coordinate grids and paper-relief derivatives are cached.
 - Paper relief remains active but its height, normal-lighting and texture fields are prepared once per layer-size/pass combination.
 - Dedicated shader-effect controls have been removed.
+- Automatic layer rotations are limited to 0°, 90°, 180° or 270°; identity transforms avoid unnecessary image resampling.
+- Reaction Diffusion renders the activator field and iso-contours only, rather than treating its near-uniform background as visible ink.
+- Cellular and reaction-diffusion stencils use padded neighbour arrays instead of repeated full-frame roll allocations.
 
 The automatic variation is intentionally a composition jump, not a crossfade. Beat/bar-aware transitions, GPU rendering and full-resolution export remain future work.
 
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
-- Interactive preview: **720 × 540**, scaled into the application window without changing the project aspect ratio.
+- Interactive preview: **600 × 450**, scaled into the application window without changing the project aspect ratio.
 - The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
 - Full-resolution offline rendering, frame-rate selection, video export and keyframe automation are subsequent milestones.
 

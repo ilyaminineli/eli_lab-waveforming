@@ -15,7 +15,7 @@ class CompositionCanvas(QWidget):
         super().__init__(parent)
         self._preview = QPixmap()
         self.setMinimumSize(500, 400)
-        self.set_frame(Image.new("RGBA", (720, 540), (12, 12, 12, 255)))
+        self.set_frame(Image.new("RGBA", (600, 450), (12, 12, 12, 255)))
 
     def set_frame(self, image: Image.Image) -> None:
         rgba = image.convert("RGBA")

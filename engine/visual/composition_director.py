@@ -76,13 +76,13 @@ def create_auto_composition(
             x_offset=round(rng.uniform(-0.06, 0.06), 3),
             y_offset=round(rng.uniform(-0.055, 0.055), 3),
             scale=round(rng.uniform(0.76, 1.12), 2),
-            rotation=rng.choice((-18, -12, -7, 0, 7, 12, 18)),
+            rotation=0,
             mask_mode="FRAME",
             pass_mode="PAPER RELIEF" if index % 2 == 0 else "NORMAL LIGHT",
             pass_map="DISPLACEMENT",
             pass_strength=round(rng.uniform(0.26, 0.55), 2),
             source_id=source_id,
-            palette_mode="MUTED PRIDE",
+            palette_mode="EDITORIAL TRICOLOR",
             palette_index=index,
         )
         layers.append(layer)
@@ -104,7 +104,7 @@ def vary_composition(
     for index, layer in enumerate(layers):
         if index == 0 and layer.generator == "GEOMETRIC PLATE":
             # Keep the editorial plate as a visual anchor.
-            layer.rotation = rng.choice((-2, 0, 0, 0, 2))
+            layer.rotation = rng.choice((0, 0, 0, 90, 180, 270))
             layer.scale = round(rng.uniform(0.94, 1.05), 2)
             continue
         if available:
@@ -118,8 +118,8 @@ def vary_composition(
         layer.x_offset = round(rng.uniform(-0.10, 0.10), 3)
         layer.y_offset = round(rng.uniform(-0.085, 0.085), 3)
         layer.scale = round(rng.uniform(0.68, 1.24), 2)
-        layer.rotation = rng.choice((-32, -24, -16, -8, 0, 8, 16, 24, 32))
+        layer.rotation = rng.choice((0, 0, 0, 90, 180, 270))
         layer.pass_mode = rng.choice(("PAPER RELIEF", "NORMAL LIGHT", "DISPLACE"))
         layer.pass_strength = round(rng.uniform(0.2, 0.62), 2)
-        layer.palette_mode = "MUTED PRIDE"
+        layer.palette_mode = "EDITORIAL TRICOLOR"
     return layers

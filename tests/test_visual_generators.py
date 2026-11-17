@@ -94,3 +94,19 @@ def test_geometric_and_axonometric_generators_render():
         assert image.mode == "RGBA"
         assert alpha.max() > 0
         assert np.count_nonzero(alpha) > 20
+
+
+
+def test_reaction_diffusion_keeps_unactivated_paper_transparent():
+    from engine.visual.generators import ReactionDiffusion, VisualMetrics
+
+    generator = ReactionDiffusion()
+    image = generator.render(
+        VisualMetrics(), 0.0, (240, 180),
+        GeneratorSettings(complexity=40, motion=30, sensitivity=100),
+    )
+    alpha = np.asarray(image)[..., 3]
+
+    assert alpha.max() > 0
+    # Seeded activator structures occupy a small fraction of the printable field.
+    assert np.count_nonzero(alpha) < alpha.size * 0.35

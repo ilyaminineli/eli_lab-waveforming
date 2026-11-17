@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         self._apply_style()
         self._configure_analysis()
         self._render_timer = QTimer(self)
-        self._render_timer.setInterval(50)
+        self._render_timer.setInterval(66)
         self._render_timer.timeout.connect(self._render_frame)
         self._variation_timer = QTimer(self)
         self._variation_timer.setInterval(12000)
@@ -270,14 +270,16 @@ class MainWindow(QMainWindow):
         self.layer_source = QComboBox()
         self.layer_source.addItem("MIX / ALL", "")
         self.layer_palette = QComboBox()
-        self.layer_palette.addItems(["MUTED PRIDE", "MONOCHROME"])
+        self.layer_palette.addItems(["EDITORIAL TRICOLOR", "MONOCHROME"])
         self.layer_blend = QComboBox()
         self.layer_blend.addItems(["Normal", "Add", "Screen", "Multiply", "Difference", "Overlay", "Lighten", "Darken"])
         self.layer_opacity = self._make_slider(0, 100, 100)
         self.layer_x = self._make_slider(-50, 50, 0)
         self.layer_y = self._make_slider(-50, 50, 0)
         self.layer_scale = self._make_slider(10, 300, 100)
-        self.layer_rotation = self._make_slider(-180, 180, 0)
+        self.layer_rotation = QComboBox()
+        for degrees in (0, 90, 180, 270):
+            self.layer_rotation.addItem(f"{degrees}°", degrees)
         self.layer_mask = QComboBox()
         self.layer_mask.addItems(["FRAME", "INSET", "ELLIPSE", "FULL"])
         self.layer_pass_map = QComboBox()
@@ -386,13 +388,13 @@ class MainWindow(QMainWindow):
         # All layer property edits update the selected layer, never the audio callback.
         for control in (
             self.layer_generator, self.layer_source, self.layer_palette,
-            self.layer_blend, self.layer_mask, self.layer_pass_map,
-            self.layer_pass_mode,
+            self.layer_blend, self.layer_rotation, self.layer_mask,
+            self.layer_pass_map, self.layer_pass_mode,
         ):
             control.currentTextChanged.connect(self._layer_property_changed)
         for control in (
             self.layer_opacity, self.layer_x, self.layer_y, self.layer_scale,
-            self.layer_rotation, self.layer_pass_strength,
+            self.layer_pass_strength,
         ):
             control.valueChanged.connect(self._layer_property_changed)
         for control in (self.feedback_enabled,):
@@ -530,7 +532,8 @@ class MainWindow(QMainWindow):
             self.layer_x.setValue(int(layer.x_offset*100))
             self.layer_y.setValue(int(layer.y_offset*100))
             self.layer_scale.setValue(int(layer.scale*100))
-            self.layer_rotation.setValue(int(layer.rotation))
+            rotation_index = self.layer_rotation.findData(int(layer.rotation) % 360)
+            self.layer_rotation.setCurrentIndex(max(0, rotation_index))
             self.layer_mask.setCurrentText(layer.mask_mode)
             self.layer_pass_map.setCurrentText(layer.pass_map)
             self.layer_pass_mode.setCurrentText(layer.pass_mode)
@@ -554,7 +557,7 @@ class MainWindow(QMainWindow):
         layer.x_offset = self.layer_x.value()/100.0
         layer.y_offset = self.layer_y.value()/100.0
         layer.scale = self.layer_scale.value()/100.0
-        layer.rotation = float(self.layer_rotation.value())
+        layer.rotation = float(self.layer_rotation.currentData() or 0)
         layer.mask_mode = self.layer_mask.currentText()
         layer.pass_map = self.layer_pass_map.currentText()
         layer.pass_mode = self.layer_pass_mode.currentText()

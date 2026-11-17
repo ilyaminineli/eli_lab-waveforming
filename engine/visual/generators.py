@@ -244,16 +244,21 @@ class CellularSystem(VisualGenerator):
         self._shape=(gh,gw,settings.seed)
         self._rng=np.random.default_rng(settings.seed)
         self._grid=(self._rng.random((gh,gw))>0.91).astype(np.float32)
+        self._yy=np.linspace(0,math.tau*2,gh,dtype=np.float32)[:,None]
+        self._xx=np.linspace(0,math.tau*2,gw,dtype=np.float32)[None,:]
         self._last_time=None
         self._accumulator=0.0
 
     def _step(self,metrics,settings,step_index):
         grid=self._grid
-        neighbors=sum(np.roll(np.roll(grid,dy,axis=0),dx,axis=1)
-                      for dy in (-1,0,1) for dx in (-1,0,1) if dx or dy)
+        padded=np.pad(grid,1,mode="wrap")
+        neighbors=(
+            padded[:-2,1:-1]+padded[2:,1:-1]+padded[1:-1,:-2]+padded[1:-1,2:]+
+            padded[:-2,:-2]+padded[:-2,2:]+padded[2:,:-2]+padded[2:,2:]
+        )
         gh,gw=grid.shape
-        yy=np.linspace(0,math.tau*2,gh,dtype=np.float32)[:,None]
-        xx=np.linspace(0,math.tau*2,gw,dtype=np.float32)[None,:]
+        yy=self._yy
+        xx=self._xx
         phase=step_index*0.11+metrics.centroid*math.tau
         # Low, middle and high bands push different spatial axes.
         forcing=(np.sin(yy*(1+metrics.low*5)+phase)*metrics.low+
@@ -353,12 +358,18 @@ class ReactionDiffusion(VisualGenerator):
 
     @staticmethod
     def _laplace(field):
-        return (
-            np.roll(field,1,0)+np.roll(field,-1,0)+np.roll(field,1,1)+np.roll(field,-1,1)
-        )*0.2 + (
-            np.roll(np.roll(field,1,0),1,1)+np.roll(np.roll(field,1,0),-1,1)+
-            np.roll(np.roll(field,-1,0),1,1)+np.roll(np.roll(field,-1,0),-1,1)
-        )*0.05 - field
+        # A single wrapped pad plus zero-copy neighbour views is cheaper than
+        # creating eight separate rolled arrays for every diffusion step.
+        padded=np.pad(field,1,mode="wrap")
+        cardinals=(
+            padded[:-2,1:-1]+padded[2:,1:-1]+
+            padded[1:-1,:-2]+padded[1:-1,2:]
+        )
+        diagonals=(
+            padded[:-2,:-2]+padded[:-2,2:]+
+            padded[2:,:-2]+padded[2:,2:]
+        )
+        return cardinals*0.2+diagonals*0.05-field
 
     def _reset(self,size,settings):
         gh=max(112,int(size[1]//3))
@@ -386,8 +397,11 @@ class ReactionDiffusion(VisualGenerator):
         elapsed=max(0.0,min(0.15,seconds-self._last_time))
         self._last_time=seconds
         self._accumulator+=elapsed
-        steps=min(4,int(self._accumulator*50))
-        self._accumulator-=steps/50.0
+        # Keep the chemistry simulation at a modest independent rate; render FPS
+        # and display refresh must not force multiple expensive simulation steps.
+        step_interval=0.075
+        steps=min(2,int(self._accumulator/step_interval))
+        self._accumulator-=steps*step_interval
         feed=0.034+metrics.low*0.012+metrics.transient*0.012
         kill=0.058+metrics.high*0.010+metrics.cross*0.004
         for _ in range(steps):
@@ -403,12 +417,20 @@ class ReactionDiffusion(VisualGenerator):
                 radius=max(2,int(3+metrics.transient*10))
                 self.v[max(0,cy-radius):cy+radius,max(0,cx-radius):cx+radius]=np.maximum(
                     self.v[max(0,cy-radius):cy+radius,max(0,cx-radius):cx+radius],0.75)
-        texture=np.clip((self.v*2.5+np.abs(self.u-self.v)*0.8),0,1)
-        texture=np.clip((texture-0.22-metrics.energy*0.08)*2.3,0,1)
+        # Render the activator (V) field only. The previous abs(U-V) term is
+        # close to 1 across the untouched background and therefore painted an
+        # almost opaque tinted rectangle over the entire print area.
+        activator=np.clip(self.v,0.0,1.0)
+        iso_level=0.105+metrics.mid*0.055
+        iso_width=0.018+metrics.transient*0.012
+        contour=np.clip(1.0-np.abs(activator-iso_level)/iso_width,0.0,1.0)
+        body=np.clip((activator-0.075)*2.8,0.0,1.0)
+        texture=np.maximum(contour*0.82,body*0.24)
+        texture=np.where(activator>0.065,texture,0.0)
         rgba=np.zeros((*texture.shape,4),dtype=np.uint8)
-        lum=(145+texture*110).astype(np.uint8)
+        lum=(155+texture*100+metrics.energy*12).astype(np.uint8)
         rgba[...,:3]=lum[...,None]
-        rgba[...,3]=(texture*225).astype(np.uint8)
+        rgba[...,3]=np.clip(texture*215,0,215).astype(np.uint8)
         return Image.fromarray(rgba,"RGBA").resize(size,Image.Resampling.BILINEAR)
 
 
@@ -583,7 +605,7 @@ class GeometricPlate(VisualGenerator):
                      int(cx - shift), int(cy + slab_h * 0.58))
         right_rect = (int(cx + shift), int(cy - slab_h * 0.60),
                       int(cx + slab_w + shift), int(cy + slab_h * 0.40))
-        draw.rectangle(left_rect, fill=(220, 220, 218, int(22 + energy * 28)),
+        draw.rectangle(left_rect, fill=(220, 220, 218, 0),
                        outline=(235, 235, 232, 195), width=2)
         draw.rectangle(right_rect, outline=(215, 215, 212, 180), width=2)
 

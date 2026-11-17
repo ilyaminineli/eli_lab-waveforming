@@ -8,28 +8,30 @@ from .generators import GeneratorBank, GeneratorSettings
 from .layers import VisualLayer
 
 
-# The project remains 1920x1440. The interactive preview is deliberately smaller;
-# offline export will render the same layer graph at the project resolution.
-PREVIEW_SIZE = (720, 540)
+# Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
+# working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
+PREVIEW_SIZE = (600, 450)
 PROJECT_SIZE = (1920, 1440)
 
-MUTED_PRIDE_DARK_PLATE = (
-    (190, 137, 143),  # dusty red / rose
-    (197, 154, 119),  # faded orange
-    (190, 180, 126),  # ochre yellow
-    (129, 158, 137),  # sage green
-    (121, 151, 177),  # slate blue
-    (157, 139, 174),  # dusty violet
-    (174, 148, 160),  # muted mauve
+# Three-ink editorial palette based on the user's reference artwork:
+# dusty cobalt, aged yellow and violet, with tonal variants for seven channels.
+EDITORIAL_TRICOLOR_DARK = (
+    (86, 102, 164),   # muted cobalt
+    (196, 183, 89),   # aged yellow
+    (157, 116, 173),  # dusty violet
+    (113, 124, 166),  # blue-grey
+    (176, 160, 91),   # ochre
+    (145, 111, 157),  # violet-grey
+    (94, 117, 143),   # slate blue
 )
-MUTED_PRIDE_LIGHT_PLATE = (
-    (139, 79, 88),
-    (151, 99, 65),
-    (139, 126, 66),
-    (73, 116, 88),
-    (68, 105, 142),
-    (112, 89, 135),
-    (133, 99, 118),
+EDITORIAL_TRICOLOR_LIGHT = (
+    (52, 67, 121),
+    (142, 128, 44),
+    (109, 75, 126),
+    (66, 82, 121),
+    (130, 116, 47),
+    (101, 76, 113),
+    (61, 84, 110),
 )
 
 
@@ -237,9 +239,10 @@ class VisualCompositor:
     def _apply_palette(image: Image.Image, layer: VisualLayer,
                        packet: dict | None, white_plate: bool) -> Image.Image:
         rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
+        visible = rgba[..., 3] > 0
         if layer.palette_mode == "MONOCHROME":
             if white_plate:
-                rgba[..., :3] = 255 - rgba[..., :3]
+                rgba[..., :3][visible] = 255 - rgba[..., :3][visible]
             return Image.fromarray(rgba, "RGBA")
 
         source_ids = list((packet or {}).get("source_ids") or (packet or {}).get("frames", {}).keys())
@@ -247,15 +250,19 @@ class VisualCompositor:
             index = source_ids.index(layer.source_id)
         else:
             index = int(layer.palette_index)
-        palette = MUTED_PRIDE_LIGHT_PLATE if white_plate else MUTED_PRIDE_DARK_PLATE
+        # Compatibility: old MUTED PRIDE projects now use the editorial
+        # blue/yellow/violet inks rather than the former seven-hue rainbow.
+        palette = EDITORIAL_TRICOLOR_LIGHT if white_plate else EDITORIAL_TRICOLOR_DARK
         colour = np.asarray(palette[index % len(palette)], dtype=np.float32)
+        if not np.any(visible):
+            return Image.fromarray(rgba, "RGBA")
+        rgb = rgba[..., :3].astype(np.float32)
         luminance = (
-            rgba[..., 0].astype(np.float32)*0.2126
-            + rgba[..., 1].astype(np.float32)*0.7152
-            + rgba[..., 2].astype(np.float32)*0.0722
+            rgb[..., 0]*0.2126 + rgb[..., 1]*0.7152 + rgb[..., 2]*0.0722
         ) / 255.0
-        intensity = 0.38 + luminance*0.62
-        rgba[..., :3] = np.clip(colour[None, None, :]*intensity[..., None], 0, 255).astype(np.uint8)
+        intensity = 0.46 + luminance*0.54
+        tinted = np.clip(colour[None, None, :]*intensity[..., None], 0, 255).astype(np.uint8)
+        rgba[..., :3][visible] = tinted[visible]
         return Image.fromarray(rgba, "RGBA")
 
     @staticmethod
@@ -264,12 +271,23 @@ class VisualCompositor:
                    rotation: float) -> tuple[Image.Image, tuple[int, int]]:
         sw, sh = layer.size
         scale = max(0.05, min(4.0, float(scale)))
-        tw, th = max(1, int(sw*scale)), max(1, int(sh*scale))
-        transformed = layer.resize((tw, th), Image.Resampling.BICUBIC)
-        if abs(rotation) > 0.001:
-            transformed = transformed.rotate(
-                float(rotation), resample=Image.Resampling.BICUBIC, expand=True
+        # Orthogonal rotations preserve geometry and avoid interpolation
+        # fringes. Any legacy arbitrary angle is snapped to a quarter turn.
+        quarter_turn = int(round(float(rotation) / 90.0)) % 4
+        if abs(scale - 1.0) < 1e-4 and quarter_turn == 0:
+            transformed = layer
+        else:
+            tw, th = max(1, int(round(sw*scale))), max(1, int(round(sh*scale)))
+            transformed = (
+                layer if (tw, th) == (sw, sh)
+                else layer.resize((tw, th), Image.Resampling.BILINEAR)
             )
+            if quarter_turn == 1:
+                transformed = transformed.transpose(Image.Transpose.ROTATE_90)
+            elif quarter_turn == 2:
+                transformed = transformed.transpose(Image.Transpose.ROTATE_180)
+            elif quarter_turn == 3:
+                transformed = transformed.transpose(Image.Transpose.ROTATE_270)
         cx = center[0] + x_offset*PREVIEW_SIZE[0]
         cy = center[1] + y_offset*PREVIEW_SIZE[1]
         return transformed, (
