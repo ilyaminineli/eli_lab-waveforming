@@ -120,6 +120,22 @@ def test_monochrome_scope_inverts_on_white_paper():
 
 
 
+def test_compositor_supports_an_independent_export_resolution():
+    assets = AssetCatalog(Path("missing-assets"))
+    compositor = VisualCompositor(assets, render_size=(128, 96))
+    layer = VisualLayer(
+        name="Plate", generator="GEOMETRIC PLATE",
+        mask_mode="FULL", pass_mode="NONE",
+    )
+
+    image = compositor.render(
+        packet=None, seconds=0.0, layers=[layer], screen="No guide"
+    )
+
+    assert image.size == (128, 96)
+
+
+
 def test_transform_skips_identity_resampling_and_snaps_to_quarter_turns():
     compositor = VisualCompositor(AssetCatalog(Path("missing-assets")))
     source = Image.new("RGBA", (20, 12), (0, 0, 0, 0))
@@ -131,7 +147,6 @@ def test_transform_skips_identity_resampling_and_snaps_to_quarter_turns():
 
     turned, _ = compositor._transform(source, (40, 30), 0, 0, 1.0, 87)
     assert turned.size == (12, 20)
-    # 87 degrees is snapped to an exact 90-degree transpose.
     assert turned.getpixel((3, 20 - 1 - 2)) == source.getpixel((2, 3))
 
 
@@ -150,3 +165,16 @@ def test_editorial_palette_uses_blue_yellow_violet_ink_families():
     assert blue[2] > blue[0] + 35
     assert yellow[0] > yellow[2] + 55 and yellow[1] > yellow[2] + 45
     assert violet[0] > violet[1] + 20 and violet[2] > violet[1] + 35
+
+
+
+def test_printable_mask_uses_offline_canvas_dimensions():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(1920, 1440)
+    )
+    screen = "SCREEN 1 / BLACK"
+    frame_box = compositor._frame_box(screen)
+    mask = compositor._mask("FRAME", screen, frame_box)
+
+    assert mask.size == (1920, 1440)
+    assert mask.getbbox() is not None

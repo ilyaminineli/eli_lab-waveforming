@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import os
+import threading
+from dataclasses import replace
+from queue import Empty, Full, Queue
+
+from PySide6.QtCore import QObject, Signal
+
+from engine.visual.assets import AssetCatalog
+from engine.visual.compositor import PREVIEW_SIZE, VisualCompositor
+from engine.visual.generators import GeneratorSettings
+from engine.visual.layers import VisualLayer
+
+
+class PreviewSignals(QObject):
+    frame_ready = Signal(object, float, int)
+    render_error = Signal(str)
+
+
+class PreviewRenderWorker(threading.Thread):
+    """Single-owner compositor thread with a one-item latest-frame queue.
+
+    UI requests never wait for a render. When the renderer falls behind, stale
+    pending requests are replaced with the newest playhead/layer snapshot.
+    """
+
+    def __init__(self, assets: AssetCatalog, render_size: tuple[int, int] = PREVIEW_SIZE):
+        super().__init__(name="WaveformingPreview", daemon=True)
+        self.signals = PreviewSignals()
+        self._assets = assets
+        self._render_size = tuple(render_size)
+        self._requested_render_size = self._render_size
+        self._queue: Queue = Queue(maxsize=1)
+        self._stop_event = threading.Event()
+        self._state_lock = threading.Lock()
+        self._reset_requested = True
+        self._compositor: VisualCompositor | None = None
+
+    @property
+    def render_size(self) -> tuple[int, int]:
+        with self._state_lock:
+            return self._requested_render_size
+
+    def set_render_size(self, size: tuple[int, int]) -> None:
+        """Switch preview resolution on the worker thread at the next frame boundary."""
+        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        with self._state_lock:
+            self._requested_render_size = (width, height)
+            self._reset_requested = True
+
+    def request_reset(self) -> None:
+        with self._state_lock:
+            self._reset_requested = True
+
+    def submit(
+        self,
+        packet: dict | None,
+        seconds: float,
+        layers: list[VisualLayer],
+        settings: GeneratorSettings,
+        screen: str,
+        feedback_enabled: bool,
+        feedback_amount: float,
+        feedback_decay: float,
+        feedback_shift: float,
+        sequence: int,
+    ) -> None:
+        # Snapshot UI-owned state. Audio feature packets are immutable after emit;
+        # large NumPy arrays are shared read-only to avoid duplicating RAM.
+        request = {
+            "packet": packet,
+            "seconds": float(seconds),
+            "layers": [VisualLayer.from_dict(layer.to_dict()) for layer in layers],
+            "settings": replace(settings),
+            "screen": str(screen),
+            "feedback_enabled": bool(feedback_enabled),
+            "feedback_amount": float(feedback_amount),
+            "feedback_decay": float(feedback_decay),
+            "feedback_shift": float(feedback_shift),
+            "sequence": int(sequence),
+        }
+        try:
+            self._queue.put_nowait(request)
+        except Full:
+            try:
+                self._queue.get_nowait()
+            except Empty:
+                pass
+            try:
+                self._queue.put_nowait(request)
+            except Full:
+                pass
+
+    @staticmethod
+    def _lower_thread_priority() -> None:
+        """Keep preview work below the Qt and real-time audio threads."""
+        try:
+            if os.name == "nt":
+                import ctypes
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.GetCurrentThread.restype = ctypes.c_void_p
+                kernel32.SetThreadPriority.argtypes = (ctypes.c_void_p, ctypes.c_int)
+                kernel32.SetThreadPriority.restype = ctypes.c_int
+                kernel32.SetThreadPriority(kernel32.GetCurrentThread(), -1)  # BELOW_NORMAL
+            else:
+                os.nice(5)
+        except Exception:
+            # Priority changes are best-effort and must never prevent rendering.
+            pass
+
+    def run(self) -> None:
+        self._lower_thread_priority()
+        try:
+            self._compositor = VisualCompositor(self._assets, render_size=self._render_size)
+            while not self._stop_event.is_set():
+                try:
+                    request = self._queue.get(timeout=0.2)
+                except Empty:
+                    continue
+                if request is None:
+                    break
+                with self._state_lock:
+                    reset = self._reset_requested
+                    requested_size = self._requested_render_size
+                    self._reset_requested = False
+                if requested_size != self._render_size:
+                    self._render_size = requested_size
+                    self._compositor = VisualCompositor(
+                        self._assets, render_size=self._render_size
+                    )
+                elif reset:
+                    self._compositor.reset_feedback()
+                try:
+                    image = self._compositor.render(
+                        packet=request["packet"],
+                        seconds=request["seconds"],
+                        layers=request["layers"],
+                        settings=request["settings"],
+                        screen=request["screen"],
+                        feedback_enabled=request["feedback_enabled"],
+                        feedback_amount=request["feedback_amount"],
+                        feedback_decay=request["feedback_decay"],
+                        feedback_shift=request["feedback_shift"],
+                    )
+                    self.signals.frame_ready.emit(
+                        image, request["seconds"], request["sequence"]
+                    )
+                except Exception as exc:
+                    self.signals.render_error.emit(f"Preview render failed: {exc}")
+        except Exception as exc:
+            self.signals.render_error.emit(f"Preview worker could not start: {exc}")
+
+    def close(self, timeout: float = 2.0) -> None:
+        self._stop_event.set()
+        try:
+            self._queue.put_nowait(None)
+        except Full:
+            try:
+                self._queue.get_nowait()
+            except Empty:
+                pass
+            try:
+                self._queue.put_nowait(None)
+            except Full:
+                pass
+        if self.is_alive():
+            self.join(timeout=max(0.1, float(timeout)))

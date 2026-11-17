@@ -10,7 +10,7 @@ from .layers import VisualLayer
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
-PREVIEW_SIZE = (600, 450)
+PREVIEW_SIZE = (320, 240)
 PROJECT_SIZE = (1920, 1440)
 
 # Three-ink editorial palette based on the user's reference artwork:
@@ -38,8 +38,9 @@ EDITORIAL_TRICOLOR_LIGHT = (
 class VisualCompositor:
     """Cached region compositor with paper relief and channel-aware ink palettes."""
 
-    def __init__(self, assets: AssetCatalog):
+    def __init__(self, assets: AssetCatalog, render_size: tuple[int, int] = PREVIEW_SIZE):
         self.assets = assets
+        self.size = (max(1, int(render_size[0])), max(1, int(render_size[1])))
         self.generators = GeneratorBank()
         self._screen_cache: dict[str, Image.Image] = {}
         self._pass_cache: dict[tuple[str, tuple[int, int]], Image.Image] = {}
@@ -67,7 +68,7 @@ class VisualCompositor:
         if name not in self._screen_cache:
             image = self.assets.load_screen(name)
             if image is not None:
-                self._screen_cache[name] = image.resize(PREVIEW_SIZE, Image.Resampling.LANCZOS)
+                self._screen_cache[name] = image.resize(self.size, Image.Resampling.LANCZOS)
         return self._screen_cache.get(name)
 
     def _pass(self, name: str, size: tuple[int, int]) -> Image.Image | None:
@@ -83,7 +84,7 @@ class VisualCompositor:
     def _frame_box(self, screen: str) -> tuple[int, int, int, int]:
         if screen not in self._frame_cache:
             normalized = self.assets.frame_box(screen)
-            w, h = PREVIEW_SIZE
+            w, h = self.size
             x0, y0, x1, y1 = normalized
             self._frame_cache[screen] = (
                 int(round(x0*w)), int(round(y0*h)),
@@ -95,7 +96,10 @@ class VisualCompositor:
               frame_box: tuple[int, int, int, int]) -> Image.Image:
         key = (mode, screen)
         if key not in self._mask_cache:
-            w, h = PREVIEW_SIZE
+            # Preview and offline export share the same compositor. Mask
+            # geometry must follow this instance's canvas, not the preview
+            # constant, otherwise 1920×1440 export crops against a 480×360 mask.
+            w, h = self.size
             mask = Image.new("L", (w, h), 0)
             draw = ImageDraw.Draw(mask)
             x0, y0, x1, y1 = frame_box
@@ -265,8 +269,7 @@ class VisualCompositor:
         rgba[..., :3][visible] = tinted[visible]
         return Image.fromarray(rgba, "RGBA")
 
-    @staticmethod
-    def _transform(layer: Image.Image, center: tuple[float, float],
+    def _transform(self, layer: Image.Image, center: tuple[float, float],
                    x_offset: float, y_offset: float, scale: float,
                    rotation: float) -> tuple[Image.Image, tuple[int, int]]:
         sw, sh = layer.size
@@ -288,22 +291,21 @@ class VisualCompositor:
                 transformed = transformed.transpose(Image.Transpose.ROTATE_180)
             elif quarter_turn == 3:
                 transformed = transformed.transpose(Image.Transpose.ROTATE_270)
-        cx = center[0] + x_offset*PREVIEW_SIZE[0]
-        cy = center[1] + y_offset*PREVIEW_SIZE[1]
+        cx = center[0] + x_offset*self.size[0]
+        cy = center[1] + y_offset*self.size[1]
         return transformed, (
             int(round(cx-transformed.width/2)),
             int(round(cy-transformed.height/2)),
         )
 
-    @staticmethod
-    def _apply_mask_crop(source: Image.Image, position: tuple[int, int],
+    def _apply_mask_crop(self, source: Image.Image, position: tuple[int, int],
                          screen: str, mode: str,
                          frame_box: tuple[int, int, int, int],
                          masks: dict) -> tuple[Image.Image, tuple[int, int]] | None:
         px, py = position
         sw, sh = source.size
         x0, y0 = max(0, px), max(0, py)
-        x1, y1 = min(PREVIEW_SIZE[0], px+sw), min(PREVIEW_SIZE[1], py+sh)
+        x1, y1 = min(self.size[0], px+sw), min(self.size[1], py+sh)
         if x1 <= x0 or y1 <= y0:
             return None
         crop = source.crop((x0-px, y0-py, x1-px, y1-py))
@@ -384,7 +386,7 @@ class VisualCompositor:
     def _render_layer(self, layer: VisualLayer, packet: dict | None, seconds: float,
                       settings: GeneratorSettings, screen: str,
                       frame_box: tuple[int, int, int, int]) -> tuple[Image.Image, tuple[int, int]] | None:
-        w, h = PREVIEW_SIZE
+        w, h = self.size
         if layer.mask_mode == "FULL":
             target_box = (0, 0, w, h)
         else:
@@ -419,13 +421,13 @@ class VisualCompositor:
                feedback_shift: float = 0.0) -> Image.Image:
         settings = settings or GeneratorSettings()
         layers = layers or []
-        base = Image.new("RGBA", PREVIEW_SIZE, (10, 10, 10, 255))
+        base = Image.new("RGBA", self.size, (10, 10, 10, 255))
         guide = self._screen(screen)
         if guide is not None:
             base.alpha_composite(guide)
 
         frame_box = self._frame_box(screen)
-        stack = Image.new("RGBA", PREVIEW_SIZE, (0, 0, 0, 0))
+        stack = Image.new("RGBA", self.size, (0, 0, 0, 0))
         for layer in layers:
             if not layer.visible:
                 continue
@@ -439,12 +441,12 @@ class VisualCompositor:
             if self._last_time is not None and seconds < self._last_time:
                 self._feedback = None
             if self._feedback is not None:
-                dx = int(round(feedback_shift*PREVIEW_SIZE[0]))
-                dy = int(round(feedback_shift*PREVIEW_SIZE[1]*0.62))
+                dx = int(round(feedback_shift*self.size[0]))
+                dy = int(round(feedback_shift*self.size[1]*0.62))
                 previous = self._feedback
                 if dx or dy:
                     previous = previous.transform(
-                        PREVIEW_SIZE, Image.Transform.AFFINE,
+                        self.size, Image.Transform.AFFINE,
                         (1, 0, -dx, 0, 1, -dy),
                         resample=Image.Resampling.BILINEAR,
                     )
