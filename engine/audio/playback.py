@@ -9,7 +9,6 @@ from math import gcd
 from queue import Queue, Empty, Full
 
 import numpy as np
-import sounddevice as sd
 from PySide6.QtCore import QObject, Signal
 from scipy.signal import resample_poly
 
@@ -39,7 +38,7 @@ class PlaybackEngine(QObject):
         self.block_size = 1024
         self._tracks: list[_Track] = []
         self._lock = threading.RLock()
-        self._stream: sd.OutputStream | None = None
+        self._stream = None
         self._playing = False
         self._loop = False
         self._master_frame = 0
@@ -61,7 +60,11 @@ class PlaybackEngine(QObject):
 
     @staticmethod
     def _output_sample_rate() -> int:
+        # sounddevice initializes PortAudio at import time. Keep it lazy so
+        # importing the engine, opening a project or running headless tests
+        # does not require an active PulseAudio/WASAPI/CoreAudio output device.
         try:
+            import sounddevice as sd
             device = sd.query_devices(kind="output")
             return int(round(float(device["default_samplerate"])))
         except Exception:
@@ -149,6 +152,10 @@ class PlaybackEngine(QObject):
                 self.error.emit("Import at least one audio source before playback.")
                 return
             try:
+                # Initialize PortAudio only when playback is requested. This also
+                # gives the UI a recoverable error on machines without an output
+                # device instead of failing during module import.
+                import sounddevice as sd
                 if self._stream is None:
                     self._stream = sd.OutputStream(
                         samplerate=self.sample_rate,
