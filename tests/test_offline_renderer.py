@@ -56,3 +56,22 @@ def test_offline_audio_mix_respects_gain_and_pan(tmp_path):
     assert sample_rate == 48000
     assert mixed.shape == (4800, 2)
     assert np.allclose(mixed.mean(axis=0), [0.25, 0.25], atol=0.002)
+
+
+
+def test_offline_analysis_window_ends_at_frame_timestamp(tmp_path):
+    samples = np.column_stack((
+        np.arange(12, dtype=np.float32),
+        np.arange(12, dtype=np.float32) + 100,
+    ))
+    block = OfflineRenderWorker._window_ending_at(samples, end_frame=8, fft_size=4)
+
+    assert np.array_equal(block[:, 0], [4, 5, 6, 7])
+    assert np.array_equal(block[:, 1], [104, 105, 106, 107])
+
+
+def test_offline_analysis_window_zero_pads_before_audio_start(tmp_path):
+    samples = np.ones((12, 2), dtype=np.float32)
+    block = OfflineRenderWorker._window_ending_at(samples, end_frame=2, fft_size=4)
+
+    assert np.array_equal(block[:, 0], [0, 0, 1, 1])

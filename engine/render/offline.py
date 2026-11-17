@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import shutil
 import subprocess
 import tempfile
@@ -125,27 +126,36 @@ class OfflineRenderWorker(QThread):
                 )
                 output.write(np.clip(mix, -1.0, 1.0))
 
+    @staticmethod
+    def _window_ending_at(samples: np.ndarray, end_frame: int,
+                          fft_size: int) -> np.ndarray:
+        """Return the last fft_size samples ending at end_frame, zero-padded at edges."""
+        window_start = int(end_frame) - int(fft_size)
+        window_end = int(end_frame)
+        block = np.zeros((fft_size, 2), dtype=np.float32)
+        source_start = max(0, window_start)
+        source_end = min(len(samples), window_end)
+        if source_end > source_start:
+            target_start = source_start-window_start
+            target_end = target_start+(source_end-source_start)
+            block[target_start:target_end] = samples[source_start:source_end]
+        return block
+
     def _analysis_packet(self, seconds: float, analyzers: dict) -> dict:
         frame_map = {}
         analysis_sources = [
             source for source in self.sources if source["analysis_enabled"]
         ]
         mono_blocks = {}
-        center = int(round(seconds * self.sample_rate))
-        half = self.fft_size // 2
+        # Live analysis windows end at the audio playhead. Offline analysis uses
+        # the same trailing window; a centred window would shift the visual response.
+        end_frame = int(round(seconds*self.sample_rate))
 
         for source in analysis_sources:
             track_id = source["track_id"]
-            samples = source["samples"]
-            start = center - half
-            end = start + self.fft_size
-            block = np.zeros((self.fft_size, 2), dtype=np.float32)
-            source_start = max(0, start)
-            source_end = min(len(samples), end)
-            if source_end > source_start:
-                target_start = source_start - start
-                target_end = target_start + (source_end - source_start)
-                block[target_start:target_end] = samples[source_start:source_end]
+            block = self._window_ending_at(
+                source["samples"], end_frame, self.fft_size
+            )
             analyzer = analyzers.get(track_id)
             if analyzer is None:
                 analyzer = AudioAnalyzer(self.fft_size, self.band_count, self.window)
@@ -185,8 +195,11 @@ class OfflineRenderWorker(QThread):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            with tempfile.TemporaryDirectory(prefix="waveforming_m5_") as temporary:
+            with tempfile.TemporaryDirectory(
+                prefix="waveforming_m5_", dir=output_path.parent
+            ) as temporary:
                 audio_path = Path(temporary) / "mix.wav"
+                temporary_video = Path(temporary) / "rendered.mp4"
                 self._write_audio_mix(audio_path, duration)
                 if self.cancelled:
                     self.render_cancelled.emit()
@@ -203,7 +216,7 @@ class OfflineRenderWorker(QThread):
                     "-crf", "20", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",
                     "-movflags", "+faststart", "-shortest",
-                    str(output_path),
+                    str(temporary_video),
                 ]
                 process = subprocess.Popen(
                     command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
@@ -252,6 +265,11 @@ class OfflineRenderWorker(QThread):
                     if return_code != 0:
                         error = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
                         raise RuntimeError(error.strip() or f"FFmpeg exited with code {return_code}.")
+                    if not temporary_video.is_file() or temporary_video.stat().st_size <= 0:
+                        raise RuntimeError("FFmpeg finished without producing a valid MP4 file.")
+                    # Only replace the destination after a complete successful encode;
+                    # cancellation or failure cannot leave a corrupt partial file.
+                    os.replace(temporary_video, output_path)
                 finally:
                     if process.poll() is None:
                         process.kill()

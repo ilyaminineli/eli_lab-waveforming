@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PIL import Image
+from engine.visual.compositor import PREVIEW_SIZE
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget

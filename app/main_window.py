@@ -29,6 +29,15 @@ from engine.visual.composition_director import create_auto_composition, vary_com
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Preview work is deliberately capped for the integrated Radeon 820M / low-power
+# CPU target. Offline rendering remains native 1920×1440 regardless of this choice.
+PREVIEW_PROFILES = {
+    "ECO  ·  320×240  ·  5 FPS": ((320, 240), 200),
+    "LOW  ·  360×270  ·  6 FPS": ((360, 270), 167),
+    "BALANCED  ·  480×360  ·  8 FPS": ((480, 360), 125),
+}
+DEFAULT_PREVIEW_PROFILE = "ECO  ·  320×240  ·  5 FPS"
+
 
 def format_time(seconds: float) -> str:
     total = max(0, int(seconds))
@@ -121,8 +130,9 @@ class MainWindow(QMainWindow):
         self._apply_style()
         self._configure_analysis()
         self._render_timer = QTimer(self)
-        self._render_timer.setInterval(125)
+        self._render_timer.setInterval(200)
         self._render_timer.timeout.connect(self._render_frame)
+        self.preview_quality.currentIndexChanged.connect(self._preview_quality_changed)
         self._variation_timer = QTimer(self)
         self._variation_timer.setInterval(12000)
         self._variation_timer.timeout.connect(self.vary_composition)
@@ -132,7 +142,7 @@ class MainWindow(QMainWindow):
         initial.pass_map = "DISPLACEMENT"
         self._refresh_layer_list(select_id=initial.layer_id)
         self.preview_worker.request_reset()
-        self._render_frame()
+        self._preview_quality_changed()
         self._update_timeline_duration()
 
     def _build_menu(self):
@@ -372,11 +382,17 @@ class MainWindow(QMainWindow):
         preview_header = QHBoxLayout()
         preview_title = QLabel("COMPOSITION VIEW")
         preview_title.setObjectName("section")
+        preview_label = QLabel("PREVIEW")
+        self.preview_quality = QComboBox()
+        self.preview_quality.addItems(list(PREVIEW_PROFILES))
+        self.preview_quality.setCurrentText(DEFAULT_PREVIEW_PROFILE)
         canvas_label = QLabel("CANVAS")
         self.zoom = QComboBox()
         self.zoom.addItems(["FIT", "50%", "66%", "75%", "100%"])
         preview_header.addWidget(preview_title)
         preview_header.addStretch()
+        preview_header.addWidget(preview_label)
+        preview_header.addWidget(self.preview_quality)
         preview_header.addWidget(canvas_label)
         preview_header.addWidget(self.zoom)
         right_layout.addLayout(preview_header)
@@ -989,9 +1005,24 @@ class MainWindow(QMainWindow):
         )
 
     def _on_preview_frame(self, image, seconds: float, sequence: int) -> None:
+        # A render may finish after several newer requests have been queued.
+        # Drop visibly stale frames instead of making the preview jump backwards.
+        if sequence < self._render_sequence - 1:
+            return
         if sequence >= self._displayed_sequence:
             self._displayed_sequence = sequence
             self.canvas.set_frame(image)
+
+    def _preview_quality_changed(self, *_args) -> None:
+        profile = PREVIEW_PROFILES.get(
+            self.preview_quality.currentText(),
+            PREVIEW_PROFILES[DEFAULT_PREVIEW_PROFILE],
+        )
+        render_size, interval_ms = profile
+        self.preview_worker.set_render_size(render_size)
+        self._render_timer.setInterval(interval_ms)
+        self.preview_worker.request_reset()
+        self._render_frame()
 
     def _on_preview_error(self, message: str) -> None:
         self.status.setText(message[:90])
@@ -1118,7 +1149,12 @@ class MainWindow(QMainWindow):
         self._variation_timer.stop()
         if self._export_worker is not None and self._export_worker.isRunning():
             self._export_worker.cancel()
-            self._export_worker.wait(3000)
+            if not self._export_worker.wait(3000):
+                # Never destroy a running QThread. The current full-resolution
+                # frame must reach its cancellation checkpoint first.
+                self.status.setText("EXPORT CANCELLING  ·  CLOSE AGAIN WHEN COMPLETE")
+                event.ignore()
+                return
         self.preview_worker.close(timeout=3.0)
         self.audio.close()
         super().closeEvent(event)

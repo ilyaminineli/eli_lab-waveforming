@@ -10,7 +10,7 @@ from .layers import VisualLayer
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
-PREVIEW_SIZE = (480, 360)
+PREVIEW_SIZE = (320, 240)
 PROJECT_SIZE = (1920, 1440)
 
 # Three-ink editorial palette based on the user's reference artwork:
@@ -96,7 +96,10 @@ class VisualCompositor:
               frame_box: tuple[int, int, int, int]) -> Image.Image:
         key = (mode, screen)
         if key not in self._mask_cache:
-            w, h = PREVIEW_SIZE
+            # Preview and offline export share the same compositor. Mask
+            # geometry must follow this instance's canvas, not the preview
+            # constant, otherwise 1920×1440 export crops against a 480×360 mask.
+            w, h = self.size
             mask = Image.new("L", (w, h), 0)
             draw = ImageDraw.Draw(mask)
             x0, y0, x1, y1 = frame_box

@@ -82,7 +82,7 @@ Each layer can bind to **MIX / ALL** or one independent audio source. A restrain
 
 Preview performance changes:
 
-- Interactive preview is **480 × 360 at up to 8 fps**; the native project remains **1920 × 1440**. A dedicated worker renders the preview and drops stale pending frames.
+- The default ECO preview is **320 × 240 at 5 fps**; LOW (360 × 270 / 6 fps) and BALANCED (480 × 360 / 8 fps) are selectable. The native project remains **1920 × 1440**. A dedicated worker renders the preview and drops stale pending frames.
 - Blend operations work on each layer's clipped rectangle rather than repeatedly converting the full canvas to float arrays.
 - Frame masks, screen plates, resized pass maps, coordinate grids and paper-relief derivatives are cached.
 - Paper relief remains active but its height, normal-lighting and texture fields are prepared once per layer-size/pass combination.
@@ -102,18 +102,18 @@ The automatic variation is intentionally a composition jump, not a crossfade. Be
 - Linear interpolation by default, with HOLD and SMOOTH interpolation available in the timeline model.
 - Save/open .wfp project files containing audio file paths, source controls, layers, settings, paper template, feedback, markers and automation. Audio files are referenced rather than embedded.
 - Export deterministic MP4 at 1920×1440 and 15/24/25/30 fps. Frames are rendered from the same compositor and automation graph at fixed timestamps, with audio features analysed from PCM at each frame.
-- Export requires the FFmpeg executable on PATH. The renderer uses H.264/AAC and pauses live playback while exporting to reserve CPU resources.
+- Export requires the FFmpeg executable on PATH. The renderer uses H.264/AAC and pauses live playback while exporting to reserve CPU resources. It analyses trailing FFT windows ending at each frame timestamp and only replaces the chosen output file after a complete successful encode.
 
-The supplied target machine is an AMD Ryzen AI 5 330 at 2.00 GHz with Radeon 820M integrated graphics and 16 GB RAM. The compositor is still CPU-based, so M5 adopts an **8 fps 480×360** preview, a one-item latest-frame worker queue and **8 Hz** audio feature analysis. A slow preview frame cannot block the audio callback or the UI. Full-resolution offline rendering is independent of preview quality and is intentionally not real-time.
+The supplied target machine is an AMD Ryzen AI 5 330 at 2.00 GHz with Radeon 820M integrated graphics (512 MB reported graphics memory) and 16 GB RAM. The compositor is still CPU-based, so M5 defaults to an **ECO 5 fps 320×240** preview, with selectable LOW and BALANCED profiles, a one-item latest-frame worker queue and **8 Hz** audio feature analysis. Preview and analysis threads run below normal thread priority where the operating system allows it. A slow preview frame cannot block the audio callback or the UI. Full-resolution offline rendering is independent of preview quality and is intentionally not real-time.
 
 See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implementation details, export assumptions and acceptance checks.
 
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
-- Interactive preview: **480 × 360**, scaled into the application window without changing the project aspect ratio.
+- Interactive preview defaults to **320 × 240** (ECO), with **360 × 270** (LOW) and **480 × 360** (BALANCED) options; all are scaled into the application window without changing the 4:3 project aspect ratio.
 - The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
-- Offline rendering uses FFmpeg from PATH; the preview remains CPU/Pillow/NumPy based.
+- Offline rendering uses FFmpeg from PATH; the preview remains CPU/Pillow/NumPy based. Printable-area masks scale with the selected render size, and completed MP4s replace the destination atomically.
 
 ## Requirements and limitations
 

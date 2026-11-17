@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import replace
 from queue import Empty, Full, Queue
@@ -29,11 +30,24 @@ class PreviewRenderWorker(threading.Thread):
         self.signals = PreviewSignals()
         self._assets = assets
         self._render_size = tuple(render_size)
+        self._requested_render_size = self._render_size
         self._queue: Queue = Queue(maxsize=1)
         self._stop_event = threading.Event()
         self._state_lock = threading.Lock()
         self._reset_requested = True
         self._compositor: VisualCompositor | None = None
+
+    @property
+    def render_size(self) -> tuple[int, int]:
+        with self._state_lock:
+            return self._requested_render_size
+
+    def set_render_size(self, size: tuple[int, int]) -> None:
+        """Switch preview resolution on the worker thread at the next frame boundary."""
+        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        with self._state_lock:
+            self._requested_render_size = (width, height)
+            self._reset_requested = True
 
     def request_reset(self) -> None:
         with self._state_lock:
@@ -78,7 +92,25 @@ class PreviewRenderWorker(threading.Thread):
             except Full:
                 pass
 
+    @staticmethod
+    def _lower_thread_priority() -> None:
+        """Keep preview work below the Qt and real-time audio threads."""
+        try:
+            if os.name == "nt":
+                import ctypes
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.GetCurrentThread.restype = ctypes.c_void_p
+                kernel32.SetThreadPriority.argtypes = (ctypes.c_void_p, ctypes.c_int)
+                kernel32.SetThreadPriority.restype = ctypes.c_int
+                kernel32.SetThreadPriority(kernel32.GetCurrentThread(), -1)  # BELOW_NORMAL
+            else:
+                os.nice(5)
+        except Exception:
+            # Priority changes are best-effort and must never prevent rendering.
+            pass
+
     def run(self) -> None:
+        self._lower_thread_priority()
         try:
             self._compositor = VisualCompositor(self._assets, render_size=self._render_size)
             while not self._stop_event.is_set():
@@ -90,8 +122,14 @@ class PreviewRenderWorker(threading.Thread):
                     break
                 with self._state_lock:
                     reset = self._reset_requested
+                    requested_size = self._requested_render_size
                     self._reset_requested = False
-                if reset:
+                if requested_size != self._render_size:
+                    self._render_size = requested_size
+                    self._compositor = VisualCompositor(
+                        self._assets, render_size=self._render_size
+                    )
+                elif reset:
                     self._compositor.reset_feedback()
                 try:
                     image = self._compositor.render(

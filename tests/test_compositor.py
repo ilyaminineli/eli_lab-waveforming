@@ -165,3 +165,16 @@ def test_editorial_palette_uses_blue_yellow_violet_ink_families():
     assert blue[2] > blue[0] + 35
     assert yellow[0] > yellow[2] + 55 and yellow[1] > yellow[2] + 45
     assert violet[0] > violet[1] + 20 and violet[2] > violet[1] + 35
+
+
+
+def test_printable_mask_uses_offline_canvas_dimensions():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(1920, 1440)
+    )
+    screen = "SCREEN 1 / BLACK"
+    frame_box = compositor._frame_box(screen)
+    mask = compositor._mask("FRAME", screen, frame_box)
+
+    assert mask.size == (1920, 1440)
+    assert mask.getbbox() is not None

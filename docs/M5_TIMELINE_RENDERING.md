@@ -67,12 +67,15 @@ The current target machine profile supplied for this milestone is:
 
 The renderer is CPU/Pillow/NumPy based; it does not currently use the Radeon GPU. M5 therefore reduces CPU work rather than introducing a GPU dependency:
 
-- Preview surface reduced to **480×360** while the project remains **1920×1440**.
-- Preview refresh requested at **8 fps**.
+- Preview defaults to **320×240 at 5 fps (ECO)**; LOW (360×270 at 6 fps) and BALANCED (480×360 at 8 fps) can be selected. The project remains **1920×1440**.
+- The selected preview profile is applied at a worker frame boundary; the Qt event loop never reconstructs or renders the compositor.
 - A dedicated preview thread owns the compositor. The UI sends immutable snapshots through a one-item latest-frame queue; obsolete pending renders are dropped.
+- Preview and live analysis threads are set to below-normal priority where supported, yielding CPU time to the Qt event loop and audio output.
 - Preview frames can finish late and still display in sequence; the UI does not wait for rendering.
 - Live feature analysis is throttled to **8 updates per second** instead of taking and analysing a new FFT window on every 1024-sample audio callback.
 - Each analysis snapshot contains a complete FFT-sized PCM window ending at the current playhead. Dropping a stale queue item therefore never causes an FFT to combine non-contiguous audio.
+- The audio callback mixes track segments directly into the master buffer instead of allocating an extra zero-filled block per source; the soft limiter skips magnitude arrays unless the mix actually exceeds its ceiling.
+- Analysis packets carry a configuration revision; changing FFT settings, or adding/removing a source, invalidates stale packets before they can reach the analyzer.
 - Offline rendering has its own compositor instance and does not alter the live preview's state.
 
 These limits are conservative starting points for the supplied low-power CPU, not a promise of a fixed frame rate under every seven-layer composition. The offline 1920×1440 renderer is intentionally slower than real time.
@@ -98,3 +101,10 @@ These limits are conservative starting points for the supplied low-power CPU, no
 - Cached static-layer output and dirty-region invalidation for preview.
 - Optional GPU backend only if profiling proves it helps the supported hardware.
 - Render benchmarks and per-layer profiler on the target laptop.
+
+
+## M5 stability corrections
+
+- Printable-area masks now use the compositor instance's canvas dimensions. The previous preview constant caused an incompatible 480×360 mask during 1920×1440 export.
+- Offline analysis now takes the same trailing FFT-sized window ending at each frame timestamp as live analysis; it no longer uses a centred window that shifts audio-reactive content by half an FFT window.
+- FFmpeg writes to a temporary MP4 and atomically replaces the destination only after a successful encode. Cancelled or failed exports do not leave a partial file at the requested destination.
