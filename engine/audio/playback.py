@@ -46,7 +46,11 @@ class PlaybackEngine(QObject):
         self._analysis_bands = 64
         self._analysis_window = "hann"
         self._analysis_revision = 0
-        self._analysis_queue: Queue = Queue(maxsize=4)
+        # Visual descriptors do not need one FFT per 1024-sample audio callback.
+        # Eight updates per second keeps seven-source sessions practical on low-power CPUs.
+        self._analysis_interval_frames = max(self.block_size, int(self.sample_rate / 8))
+        self._analysis_frames_elapsed = 0
+        self._analysis_queue: Queue = Queue(maxsize=2)
         self._analysis_stop = threading.Event()
         self._analysis_thread = threading.Thread(
             target=self._analysis_loop, name="WaveformingAnalysis", daemon=True
@@ -163,6 +167,7 @@ class PlaybackEngine(QObject):
             self._master_frame = 0
             for track in self._tracks:
                 track.cursor = 0
+            self._analysis_frames_elapsed = 0
         self.state_changed.emit(False)
         self.position_changed.emit(0.0)
 
@@ -173,6 +178,7 @@ class PlaybackEngine(QObject):
             self._master_frame = min(target, maximum)
             for track in self._tracks:
                 track.cursor = min(self._master_frame, len(track.pcm))
+            self._analysis_frames_elapsed = 0
         self.position_changed.emit(self.position)
 
     def _audio_callback(self, outdata, frames, time_info, status) -> None:
@@ -184,6 +190,10 @@ class PlaybackEngine(QObject):
             loop = self._loop
             has_solo = any(t.source.solo and not t.source.muted for t in tracks)
             snapshots: dict[str, tuple[np.ndarray, int]] = {}
+            self._analysis_frames_elapsed += frames
+            analysis_due = self._analysis_frames_elapsed >= self._analysis_interval_frames
+            if analysis_due:
+                self._analysis_frames_elapsed %= self._analysis_interval_frames
             mix = np.zeros((frames, 2), dtype=np.float32)
             all_finished = True
 
@@ -212,8 +222,26 @@ class PlaybackEngine(QObject):
                     if track.cursor < len(track.pcm):
                         all_finished = False
 
-                if source.analysis_enabled:
-                    snapshots[track.track_id] = (block.copy(), self.sample_rate)
+                if source.analysis_enabled and analysis_due:
+                    # Every queued analysis payload contains a complete FFT window
+                    # ending at the current playhead. If a stale queue item is dropped,
+                    # the next FFT remains contiguous with real PCM and never stitches
+                    # together non-adjacent segments.
+                    window_size = self._analysis_fft
+                    end = track.cursor
+                    if loop and len(track.pcm):
+                        indices = (np.arange(window_size, dtype=np.int64) + end - window_size) % len(track.pcm)
+                        analysis_block = track.pcm[indices].copy()
+                    else:
+                        start = end - window_size
+                        source_start = max(0, start)
+                        analysis_block = np.zeros((window_size, 2), dtype=np.float32)
+                        if end > source_start:
+                            target_start = source_start - start
+                            analysis_block[target_start:target_start + end - source_start] = (
+                                track.pcm[source_start:end]
+                            )
+                    snapshots[track.track_id] = (analysis_block, self.sample_rate)
 
                 audible = not source.muted and (not has_solo or source.solo)
                 if audible and take > 0:
@@ -299,12 +327,13 @@ class PlaybackEngine(QObject):
 
             ids = list(correlation_blocks)
             matrix = np.eye(len(ids), dtype=np.float32)
+            common_length = min((len(correlation_blocks[key]) for key in ids), default=0)
             for i in range(len(ids)):
-                a = correlation_blocks[ids[i]]
+                a = correlation_blocks[ids[i]][-common_length:] if common_length else np.zeros(0, np.float32)
                 for j in range(i + 1, len(ids)):
-                    b = correlation_blocks[ids[j]]
+                    b = correlation_blocks[ids[j]][-common_length:] if common_length else np.zeros(0, np.float32)
                     denom = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
-                    corr = float(np.dot(a, b) / denom)
+                    corr = float(np.dot(a, b) / denom) if common_length else 0.0
                     matrix[i, j] = matrix[j, i] = np.clip(corr, -1.0, 1.0)
             if frames:
                 self.features_ready.emit({

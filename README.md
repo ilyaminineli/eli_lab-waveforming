@@ -82,7 +82,7 @@ Each layer can bind to **MIX / ALL** or one independent audio source. A restrain
 
 Preview performance changes:
 
-- Interactive preview is **600 × 450 at up to 15 fps**; the native project remains **1920 × 1440**.
+- Interactive preview is **480 × 360 at up to 8 fps**; the native project remains **1920 × 1440**. A dedicated worker renders the preview and drops stale pending frames.
 - Blend operations work on each layer's clipped rectangle rather than repeatedly converting the full canvas to float arrays.
 - Frame masks, screen plates, resized pass maps, coordinate grids and paper-relief derivatives are cached.
 - Paper relief remains active but its height, normal-lighting and texture fields are prepared once per layer-size/pass combination.
@@ -90,19 +90,34 @@ Preview performance changes:
 - Automatic layer rotations are limited to 0°, 90°, 180° or 270°; identity transforms avoid unnecessary image resampling.
 - Reaction Diffusion renders the activator field and iso-contours only, rather than treating its near-uniform background as visible ink.
 - Cellular and reaction-diffusion stencils use padded neighbour arrays instead of repeated full-frame roll allocations.
+- Live spectral analysis is throttled to 8 updates per second and analyses a complete FFT-sized PCM window at each update, so dropped stale queue items cannot join non-contiguous audio.
 
-The automatic variation is intentionally a composition jump, not a crossfade. Beat/bar-aware transitions, GPU rendering and full-resolution export remain future work.
+The automatic variation is intentionally a composition jump, not a crossfade. Beat/bar-aware scene transitions and GPU rendering remain future work.
+
+## M5 — Timeline, automation and deterministic rendering
+
+- Clickable timeline ruler with playhead, beat/bar guides, named markers and section boundaries.
+- BPM control and optional beat snapping; timeline time remains anchored to the audio clock.
+- Three automation lanes: Complexity, Motion and Audio Response. Enable RECORD AUTOMATION and adjust a global generator control during playback to record keyframes.
+- Linear interpolation by default, with HOLD and SMOOTH interpolation available in the timeline model.
+- Save/open .wfp project files containing audio file paths, source controls, layers, settings, paper template, feedback, markers and automation. Audio files are referenced rather than embedded.
+- Export deterministic MP4 at 1920×1440 and 15/24/25/30 fps. Frames are rendered from the same compositor and automation graph at fixed timestamps, with audio features analysed from PCM at each frame.
+- Export requires the FFmpeg executable on PATH. The renderer uses H.264/AAC and pauses live playback while exporting to reserve CPU resources.
+
+The supplied target machine is an AMD Ryzen AI 5 330 at 2.00 GHz with Radeon 820M integrated graphics and 16 GB RAM. The compositor is still CPU-based, so M5 adopts an **8 fps 480×360** preview, a one-item latest-frame worker queue and **8 Hz** audio feature analysis. A slow preview frame cannot block the audio callback or the UI. Full-resolution offline rendering is independent of preview quality and is intentionally not real-time.
+
+See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implementation details, export assumptions and acceptance checks.
 
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
-- Interactive preview: **600 × 450**, scaled into the application window without changing the project aspect ratio.
+- Interactive preview: **480 × 360**, scaled into the application window without changing the project aspect ratio.
 - The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
-- Full-resolution offline rendering, frame-rate selection, video export and keyframe automation are subsequent milestones.
+- Offline rendering uses FFmpeg from PATH; the preview remains CPU/Pillow/NumPy based.
 
 ## Requirements and limitations
 
-Python 3.12 (64-bit) recommended. Playback requires an available sounddevice/PortAudio output device.
+Python 3.12 (64-bit) recommended. Playback requires an available sounddevice/PortAudio output device. MP4 export requires FFmpeg on PATH; ffmpeg -version should succeed.
 
 - Decoded audio is currently held in memory; long seven-source sessions can require substantial RAM.
 - MP3 support depends on the installed libsndfile build. WAV, FLAC, AIFF and OGG are preferred.

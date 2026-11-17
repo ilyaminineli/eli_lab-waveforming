@@ -1,0 +1,100 @@
+# M5 — Timeline, Automation and Deterministic Rendering
+
+## Goal
+
+M5 makes a WAVEFORMING composition editable over time and exportable without depending on real-time preview speed. Playback, preview and offline rendering have separate responsibilities so a slow frame cannot block the audio output callback or the Qt interface.
+
+## M5.1 — Timeline
+
+Implemented:
+
+- A time ruler with bar guides derived from BPM and beats-per-bar.
+- Click-to-seek on the timeline and a playhead that follows the shared audio clock.
+- Named marker and section-boundary events.
+- Optional beat snapping when adding markers or sections.
+- Marker deletion near the current playhead.
+- BPM control (20–300) with 4/4 as the default time signature.
+
+The timeline stores time in seconds. BPM affects beat/bar guides and snapping, not the underlying audio clock.
+
+## M5.2 — Parameter automation
+
+Implemented automation lanes:
+
+- Generator Complexity
+- Generator Motion
+- Audio Response
+
+When RECORD AUTOMATION is enabled during playback, changes to the matching generator control are recorded at the current playhead time. The timeline evaluates each lane with linear interpolation by default. HOLD/STEP and SMOOTH interpolation are supported by the data model.
+
+The same evaluated settings are used in the interactive preview and deterministic offline render.
+
+## M5.3 — Project files
+
+Implemented .wfp JSON project save/load:
+
+- Source file paths and each source's gain, pan, mute, solo and analysis state.
+- Layer stack, per-layer source routing, masks, transforms, passes and blend operations.
+- Global generator settings and deterministic seed.
+- Selected paper template and feedback parameters.
+- Timeline BPM, markers, sections and automation lanes.
+
+Media is referenced by its absolute file path; audio is not embedded in the project. When a source is moved, WAVEFORMING reports the unavailable path when opening the project.
+
+## M5.4 — Deterministic offline rendering
+
+Implemented MP4 export:
+
+- Native composition resolution: **1920×1440**.
+- User-selectable output rate: 15, 24, 25 or 30 fps.
+- Audio features are analysed at each exact video frame timestamp from the source PCM buffers.
+- Generator seeds, layer order, automation evaluation and the compositor graph are fixed for the render.
+- A project audio mix is written block-by-block to a temporary WAV, then muxed with RGBA frames through FFmpeg.
+- Export runs in a worker thread with progress reporting and cancellation.
+- Live playback is paused when an export starts to preserve CPU time for the offline render.
+
+For a reproducible output, keep the same audio files, layer state, generator seed, timeline/automation, frame rate, resolution and software version. The export is deterministic for that fixed project state; changes to FFmpeg codec builds can still alter compressed MP4 bytes even when rendered frames are identical.
+
+**FFmpeg is an external executable.** It must be available on PATH. Verify with ffmpeg -version. The application uses H.264 / AAC with the ultrafast x264 preset to reduce encoding overhead. Frame generation itself remains CPU-based.
+
+## M5.5 — Low-power preview and audio scheduling
+
+The current target machine profile supplied for this milestone is:
+
+- AMD Ryzen AI 5 330, reported at 2.00 GHz.
+- Integrated AMD Radeon 820M, 512 MB reported graphics memory.
+- 16 GB installed RAM (15.3 GB usable), 5600 MT/s.
+
+The renderer is CPU/Pillow/NumPy based; it does not currently use the Radeon GPU. M5 therefore reduces CPU work rather than introducing a GPU dependency:
+
+- Preview surface reduced to **480×360** while the project remains **1920×1440**.
+- Preview refresh requested at **8 fps**.
+- A dedicated preview thread owns the compositor. The UI sends immutable snapshots through a one-item latest-frame queue; obsolete pending renders are dropped.
+- Preview frames can finish late and still display in sequence; the UI does not wait for rendering.
+- Live feature analysis is throttled to **8 updates per second** instead of taking and analysing a new FFT window on every 1024-sample audio callback.
+- Each analysis snapshot contains a complete FFT-sized PCM window ending at the current playhead. Dropping a stale queue item therefore never causes an FFT to combine non-contiguous audio.
+- Offline rendering has its own compositor instance and does not alter the live preview's state.
+
+These limits are conservative starting points for the supplied low-power CPU, not a promise of a fixed frame rate under every seven-layer composition. The offline 1920×1440 renderer is intentionally slower than real time.
+
+## Acceptance checks
+
+1. A saved project reopens with its source routing, layer stack, paper template, markers and automation intact.
+2. A marker can be added at the playhead, snapped to a beat, selected by timeline click/seek, and removed near the playhead.
+3. Recording Complexity, Motion or Audio Response while playing creates keyframes on the corresponding lane.
+4. Automation produces the same parameter values in preview and export at the same timestamp.
+5. Rendering the same fixed project twice produces the same RGBA frame sequence before video encoding.
+6. MP4 export includes the project mix and produces a 1920×1440 H.264 video with the selected frame rate.
+7. A late preview frame never blocks audio output or the Qt event loop.
+8. The preview queue never accumulates an unbounded backlog of obsolete frames.
+
+## Next milestone
+
+**M6 — Composition performance and structural editing**
+
+- Structural recipe library: frame, anchor, orbit, plane stack, polyhedron, typographic module and relief layers.
+- Per-layer modulation matrix with smoothing, response curves, quantisation and hold.
+- Marker-driven scene changes and beat/bar-aware transitions.
+- Cached static-layer output and dirty-region invalidation for preview.
+- Optional GPU backend only if profiling proves it helps the supported hardware.
+- Render benchmarks and per-layer profiler on the target laptop.
