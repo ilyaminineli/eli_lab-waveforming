@@ -12,14 +12,15 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QAbstractItemView,
 )
 
-from engine.audio.playback import PlaybackEngine
+from engine.audio.playback import PlaybackEngine, MAX_AUDIO_SOURCES
+from engine.audio.feature_bus import FeatureBus
 from engine.audio.source import AudioSource
 from engine.visual.assets import AssetCatalog
-from engine.visual.canvas import CompositionCanvas
+from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.compositor import VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import LayerStack, VisualLayer
-from engine.visual.composition_director import create_auto_composition, vary_composition
+from engine.visual.composition_director import CompositionDirector, create_auto_composition, vary_composition
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -85,10 +86,14 @@ class MainWindow(QMainWindow):
         self._last_position = 0.0
         self._settings = GeneratorSettings()
         self.layer_stack = LayerStack()
+        self.feature_bus = FeatureBus()
+        self.director = CompositionDirector(mode="SEMI-AUTO")
+        self._director_output = self.director.update({})
+        self._director_variation_pending = False
         self._updating_layer_controls = False
         self._item_ids: dict[str, QListWidgetItem] = {}
 
-        self.assets = AssetCatalog(ROOT / "screens")
+        self.assets = AssetCatalog(ROOT / "resources" / "screens")
         self.compositor = VisualCompositor(self.assets)
         self.audio = PlaybackEngine(self)
         self.audio.state_changed.connect(self._on_playback_state)
@@ -119,6 +124,9 @@ class MainWindow(QMainWindow):
         add.setShortcut("Ctrl+O")
         add.triggered.connect(self.import_audio)
         menu.addAction(add)
+        add_folder = QAction("Import audio folder…", self)
+        add_folder.triggered.connect(self.import_audio_folder)
+        menu.addAction(add_folder)
         menu.addSeparator()
         play = QAction("Play / Pause", self)
         play.setShortcut("Space")
@@ -177,9 +185,12 @@ class MainWindow(QMainWindow):
         source_title.setObjectName("section")
         add_source = QPushButton("+ ADD SOURCE")
         add_source.clicked.connect(self.import_audio)
+        add_folder = QPushButton("+ ADD FOLDER")
+        add_folder.clicked.connect(self.import_audio_folder)
         source_heading.addWidget(source_title)
         source_heading.addStretch()
         source_heading.addWidget(add_source)
+        source_heading.addWidget(add_folder)
         left.addLayout(source_heading)
 
         source_panel = QFrame()
@@ -229,6 +240,11 @@ class MainWindow(QMainWindow):
         auto_row.addWidget(self.vary_button)
         auto_row.addWidget(self.auto_variation_check)
         generator_form.addRow(auto_row)
+        self.director_mode = QComboBox()
+        self.director_mode.addItems(list(CompositionDirector.MODES))
+        self.director_mode.setCurrentText("SEMI-AUTO")
+        generator_form.addRow("COMPOSITION DIRECTOR", self.director_mode)
+        self.director_mode.currentTextChanged.connect(self._director_mode_changed)
         self.auto_compose_button.clicked.connect(self.auto_compose)
         self.vary_button.clicked.connect(self.vary_composition)
         self.auto_variation_check.toggled.connect(self._auto_variation_changed)
@@ -350,7 +366,7 @@ class MainWindow(QMainWindow):
         preview_header.addWidget(self.zoom)
         right_layout.addLayout(preview_header)
 
-        self.canvas = CompositionCanvas(self.assets)
+        self.canvas = GpuCompositionCanvas(self.assets)
         right_layout.addWidget(self.canvas, 1)
 
         transport = QHBoxLayout()
@@ -444,10 +460,22 @@ class MainWindow(QMainWindow):
         self._refresh_layer_list(layer.layer_id)
         self._render_frame()
 
+    def _visual_channel_ids(self) -> list[str]:
+        groups = list(dict.fromkeys(
+            f"group:{source.group_id}" for source in self.sources.values() if source.group_id
+        ))
+        return groups or list(self.sources.keys())
+
+    def _director_mode_changed(self, mode: str) -> None:
+        self.director.set_mode(mode)
+        packet_position = float(self._last_packet.get("position", self._last_position))
+        self._director_output = self.director.update(self._last_packet, packet_position)
+        self._render_frame()
+
     def auto_compose(self) -> None:
         seed = int(time_ns() & 0x7FFFFFFF)
         self.layer_stack.layers = create_auto_composition(
-            self.compositor.generator_names(), list(self.sources.keys()), seed
+            self.compositor.generator_names(), self._visual_channel_ids(), seed
         )
         self._settings.seed = seed
         self.compositor.reset_feedback()
@@ -587,22 +615,61 @@ class MainWindow(QMainWindow):
             self, "Import audio sources", "",
             "Audio files (*.wav *.flac *.aiff *.aif *.ogg *.mp3);;All files (*)",
         )
-        for filename in paths:
-            if len(self.sources) >= 7:
-                QMessageBox.information(self, "Source limit", "The project supports up to seven audio sources.")
+        self._import_audio_paths([Path(filename) for filename in paths])
+
+    def import_audio_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Import audio folder")
+        if not folder:
+            return
+        root = Path(folder)
+        extensions = {".wav", ".flac", ".aiff", ".aif", ".ogg", ".mp3"}
+        paths = [
+            path for path in sorted(root.rglob("*"))
+            if path.is_file() and path.suffix.lower() in extensions
+        ]
+        self._import_audio_paths(paths, group_root=root)
+
+    def _import_audio_paths(self, paths: list[Path], group_root: Path | None = None) -> None:
+        imported = 0
+        failed: list[str] = []
+        for path in paths:
+            if len(self.sources) >= MAX_AUDIO_SOURCES:
+                QMessageBox.information(
+                    self, "Source capacity",
+                    f"The current session reached its {MAX_AUDIO_SOURCES}-source limit.",
+                )
                 break
             try:
-                source = AudioSource.from_file(Path(filename))
+                source = AudioSource.from_file(
+                    path, target_sample_rate=self.audio.sample_rate
+                )
+                if group_root is not None:
+                    relative_parent = path.parent.relative_to(group_root)
+                    relative = "" if str(relative_parent) == "." else relative_parent.as_posix()
+                    group_name = group_root.name if not relative else f"{group_root.name}/{relative}"
+                else:
+                    group_name = path.parent.name or "Ungrouped"
+                source.group_name = group_name
+                source.group_id = group_name.casefold().replace("\\", "/")
                 track_id = self.audio.add_source(source)
                 self.sources[track_id] = source
                 row = SourceRow(source, track_id, self._remove_source)
                 self.source_rows.insertWidget(self.source_rows.count()-1, row)
+                imported += 1
             except Exception as exc:
-                QMessageBox.warning(self, "Audio import failed", f"{Path(filename).name}\n{exc}")
+                failed.append(f"{path.name}: {exc}")
+
         self._refresh_source_options()
         self._update_status()
         self._update_time_label()
         self._render_frame()
+        if failed:
+            QMessageBox.warning(
+                self, "Some audio files could not be imported",
+                "\n".join(failed[:12]) + (f"\n…and {len(failed)-12} more" if len(failed) > 12 else ""),
+            )
+        elif imported == 0 and paths:
+            QMessageBox.information(self, "No audio imported", "No compatible audio files were imported.")
 
     def _refresh_source_options(self) -> None:
         if not hasattr(self, "layer_source"):
@@ -611,6 +678,12 @@ class MainWindow(QMainWindow):
         self.layer_source.blockSignals(True)
         self.layer_source.clear()
         self.layer_source.addItem("MIX / ALL", "")
+        groups: dict[str, str] = {}
+        for source in self.sources.values():
+            if source.group_id:
+                groups.setdefault(source.group_id, source.group_name or source.group_id)
+        for group_id, group_name in groups.items():
+            self.layer_source.addItem(f"GROUP / {group_name}", f"group:{group_id}")
         for track_id, source in self.sources.items():
             self.layer_source.addItem(source.name, track_id)
         index = self.layer_source.findData(current)
@@ -646,21 +719,60 @@ class MainWindow(QMainWindow):
         )
 
     def _render_frame(self, *_args) -> None:
-        image = self.compositor.render(
-            packet=self._last_packet,
-            seconds=self._last_position,
-            layers=self.layer_stack.layers,
-            settings=self._settings,
-            screen=self.screen.currentText(),
-            feedback_enabled=self.feedback_enabled.isChecked(),
-            feedback_amount=self.feedback_amount.value()/100.0,
-            feedback_decay=self.feedback_decay.value()/100.0,
-            feedback_shift=self.feedback_shift.value()/100.0,
+        if self._director_variation_pending and self.director.mode == "AUTO" and self.layer_stack.layers:
+            self._director_variation_pending = False
+            seed = int(time_ns() & 0x7FFFFFFF)
+            selected = self._current_layer()
+            selected_id = selected.layer_id if selected else self.layer_stack.layers[0].layer_id
+            self.layer_stack.layers = vary_composition(
+                self.layer_stack.layers, self.compositor.generator_names(), seed
+            )
+            self._settings.seed = seed
+            self.compositor.reset_feedback()
+            self._refresh_layer_list(selected_id)
+
+        motion_scale = float(getattr(self._director_output, "motion_scale", 1.0))
+        complexity_scale = float(getattr(self._director_output, "complexity_scale", 1.0))
+        active_settings = GeneratorSettings(
+            complexity=clamp(self._settings.complexity * complexity_scale, 5.0, 100.0),
+            motion=clamp(self._settings.motion * motion_scale, 0.0, 100.0),
+            sensitivity=self._settings.sensitivity,
+            seed=self._settings.seed,
         )
-        self.canvas.set_frame(image)
+        if getattr(self.canvas, "gpu_active", False) and not self.feedback_enabled.isChecked():
+            scene = self.compositor.render_scene(
+                packet=self._last_packet,
+                seconds=self._last_position,
+                layers=self.layer_stack.layers,
+                settings=active_settings,
+                screen=self.screen.currentText(),
+            )
+            self.canvas.set_scene(scene)
+        else:
+            image = self.compositor.render(
+                packet=self._last_packet,
+                seconds=self._last_position,
+                layers=self.layer_stack.layers,
+                settings=active_settings,
+                screen=self.screen.currentText(),
+                feedback_enabled=self.feedback_enabled.isChecked(),
+                feedback_amount=self.feedback_amount.value()/100.0,
+                feedback_decay=self.feedback_decay.value()/100.0,
+                feedback_shift=self.feedback_shift.value()/100.0,
+            )
+            self.canvas.set_frame(image)
 
     def _on_features(self, packet: dict) -> None:
-        self._last_packet = packet
+        source_groups = {
+            track_id: source.group_id
+            for track_id, source in self.sources.items()
+            if source.group_id
+        }
+        self._last_packet = self.feature_bus.update(packet, source_groups)
+        packet_position = float(self._last_packet.get("position", self._last_position))
+        self._director_output = self.director.update(self._last_packet, packet_position)
+        if self._director_output.request_variation:
+            self._director_variation_pending = True
         if not self.audio.is_playing:
             self._render_frame()
 
@@ -680,6 +792,9 @@ class MainWindow(QMainWindow):
         self._last_position = seconds
         if seconds < previous:
             self.compositor.reset_feedback()
+            self.feature_bus.reset()
+            self.director.reset()
+            self._director_output = self.director.update({})
         self._update_time_label()
         duration = self.audio.duration
         if duration > 0 and not self.seek.isSliderDown():
@@ -700,7 +815,11 @@ class MainWindow(QMainWindow):
     def _update_status(self) -> None:
         count = len(self.sources)
         state = "PLAYING" if self.audio.is_playing else "PAUSED" if self._last_position > 0 else "READY"
-        self.status.setText(f"{state}  ·  {count:02d} / 07 SOURCES" if count else "NO AUDIO LOADED")
+        director = self.director.state
+        self.status.setText(
+            f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES  ·  {director}"
+            if count else f"NO AUDIO LOADED  ·  {director}"
+        )
 
     def toggle_playback(self) -> None:
         if self.audio.is_playing:

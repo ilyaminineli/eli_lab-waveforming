@@ -409,6 +409,44 @@ class VisualCompositor:
             transformed, position, screen, layer.mask_mode, frame_box, self._mask
         )
 
+    def render_scene(self, packet: dict | None, seconds: float,
+                     layers: list[VisualLayer] | None = None,
+                     settings: GeneratorSettings | None = None,
+                     screen: str = "No guide") -> dict:
+        """Render generator surfaces on CPU and leave layer blending to a GPU backend."""
+        settings = settings or GeneratorSettings()
+        layers = layers or []
+        background = Image.new("RGBA", PREVIEW_SIZE, (10, 10, 10, 255))
+        guide = self._screen(screen)
+        if guide is not None:
+            background.alpha_composite(guide)
+
+        frame_box = self._frame_box(screen)
+        rendered_layers = []
+        for layer in layers:
+            if not layer.visible:
+                continue
+            rendered = self._render_layer(
+                layer, packet, seconds, settings, screen, frame_box
+            )
+            if rendered is None:
+                continue
+            image, position = rendered
+            rendered_layers.append({
+                "image": image,
+                "position": position,
+                "blend_mode": layer.blend_mode,
+                "opacity": layer.opacity,
+                "layer_id": layer.layer_id,
+            })
+        return {
+            "background": background,
+            "layers": rendered_layers,
+            "size": PREVIEW_SIZE,
+            "time": float(seconds),
+            "screen": screen,
+        }
+
     def render(self, packet: dict | None, seconds: float,
                layers: list[VisualLayer] | None = None,
                settings: GeneratorSettings | None = None,

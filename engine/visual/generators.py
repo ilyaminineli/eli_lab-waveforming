@@ -34,8 +34,14 @@ class VisualMetrics:
     def from_packet(cls, packet: dict | None, source_id: str | None = None) -> "VisualMetrics":
         packet = packet or {}
         frame_map = packet.get("frames", {})
+        group_map = packet.get("group_frames", {})
         source_ids = list(packet.get("source_ids") or frame_map.keys())
-        if source_id:
+        if source_id and source_id in group_map:
+            # A project folder is one visual channel even when it contains
+            # dozens of stems. FeatureBus supplies its aggregate FeatureFrame.
+            frames = [group_map[source_id]]
+            indices = [0]
+        elif source_id:
             if source_id not in frame_map:
                 return cls()
             frames = [frame_map[source_id]]

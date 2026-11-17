@@ -30,10 +30,12 @@ The repository includes `pytest.ini` and `tests/conftest.py` so imports such as 
 
 ## M1 — Synchronized audio and analysis
 
-- Up to seven sources share one output clock and can be loaded, removed, muted, soloed, panned and gain-adjusted independently.
+- Up to 64 sources share one output clock and can be loaded, removed, muted, soloed, panned and gain-adjusted independently. Folder import assigns stems to project groups for group-level visual routing.
+- Long stems matching the output sample rate can use a background disk reader with a bounded PCM ring buffer; shorter stems and sources requiring resampling are preloaded into memory.
 - Sources with different sample rates are converted to the selected output device rate.
 - Shared play/pause/stop, seek and loop transport.
 - Per-source RMS, peak, FFT spectrum, logarithmic bands, spectral centroid, rolloff, bandwidth, flatness, entropy, spectral flux, zero-crossing rate, stereo width and crest factor.
+- A feature bus derives temporally smoothed track, group and master envelopes, activity density, novelty and transient events. Pairwise correlation is retained for small sessions and skipped above 12 tracks to avoid quadratic analysis overhead.
 - Pairwise zero-lag correlation between active source blocks.
 - FFT and descriptor calculations run on a dedicated analysis thread, outside the PortAudio output callback.
 
@@ -97,7 +99,7 @@ The automatic variation is intentionally a composition jump, not a crossfade. Be
 
 - Project coordinate system: **1920 × 1440** (4:3).
 - Interactive preview: **600 × 450**, scaled into the application window without changing the project aspect ratio.
-- The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
+- The interactive preview has an optional OpenGL 3.3/GLSL layer compositor and GPU presentation path. Existing mathematical generators and paper-relief preparation remain CPU-side during this migration; the Pillow compositor remains the compatibility and feedback fallback.
 - Full-resolution offline rendering, frame-rate selection, video export and keyframe automation are subsequent milestones.
 
 ## Requirements and limitations
@@ -106,4 +108,5 @@ Python 3.12 (64-bit) recommended. Playback requires an available sounddevice/Por
 
 - Decoded audio is currently held in memory; long seven-source sessions can require substantial RAM.
 - MP3 support depends on the installed libsndfile build. WAV, FLAC, AIFF and OGG are preferred.
-- The frame-region coordinates are stored per screen template in engine/visual/assets.py and can be tuned if a guide design changes.
+- Native layout profiles are stored in resources/layout/layout_profiles.json. The canvas remains 1920×1440, the known frame is 1322×1058, and seven pre-designed screens are discovered from resources/screens/pre_designed. Existing SCREEN 1 and SCREEN 2 frame masks remain backward-compatible.
+- The PSD-to-HTML files in resources/layout are reference exports only; tools/inspect_layout_export.py inventories them offline. The realtime application loads optimised raster/vector screen assets and compact layout metadata, not the 28 MB HTML exports.

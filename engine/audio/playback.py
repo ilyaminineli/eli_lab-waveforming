@@ -14,14 +14,20 @@ from scipy.signal import resample_poly
 
 from .analyzer import AudioAnalyzer, FeatureFrame
 from .source import AudioSource
+from .storage import StreamedAudioBuffer
+
+
+MAX_AUDIO_SOURCES = 64
 
 
 @dataclass(slots=True)
 class _Track:
     track_id: str
     source: AudioSource
-    pcm: np.ndarray
+    pcm: np.ndarray | None
     cursor: int = 0
+    stream: StreamedAudioBuffer | None = None
+    frame_count: int = 0
 
 
 class PlaybackEngine(QObject):
@@ -75,7 +81,7 @@ class PlaybackEngine(QObject):
     @property
     def duration(self) -> float:
         with self._lock:
-            frames = max((len(track.pcm) for track in self._tracks), default=0)
+            frames = max((track.frame_count for track in self._tracks), default=0)
         return frames / self.sample_rate
 
     @property
@@ -84,37 +90,52 @@ class PlaybackEngine(QObject):
             return self._master_frame / self.sample_rate
 
     def add_source(self, source: AudioSource) -> str:
-        data = np.asarray(source.samples, dtype=np.float32)
-        if data.ndim != 2 or data.shape[1] < 1:
-            raise ValueError("Audio source must contain at least one channel.")
-        if data.shape[1] == 1:
-            data = np.repeat(data, 2, axis=1)
-        elif data.shape[1] > 2:
-            data = data[:, :2]
-        if source.sample_rate != self.sample_rate:
-            divisor = gcd(int(source.sample_rate), int(self.sample_rate))
-            up = self.sample_rate // divisor
-            down = int(source.sample_rate) // divisor
-            data = resample_poly(data, up, down, axis=0).astype(np.float32, copy=False)
-        data = np.ascontiguousarray(data, dtype=np.float32)
-        # Keep only the device-rate buffer to avoid retaining a second full-length
-        # decoded copy alongside the resampled playback copy.
-        source.samples = data
-        source.sample_rate = self.sample_rate
+        if len(self._tracks) >= MAX_AUDIO_SOURCES:
+            raise ValueError(f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources.")
+
+        stream = None
+        data = source.samples
+        if data is None and source.storage_mode == "stream" and source.sample_rate == self.sample_rate:
+            stream = StreamedAudioBuffer(source.path, source.frame_count, source.sample_rate)
+        else:
+            if data is None:
+                data = source.load_into_memory()
+            data = np.asarray(data, dtype=np.float32)
+            if data.ndim != 2 or data.shape[1] < 1:
+                raise ValueError("Audio source must contain at least one channel.")
+            if data.shape[1] == 1:
+                data = np.repeat(data, 2, axis=1)
+            elif data.shape[1] > 2:
+                data = data[:, :2]
+            if source.sample_rate != self.sample_rate:
+                divisor = gcd(int(source.sample_rate), int(self.sample_rate))
+                up = self.sample_rate // divisor
+                down = int(source.sample_rate) // divisor
+                data = resample_poly(data, up, down, axis=0).astype(np.float32, copy=False)
+            data = np.ascontiguousarray(data, dtype=np.float32)
+            source.samples = data
+            source.sample_rate = self.sample_rate
+            source.frame_count = len(data)
+            source.storage_mode = "memory"
+
+        frame_count = int(source.frame_count if stream is not None else len(data))
         track_id = uuid.uuid4().hex[:10]
         with self._lock:
-            # Sources imported during a session join at the current shared playhead.
-            cursor = min(self._master_frame, len(data))
-            self._tracks.append(_Track(track_id, source, data, cursor))
+            cursor = min(self._master_frame, frame_count)
+            self._tracks.append(_Track(track_id, source, data, cursor, stream, frame_count))
         return track_id
 
     def remove_source(self, track_id: str) -> None:
         with self._lock:
+            removed = [track for track in self._tracks if track.track_id == track_id]
             self._tracks = [track for track in self._tracks if track.track_id != track_id]
             self._master_frame = min(self._master_frame, max(0, self._max_frames() - 1))
+        for track in removed:
+            if track.stream is not None:
+                track.stream.close()
 
     def _max_frames(self) -> int:
-        return max((len(track.pcm) for track in self._tracks), default=0)
+        return max((track.frame_count for track in self._tracks), default=0)
 
     def configure_analysis(self, fft_size: int, band_count: int, window: str) -> None:
         with self._lock:
@@ -172,7 +193,7 @@ class PlaybackEngine(QObject):
             maximum = self._max_frames()
             self._master_frame = min(target, maximum)
             for track in self._tracks:
-                track.cursor = min(self._master_frame, len(track.pcm))
+                track.cursor = min(self._master_frame, track.frame_count)
         self.position_changed.emit(self.position)
 
     def _audio_callback(self, outdata, frames, time_info, status) -> None:
@@ -190,39 +211,85 @@ class PlaybackEngine(QObject):
             for track in tracks:
                 source = track.source
                 start = track.cursor
-                block = np.zeros((frames, 2), dtype=np.float32)
-                take = 0
-                if loop and len(track.pcm) > 0:
-                    cursor = start % len(track.pcm)
-                    written = 0
-                    while written < frames:
-                        segment = min(frames - written, len(track.pcm) - cursor)
-                        block[written:written + segment] = track.pcm[cursor:cursor + segment]
-                        written += segment
-                        cursor = (cursor + segment) % len(track.pcm)
-                    track.cursor = cursor
-                    take = frames
+                frame_count = track.frame_count
+                audible = not source.muted and (not has_solo or source.solo)
+                gain = float(source.gain)
+                pan = float(np.clip(source.pan, -1.0, 1.0))
+                left_gain = gain * (1.0 if pan <= 0 else 1.0 - pan)
+                right_gain = gain * (1.0 if pan >= 0 else 1.0 + pan)
+
+                # The disk-backed reader only copies from its prefilled ring.
+                # A cache miss produces silence; it never blocks the audio callback.
+                if track.stream is not None:
+                    block = np.zeros((frames, 2), dtype=np.float32)
+                    if frame_count <= 0:
+                        take = 0
+                    elif loop:
+                        position = start % frame_count
+                        offset = 0
+                        remaining = frames
+                        while remaining:
+                            segment = min(remaining, frame_count - position)
+                            track.stream.read_into(position, block[offset:offset + segment])
+                            offset += segment
+                            remaining -= segment
+                            position = 0
+                        track.cursor = (start + frames) % frame_count
+                        take = frames
+                        all_finished = False
+                    else:
+                        take = min(frames, max(0, frame_count - start))
+                        if take:
+                            track.stream.read_into(start, block[:take])
+                        track.cursor = min(start + frames, frame_count)
+                        if track.cursor < frame_count:
+                            all_finished = False
+                    if source.analysis_enabled:
+                        snapshots[track.track_id] = (block.copy(), self.sample_rate)
+                    if audible and take:
+                        block[:, 0] *= left_gain
+                        block[:, 1] *= right_gain
+                        mix += block
+                    continue
+
+                pcm = track.pcm
+                if pcm is None or frame_count <= 0:
+                    continue
+                analysis_block = np.zeros((frames, 2), dtype=np.float32) if source.analysis_enabled else None
+
+                if loop:
+                    position = start % frame_count
+                    offset = 0
+                    remaining = frames
+                    while remaining:
+                        segment = min(remaining, frame_count - position)
+                        source_block = pcm[position:position + segment]
+                        if analysis_block is not None:
+                            analysis_block[offset:offset + segment] = source_block
+                        if audible:
+                            mix[offset:offset + segment, 0] += source_block[:, 0] * left_gain
+                            mix[offset:offset + segment, 1] += source_block[:, 1] * right_gain
+                        offset += segment
+                        remaining -= segment
+                        position = 0
+                    track.cursor = (start + frames) % frame_count
                     all_finished = False
+                    take = frames
                 else:
-                    available = len(track.pcm) - start
-                    take = min(frames, max(0, available))
-                    if take > 0:
-                        block[:take] = track.pcm[start:start + take]
-                    track.cursor = min(start + frames, len(track.pcm))
-                    if track.cursor < len(track.pcm):
+                    take = min(frames, max(0, frame_count - start))
+                    if take:
+                        source_block = pcm[start:start + take]
+                        if analysis_block is not None:
+                            analysis_block[:take] = source_block
+                        if audible:
+                            mix[:take, 0] += source_block[:, 0] * left_gain
+                            mix[:take, 1] += source_block[:, 1] * right_gain
+                    track.cursor = min(start + frames, frame_count)
+                    if track.cursor < frame_count:
                         all_finished = False
 
-                if source.analysis_enabled:
-                    snapshots[track.track_id] = (block.copy(), self.sample_rate)
-
-                audible = not source.muted and (not has_solo or source.solo)
-                if audible and take > 0:
-                    pan = float(np.clip(source.pan, -1.0, 1.0))
-                    left_gain = 1.0 if pan <= 0 else 1.0 - pan
-                    right_gain = 1.0 if pan >= 0 else 1.0 + pan
-                    block[:, 0] *= float(source.gain) * left_gain
-                    block[:, 1] *= float(source.gain) * right_gain
-                    mix += block
+                if analysis_block is not None:
+                    snapshots[track.track_id] = (analysis_block, self.sample_rate)
 
             if loop and self._max_frames() > 0:
                 self._master_frame = (self._master_frame + frames) % self._max_frames()
@@ -231,8 +298,8 @@ class PlaybackEngine(QObject):
             if all_finished and not loop:
                 self._playing = False
 
-            # The callback only performs bounded copies and a non-blocking queue operation.
-            # FFTs and all expensive descriptors run on the analysis worker.
+            # Analysis remains asynchronous. Keep only the newest packet when
+            # the worker falls behind so visual latency cannot grow unbounded.
             if snapshots:
                 item = (snapshots, self._master_frame)
                 try:
@@ -247,10 +314,11 @@ class PlaybackEngine(QObject):
                     except Full:
                         pass
 
-            # A soft ceiling avoids hard digital clipping when several sources sum.
             magnitude = np.abs(mix)
             over = magnitude > 0.98
-            mix[over] = np.sign(mix[over]) * (0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02))
+            mix[over] = np.sign(mix[over]) * (
+                0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
+            )
             np.copyto(outdata, mix)
             finished_now = not self._playing
 
@@ -299,13 +367,16 @@ class PlaybackEngine(QObject):
 
             ids = list(correlation_blocks)
             matrix = np.eye(len(ids), dtype=np.float32)
-            for i in range(len(ids)):
-                a = correlation_blocks[ids[i]]
-                for j in range(i + 1, len(ids)):
-                    b = correlation_blocks[ids[j]]
-                    denom = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
-                    corr = float(np.dot(a, b) / denom)
-                    matrix[i, j] = matrix[j, i] = np.clip(corr, -1.0, 1.0)
+            # Full pairwise correlation is useful for small sessions, but
+            # scales quadratically and is not needed for group-based routing.
+            if len(ids) <= 12:
+                for i in range(len(ids)):
+                    a = correlation_blocks[ids[i]]
+                    for j in range(i + 1, len(ids)):
+                        b = correlation_blocks[ids[j]]
+                        denom = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
+                        corr = float(np.dot(a, b) / denom)
+                        matrix[i, j] = matrix[j, i] = np.clip(corr, -1.0, 1.0)
             if frames:
                 self.features_ready.emit({
                     "frames": frames,
@@ -326,6 +397,11 @@ class PlaybackEngine(QObject):
             self._playing = False
             stream = self._stream
             self._stream = None
+            tracks = tuple(self._tracks)
+            self._tracks.clear()
+        for track in tracks:
+            if track.stream is not None:
+                track.stream.close()
         if stream is not None:
             try:
                 stream.stop()
