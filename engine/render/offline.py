@@ -169,9 +169,10 @@ class OfflineRenderWorker(QThread):
                 analyzer = AudioAnalyzer(self.fft_size, self.band_count, self.window)
                 analyzers[track_id] = analyzer
             frame_map[track_id] = analyzer.analyze(block, self.sample_rate)
-            mono_blocks[track_id] = np.mean(block, axis=1)
+            if len(analysis_sources) <= 12:
+                mono_blocks[track_id] = np.mean(block, axis=1)
 
-        ids = list(mono_blocks)
+        ids = list(frame_map)
         correlation = np.eye(len(ids), dtype=np.float32)
         if len(ids) <= 12:
             for i in range(len(ids)):
@@ -239,7 +240,7 @@ class OfflineRenderWorker(QThread):
                 analyzers = {}
 
                 try:
-                    feature_bus = FeatureBus()
+                    feature_bus = FeatureBus(analysis_rate=8.0)
                     source_groups = {
                         source["track_id"]: source["group_id"]
                         for source in self.sources if source["group_id"]
