@@ -65,6 +65,7 @@ class PreviewRenderWorker(threading.Thread):
         feedback_decay: float,
         feedback_shift: float,
         sequence: int,
+        gpu_composite: bool = False,
     ) -> None:
         # Snapshot UI-owned state. Audio feature packets are immutable after emit;
         # large NumPy arrays are shared read-only to avoid duplicating RAM.
@@ -79,6 +80,7 @@ class PreviewRenderWorker(threading.Thread):
             "feedback_decay": float(feedback_decay),
             "feedback_shift": float(feedback_shift),
             "sequence": int(sequence),
+            "gpu_composite": bool(gpu_composite),
         }
         try:
             self._queue.put_nowait(request)
@@ -132,17 +134,23 @@ class PreviewRenderWorker(threading.Thread):
                 elif reset:
                     self._compositor.reset_feedback()
                 try:
-                    image = self._compositor.render(
-                        packet=request["packet"],
-                        seconds=request["seconds"],
-                        layers=request["layers"],
-                        settings=request["settings"],
-                        screen=request["screen"],
-                        feedback_enabled=request["feedback_enabled"],
-                        feedback_amount=request["feedback_amount"],
-                        feedback_decay=request["feedback_decay"],
-                        feedback_shift=request["feedback_shift"],
-                    )
+                    render_args = {
+                        "packet": request["packet"],
+                        "seconds": request["seconds"],
+                        "layers": request["layers"],
+                        "settings": request["settings"],
+                        "screen": request["screen"],
+                    }
+                    if request["gpu_composite"] and not request["feedback_enabled"]:
+                        image = self._compositor.render_scene(**render_args)
+                    else:
+                        image = self._compositor.render(
+                            **render_args,
+                            feedback_enabled=request["feedback_enabled"],
+                            feedback_amount=request["feedback_amount"],
+                            feedback_decay=request["feedback_decay"],
+                            feedback_shift=request["feedback_shift"],
+                        )
                     self.signals.frame_ready.emit(
                         image, request["seconds"], request["sequence"]
                     )

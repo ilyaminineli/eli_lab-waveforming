@@ -913,3 +913,43 @@ Highly autonomous generative composition
 Use these development decisions&#x20;
 
 **My overall vision:** WAVEFORMING should feel less like a conventional audio visualiser and more like a programmable mathematical instrument that happens to understand music. It should preserve the visual personality you've established while becoming capable of producing genuinely unpredictable, complex and coherent IDM audiovisual compositions.
+
+## Implementation decisions and layout integration (November 2026)
+
+This section supersedes earlier provisional choices where they conflict with the decisions below.
+
+### Locked project configuration
+
+- One shared composition engine for offline MV creation and live audiovisual performance.
+- Native project/export canvas: **1920 × 1440** (4:3).
+- Known printable frame: **1322 × 1058 px**. The initial centered fallback rectangle is **(299, 191)–(1621, 1249)** in native canvas coordinates; templates can override it with exact per-screen coordinates.
+- Hybrid audio storage: preload short/ordinary stems and stream long stems through background readers. Disk I/O must never occur in the PortAudio callback. Streaming is currently selected only for long sources matching the device sample rate; mismatched sources are preloaded and resampled before playback.
+- Composition direction has three modes: **MANUAL**, **SEMI-AUTO**, and **AUTO**. Semi-auto modifies continuous visual behaviour while retaining human control over structure. Auto may request structural variations from persistent musical evidence, with cooldown and hysteresis.
+- The same composition graph is intended for preview, live output and deterministic offline rendering. Export/muxing is a later milestone, not yet implemented.
+- GPU rendering is used for preview layer compositing and presentation where OpenGL 3.3 is available. Existing generators and paper-relief preparation remain a CPU compatibility path while shader-native instruments are migrated.
+
+### Layout and PSD-to-HTML exports
+
+The repository contains two large PSD-to-HTML reference exports:
+- `resources/layout/layout.html`
+- `resources/layout/layout_simple.html`
+
+It also contains seven pre-designed screen plates in `resources/screens/pre_designed/`.
+
+The HTML exports are **reference material, not runtime assets**. Do not parse the 28 MB documents during application startup or on the rendering thread. Use `tools/inspect_layout_export.py` to inventory their positioned elements and image references offline, then transfer verified frame rectangles and template metadata into `resources/layout/layout_profiles.json`. Optimised PNG/WebP/SVG layers should be used by the application; retain the original HTML untouched as a design archive.
+
+The known 1322×1058 frame is represented in native 1920×1440 coordinates. Per-screen profiles must override the centered fallback when the PSD export establishes a different position or size. Existing SCREEN 1 and SCREEN 2 masks remain unchanged for backwards compatibility.
+
+### Milestone order
+
+1. **M1 — multichannel/session foundation:** 64-source capacity, folder-grouped import, project manifest, feature bus, group routing, hybrid storage and no full pairwise correlation for large sessions.
+2. **M2 — GPU render graph:** OpenGL/GLSL compositor, persistent textures/framebuffers, GPU feedback and blend passes, frame-time diagnostics. Retain CPU fallback.
+3. **M3 — visual instruments:** shader-native oscillatory, recursive, vector-field, signal/glitch and structural instruments.
+4. **M4 — composition director:** compositional roles, state machine, visual memory, controlled variations and reproducible seeds.
+5. **M5 — modulation/timeline:** source/group/master routing, parameter transforms, events, markers, automation and section analysis.
+6. **M6 — performance:** live overrides, scene snapshots, MIDI/OSC and recordable gestures.
+7. **M7 — offline MV export:** deterministic 1920×1440 rendering, frame-rate control and audio/video muxing.
+
+### Current implementation notes
+
+The first migration slice adds a feature and project model, group-aware audio feature aggregation, a director API with MANUAL / SEMI-AUTO / AUTO modes, 64-source folder import, optional long-stem streaming, OpenGL layer compositing and dynamic discovery of the seven pre-designed screen images. It is an architectural foundation: GPU-native generators, complete project-session UI save/load, deterministic offline video export and timeline automation remain future work.

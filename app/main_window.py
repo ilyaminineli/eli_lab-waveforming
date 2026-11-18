@@ -733,6 +733,7 @@ class MainWindow(QMainWindow):
         data = {
             "format": "eli_lab.waveforming",
             "version": 1,
+            "director_mode": self.director.mode,
             "settings": asdict(self._settings),
             "layers": self.layer_stack.to_list(),
             "timeline": self.timeline.to_dict(),
@@ -822,6 +823,7 @@ class MainWindow(QMainWindow):
             if layer.source_id:
                 layer.source_id = source_id_map.get(layer.source_id, "")
         self.timeline = Timeline.from_dict(data.get("timeline"))
+        self.director_mode.setCurrentText(data.get("director_mode", "SEMI-AUTO"))
         self.timeline_widget.set_timeline(self.timeline)
         self.bpm.setValue(self.timeline.bpm)
         self.screen.setCurrentText(data.get("screen", "SCREEN 1 / BLACK"))
@@ -910,6 +912,7 @@ class MainWindow(QMainWindow):
                 "decay": self.feedback_decay.value()/100.0,
                 "shift": self.feedback_shift.value()/100.0,
             },
+            director_mode=self.director.mode,
         )
         self._export_progress.canceled.connect(self._export_worker.cancel)
         self._export_worker.progress.connect(self._on_export_progress)

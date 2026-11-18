@@ -2,6 +2,18 @@
 
 An experimental audio-reactive visual composition workstation for abstract IDM-style motion graphics. The visual system is built from sound descriptors, mathematical generators and layered compositing—not standard equalizer displays.
 
+## Multichannel, generative direction and GPU preview
+
+The integrated branch combines the M5 timeline and deterministic export workflow with the multichannel evolution implementation:
+
+- Up to **64 audio sources**, recursive folder import and folder-based visual groups.
+- Hybrid audio storage: short or sample-rate-mismatched stems are preloaded; long device-rate-matched stems use a background ring reader. The audio callback performs no disk I/O.
+- A temporal feature bus derives smoothed track, group and master descriptors, onset density, novelty and transient events. Pairwise correlation is limited to 12 sources to avoid quadratic work in large sessions.
+- MANUAL / SEMI-AUTO / AUTO composition director modes, audio-informed motion and complexity control, hysteresis and cooldown-limited structural variation.
+- OpenGL 3.3 layer blending for the interactive preview, with Pillow retained for temporal feedback and compatibility. Generator simulation and paper-relief preparation remain CPU-side.
+- Screen plates and layout profiles are loaded from `resources/screens` and `resources/layout`. The native canvas remains 1920×1440; the seven pre-designed plates use the 1322×1058 frame, while legacy SCREEN 1 / SCREEN 2 masks remain unchanged.
+- The M5 latest-frame preview worker, timeline automation, project save/load and deterministic offline MP4 export remain in place. GPU-native instruments and device-specific Windows performance still require separate validation.
+
 ## Launch from PyCharm
 
 The application entry point is **main.py in the repository root**.
