@@ -269,6 +269,44 @@ class VisualCompositor:
         rgba[..., :3][visible] = tinted[visible]
         return Image.fromarray(rgba, "RGBA")
 
+    @staticmethod
+    def _apply_director_effects(
+        image: Image.Image, packet: dict | None, seconds: float, layer_id: str
+    ) -> Image.Image:
+        """Apply deterministic, restrained glitch and accent impulses to one layer."""
+        output = (packet or {}).get("director_output") or {}
+        glitch = float(np.clip(output.get("glitch_amount", 0.0), 0.0, 1.0))
+        accent = float(np.clip(output.get("accent_amount", 0.0), 0.0, 1.0))
+        if glitch <= 0.001 and accent <= 0.001:
+            return image
+
+        rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
+        height, width = rgba.shape[:2]
+        if glitch > 0.04 and width > 2 and height > 2:
+            layer_seed = sum((index + 1) * ord(char) for index, char in enumerate(layer_id))
+            seed = (int(round(seconds * 30.0)) * 1000003 + layer_seed) & 0xFFFFFFFF
+            rng = np.random.default_rng(seed)
+            strips = 1 + int(glitch * 5)
+            max_shift = max(1, int(width * (0.006 + glitch * 0.035)))
+            max_height = max(2, int(height * 0.035))
+            for _ in range(strips):
+                y0 = int(rng.integers(0, max(1, height - 1)))
+                strip_height = int(rng.integers(1, max_height + 1))
+                y1 = min(height, y0 + strip_height)
+                shift = int(rng.integers(-max_shift, max_shift + 1))
+                rgba[y0:y1] = np.roll(rgba[y0:y1], shift, axis=1)
+
+        if accent > 0.001:
+            visible = rgba[..., 3] > 0
+            rgb = rgba[..., :3].astype(np.float32)
+            rgb[visible] = np.clip(
+                rgb[visible] * (1.0 + 0.18 * accent) + 12.0 * accent, 0, 255
+            )
+            rgba[..., :3] = rgb.astype(np.uint8)
+            alpha = rgba[..., 3].astype(np.float32)
+            rgba[..., 3] = np.clip(alpha * (1.0 + 0.16 * accent), 0, 255).astype(np.uint8)
+        return Image.fromarray(rgba, "RGBA")
+
     def _transform(self, layer: Image.Image, center: tuple[float, float],
                    x_offset: float, y_offset: float, scale: float,
                    rotation: float) -> tuple[Image.Image, tuple[int, int]]:
@@ -398,6 +436,7 @@ class VisualCompositor:
             layer.generator, packet, seconds, local_size, settings,
             state_key=layer.layer_id, source_id=layer.source_id or None,
         )
+        visual = self._apply_director_effects(visual, packet, seconds, layer.layer_id)
         visual = self._apply_pass_mode(visual, layer.pass_mode,
                                        layer.pass_strength, layer.pass_map)
         visual = self._apply_palette(
