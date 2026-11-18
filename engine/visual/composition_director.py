@@ -126,6 +126,24 @@ class CompositionDirector:
         )
 
 
+def is_default_placeholder_composition(layers: list[VisualLayer]) -> bool:
+    """True only for the untouched starter layer; safe to auto-build on first import."""
+    if len(layers) != 1:
+        return False
+    layer = layers[0]
+    return (
+        layer.name == "PHASE LATTICE 01"
+        and layer.generator == "PHASE LATTICE"
+        and not layer.source_id
+        and layer.pass_mode == "PAPER RELIEF"
+        and layer.pass_map == "DISPLACEMENT"
+        and abs(layer.x_offset) < 1e-9
+        and abs(layer.y_offset) < 1e-9
+        and abs(layer.scale - 1.0) < 1e-9
+        and abs(layer.rotation) < 1e-9
+    )
+
+
 def create_auto_composition(
     generator_names: list[str],
     source_ids: list[str],
