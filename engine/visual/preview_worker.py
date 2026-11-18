@@ -39,7 +39,8 @@ class PreviewRenderWorker(threading.Thread):
         self._queue: Queue = Queue(maxsize=1)
         self._stop_event = threading.Event()
         self._state_lock = threading.Lock()
-        self._reset_requested = True
+        self._reset_feedback_requested = True
+        self._reset_generators_requested = False
         self._compositor: VisualCompositor | None = None
 
     @property
@@ -52,11 +53,14 @@ class PreviewRenderWorker(threading.Thread):
         width, height = max(1, int(size[0])), max(1, int(size[1]))
         with self._state_lock:
             self._requested_render_size = (width, height)
-            self._reset_requested = True
+            self._reset_feedback_requested = True
 
-    def request_reset(self) -> None:
+    def request_reset(self, *, reset_generators: bool = False) -> None:
+        """Clear temporal feedback; retain costly simulation state unless requested."""
         with self._state_lock:
-            self._reset_requested = True
+            self._reset_feedback_requested = True
+            if reset_generators:
+                self._reset_generators_requested = True
 
     def submit(
             self,
@@ -128,16 +132,27 @@ class PreviewRenderWorker(threading.Thread):
                 if request is None:
                     break
                 with self._state_lock:
-                    reset = self._reset_requested
+                    reset_feedback = self._reset_feedback_requested
+                    reset_generators = self._reset_generators_requested
                     requested_size = self._requested_render_size
-                    self._reset_requested = False
+                    self._reset_feedback_requested = False
+                    self._reset_generators_requested = False
                 if requested_size != self._render_size:
+                    # Preserve independent generator simulation state when only
+                    # preview quality changes; the compositor's dimensions are
+                    # replaced, but stateful generator instances are retained.
+                    old_compositor = self._compositor
                     self._render_size = requested_size
                     self._compositor = VisualCompositor(
                         self._assets, render_size=self._render_size
                     )
-                elif reset:
+                    if old_compositor is not None:
+                        self._compositor.generators = old_compositor.generators
+                        self._compositor.generators.resize_states(self._render_size)
+                elif reset_generators:
                     self._compositor.reset_feedback()
+                elif reset_feedback:
+                    self._compositor.reset_feedback(preserve_generators=True)
                 try:
                     render_args = {
                         "packet": request["packet"],
