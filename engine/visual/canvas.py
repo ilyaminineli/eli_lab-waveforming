@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PIL import Image
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
@@ -194,6 +194,8 @@ if GL is not None:
     class GpuCompositionCanvas(QOpenGLWidget):
         """OpenGL 3.3 layer compositor; generators can migrate to native GLSL incrementally."""
 
+        gpu_failed = Signal(str)
+
         BLEND_CODES = {
             "Normal": 0, "Add": 1, "Screen": 2, "Multiply": 3,
             "Difference": 4, "Overlay": 5, "Lighten": 6, "Darken": 7,
@@ -220,16 +222,31 @@ if GL is not None:
             self.update()
 
         def set_scene(self, scene: dict) -> None:
-            # Do not flatten on the UI thread on every frame. Layer blending belongs
-            # to paintGL; the CPU fallback is only prepared if OpenGL fails.
-            self._scene = scene
+            # Do not flatten on the UI thread during normal GL operation.
+            # A late frame can arrive after initializeGL has already selected
+            # the CPU fallback, so handle that ordering explicitly.
+            if not self.gpu_active:
+                self._fallback = _pixmap_from_image(self._flatten_scene(scene))
+                self._scene = None
+            else:
+                self._scene = scene
             self.update()
 
         @staticmethod
         def _flatten_scene(scene: dict) -> Image.Image:
+            from engine.visual.compositor import VisualCompositor
+
             preview = scene["background"].copy()
             for layer in scene["layers"]:
-                preview.alpha_composite(layer["image"], layer["position"])
+                # GPU-native instruments have no CPU image. They are omitted
+                # from this temporary fallback frame; the failure signal asks
+                # the worker to render the complete scene through the CPU path.
+                if layer.get("gpu_instrument") is not None:
+                    continue
+                VisualCompositor._blend_at(
+                    preview, layer["image"], layer["position"],
+                    layer.get("blend_mode", "Normal"), layer.get("opacity", 1.0),
+                )
             return preview
 
         def initializeGL(self) -> None:
@@ -254,12 +271,13 @@ if GL is not None:
                 GL.glVertexAttribPointer(1, 2, GL.GL_FLOAT, GL.GL_FALSE, 16, ctypes.c_void_p(8))
                 GL.glBindVertexArray(0)
                 GL.glDisable(GL.GL_DEPTH_TEST)
-            except Exception:
+            except Exception as exc:
                 self.gpu_active = False
                 self.gl_version = "CPU fallback"
                 if self._scene is not None:
                     self._fallback = _pixmap_from_image(self._flatten_scene(self._scene))
                     self._scene = None
+                self.gpu_failed.emit(str(exc))
 
         @staticmethod
         def _compile_shader(kind: int, source: str) -> int:
@@ -478,11 +496,12 @@ if GL is not None:
                 view_w, view_h = int(width * scale), int(height * scale)
                 GL.glViewport((widget_w - view_w) // 2, (widget_h - view_h) // 2, view_w, view_h)
                 self._draw_pass(self._target_textures[current], base_is_fbo=True)
-            except Exception:
+            except Exception as exc:
                 self.gpu_active = False
                 if self._scene is not None:
                     self._fallback = _pixmap_from_image(self._flatten_scene(self._scene))
                     self._scene = None
+                self.gpu_failed.emit(str(exc))
                 self.update()
 
 else:
