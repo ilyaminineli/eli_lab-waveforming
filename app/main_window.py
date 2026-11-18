@@ -708,6 +708,11 @@ class MainWindow(QMainWindow):
             return
         self._import_audio_paths(paths)
 
+    def _replace_feature_bus(self) -> None:
+        count = len(self.sources)
+        analysis_rate = 8.0 if count <= 8 else 6.0 if count <= 16 else 3.0
+        self.feature_bus = FeatureBus(analysis_rate=analysis_rate)
+
     def _import_audio_paths(self, paths: list[Path]) -> None:
         imported = 0
         errors: list[str] = []
@@ -742,7 +747,7 @@ class MainWindow(QMainWindow):
                 ),
             )
         if imported:
-            self.feature_bus.reset()
+            self._replace_feature_bus()
             self._last_packet = {}
             self._refresh_source_options()
             self._update_status()
@@ -763,7 +768,9 @@ class MainWindow(QMainWindow):
             if source.group_id:
                 groups[source.group_id] = source.group_name or source.group_id
         for group_id, group_name in sorted(groups.items(), key=lambda item: item[1].casefold()):
-            self.layer_source.addItem(f"GROUP / {group_name}", f"group:{group_id}")
+            parent_name = Path(group_id).parent.name
+            label = f"{parent_name} / {group_name}" if parent_name else group_name
+            self.layer_source.addItem(f"GROUP / {label}", f"group:{group_id}")
 
         for track_id, source in self.sources.items():
             self.layer_source.addItem(source.name, track_id)
@@ -774,7 +781,7 @@ class MainWindow(QMainWindow):
     def _remove_source(self, track_id: str, row: SourceRow) -> None:
         self.audio.remove_source(track_id)
         self.sources.pop(track_id, None)
-        self.feature_bus.reset()
+        self._replace_feature_bus()
         self._last_packet = {}
         for layer in self.layer_stack.layers:
             if layer.source_id == track_id:
@@ -870,7 +877,11 @@ class MainWindow(QMainWindow):
                 source = AudioSource.from_file(
                     path, target_sample_rate=self.audio.sample_rate
                 )
-                source.group_id = str(saved.get("group_id") or source.group_id)
+                saved_group_id = str(saved.get("group_id", ""))
+                # Early project versions stored only the leaf folder name. Keep
+                # the newer absolute directory identity in that legacy case.
+                if saved_group_id and saved_group_id.casefold() != path.parent.name.casefold():
+                    source.group_id = saved_group_id
                 source.group_name = str(saved.get("group_name") or source.group_name)
                 source.gain = float(saved.get("gain", 1.0))
                 source.pan = float(saved.get("pan", 0.0))
@@ -905,7 +916,7 @@ class MainWindow(QMainWindow):
         self.director_mode.setCurrentText(saved_director_mode)
         self.director.set_mode(saved_director_mode)
         self.director.reset()
-        self.feature_bus.reset()
+        self._replace_feature_bus()
         self.timeline_widget.set_timeline(self.timeline)
         self.bpm.setValue(self.timeline.bpm)
         self.screen.setCurrentText(data.get("screen", "SCREEN 1 / BLACK"))
