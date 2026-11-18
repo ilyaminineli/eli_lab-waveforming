@@ -155,6 +155,10 @@ class PreviewRenderWorker(threading.Thread):
                     self._compositor.reset_feedback()
                 elif reset_feedback:
                     self._compositor.reset_feedback(preserve_generators=True)
+                if self._compositor is not None and not reset_generators:
+                    self._compositor.generators.retain_layers(
+                        {layer.layer_id: layer.generator for layer in request["layers"] if layer.visible}
+                    )
                 try:
                     render_args = {
                         "packet": request["packet"],
