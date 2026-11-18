@@ -213,6 +213,9 @@ if GL is not None:
             self._target_textures: list[int] = []
             self._target_size = (0, 0)
             self.gl_version = "OpenGL pending"
+            self._gl_ready = False
+            self._gl_failed = False
+            self._gl_renderer = "Unknown"
             self.setMinimumSize(320, 240)
             self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -221,16 +224,54 @@ if GL is not None:
             self._fallback = _pixmap_from_image(image)
             self.update()
 
+        @property
+        def gpu_ready(self) -> bool:
+            return bool(self.gpu_active and self._gl_ready and not self._gl_failed)
+
         def set_scene(self, scene: dict) -> None:
-            # Do not flatten on the UI thread during normal GL operation.
-            # A late frame can arrive after initializeGL has already selected
-            # the CPU fallback, so handle that ordering explicitly.
-            if not self.gpu_active:
-                self._fallback = _pixmap_from_image(self._flatten_scene(scene))
-                self._scene = None
-            else:
-                self._scene = scene
+            # Always retain a CPU snapshot. If GL fails after receiving this
+            # scene, the preview must still have a complete visible frame.
+            self._fallback = _pixmap_from_image(self._flatten_scene(scene))
+            self._scene = scene if self.gpu_ready else None
             self.update()
+
+        @staticmethod
+        def _flatten_scene(scene: dict) -> Image.Image:
+            from engine.visual.compositor import VisualCompositor
+
+            image = scene["background"].copy()
+            for layer in scene["layers"]:
+                if layer.get("image") is None:
+                    continue
+                VisualCompositor._blend_at(
+                    image, layer["image"], layer["position"],
+                    layer.get("blend_mode", "Normal"), layer.get("opacity", 1.0),
+                )
+            return image
+
+        @staticmethod
+        def _gl_error_name(code: int) -> str:
+            return {
+                0x0500: "GL_INVALID_ENUM",
+                0x0501: "GL_INVALID_VALUE",
+                0x0502: "GL_INVALID_OPERATION",
+                0x0505: "GL_OUT_OF_MEMORY",
+                0x0506: "GL_INVALID_FRAMEBUFFER_OPERATION",
+                0x0507: "GL_CONTEXT_LOST",
+            }.get(int(code), f"GL error 0x{int(code):04X}")
+
+        def _gl_check(self, operation: str) -> None:
+            code = int(GL.glGetError())
+            if code != GL.GL_NO_ERROR:
+                raise RuntimeError(
+                    f"{operation}: {self._gl_error_name(code)} (0x{code:04X}); "
+                    f"renderer={self._gl_renderer}; GL={self.gl_version}"
+                )
+
+        def _gl_drain_errors(self) -> None:
+            for _ in range(8):
+                if int(GL.glGetError()) == GL.GL_NO_ERROR:
+                    break
 
         @staticmethod
         def _flatten_scene(scene: dict) -> Image.Image:
@@ -251,9 +292,14 @@ if GL is not None:
 
         def initializeGL(self) -> None:
             try:
+                self._gl_drain_errors()
                 version = GL.glGetString(GL.GL_VERSION)
                 self.gl_version = version.decode("ascii", "replace") if version else "Unknown"
+                renderer = GL.glGetString(GL.GL_RENDERER)
+                self._gl_renderer = renderer.decode("ascii", "replace") if renderer else "Unknown"
+                self._gl_check("initialize/context-info")
                 self._program = self._build_program(VERTEX_SHADER, FRAGMENT_SHADER)
+                self._gl_check("initialize/shader-program")
                 vertices = np.asarray([
                     -1.0, -1.0, 0.0, 1.0,
                     1.0, -1.0, 1.0, 1.0,
@@ -271,13 +317,20 @@ if GL is not None:
                 GL.glVertexAttribPointer(1, 2, GL.GL_FLOAT, GL.GL_FALSE, 16, ctypes.c_void_p(8))
                 GL.glBindVertexArray(0)
                 GL.glDisable(GL.GL_DEPTH_TEST)
+                self._gl_check("initialize/vertex-array")
+                self._gl_ready = True
+                self._gl_failed = False
+                self.gpu_active = True
+                self.update()
             except Exception as exc:
+                self._gl_ready = False
+                self._gl_failed = True
                 self.gpu_active = False
                 self.gl_version = "CPU fallback"
-                if self._scene is not None:
-                    self._fallback = _pixmap_from_image(self._flatten_scene(self._scene))
-                    self._scene = None
-                self.gpu_failed.emit(str(exc))
+                self._scene = None
+                self.gpu_failed.emit(
+                    f"GPU PREVIEW INIT FAILED · {exc} · renderer={self._gl_renderer}"
+                )
 
         @staticmethod
         def _compile_shader(kind: int, source: str) -> int:
@@ -306,6 +359,7 @@ if GL is not None:
             return int(program)
 
         def _texture(self, key: str, image: Image.Image) -> int:
+            self._gl_drain_errors()
             rgba = image.convert("RGBA")
             width, height = rgba.size
             cached = self._textures.get(key)
@@ -323,6 +377,7 @@ if GL is not None:
                     GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
                     GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels,
                 )
+                self._gl_check(f"texture/{key}/allocate-upload")
                 return texture
 
             texture, old_size = cached
@@ -340,9 +395,11 @@ if GL is not None:
                     GL.GL_TEXTURE_2D, 0, 0, 0, width, height,
                     GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels,
                 )
+            self._gl_check(f"texture/{key}/update")
             return texture
 
         def _ensure_targets(self, size: tuple[int, int]) -> None:
+            self._gl_drain_errors()
             if self._target_size == size and self._framebuffers:
                 return
             for framebuffer in self._framebuffers:
@@ -366,11 +423,17 @@ if GL is not None:
                     GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0,
                     GL.GL_TEXTURE_2D, texture, 0,
                 )
-                if GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) != GL.GL_FRAMEBUFFER_COMPLETE:
-                    raise RuntimeError("GPU composition framebuffer is incomplete.")
+                framebuffer_status = GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER)
+                if framebuffer_status != GL.GL_FRAMEBUFFER_COMPLETE:
+                    raise RuntimeError(
+                        "GPU composition framebuffer incomplete: "
+                        f"0x{int(framebuffer_status):04X}"
+                    )
+                self._gl_check("framebuffer/attach-color-texture")
                 self._target_textures.append(texture)
                 self._framebuffers.append(framebuffer)
             GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+            self._gl_check("framebuffer/complete")
             self._target_size = size
 
         def _uniform_location(self, name: str) -> int:
@@ -380,6 +443,7 @@ if GL is not None:
                        rect=(0.0, 0.0, 1.0, 1.0), blend=0, opacity=1.0,
                        use_layer=False, base_is_fbo=False,
                        gpu_instrument: dict | None = None) -> None:
+            self._gl_drain_errors()
             GL.glUseProgram(self._program)
             GL.glActiveTexture(GL.GL_TEXTURE0)
             GL.glBindTexture(GL.GL_TEXTURE_2D, base_texture)
@@ -437,9 +501,10 @@ if GL is not None:
             GL.glBindVertexArray(self._vao)
             GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
             GL.glBindVertexArray(0)
+            self._gl_check("compositor/draw-arrays")
 
         def paintGL(self) -> None:
-            if not self.gpu_active or self._scene is None:
+            if not self.gpu_ready or self._scene is None:
                 painter = QPainter(self)
                 painter.fillRect(self.rect(), Qt.GlobalColor.black)
                 if not self._fallback.isNull():
@@ -501,20 +566,43 @@ if GL is not None:
                 GL.glViewport((widget_w - view_w) // 2, (widget_h - view_h) // 2, view_w, view_h)
                 self._draw_pass(self._target_textures[current], base_is_fbo=True)
             except Exception as exc:
+                # Disable only the failed GL path; the pre-rendered CPU frame
+                # remains available to QPainter and no scene data is discarded.
+                self._gl_ready = False
+                self._gl_failed = True
                 self.gpu_active = False
-                if self._scene is not None:
-                    self._fallback = _pixmap_from_image(self._flatten_scene(self._scene))
-                    self._scene = None
-                self.gpu_failed.emit(str(exc))
+                self._scene = None
+                self.gpu_failed.emit(
+                    f"GPU PREVIEW FALLBACK · {exc} · renderer={self._gl_renderer}"
+                )
                 self.update()
 
 else:
     class GpuCompositionCanvas(CompositionCanvas):
-        """Transparent fallback when PyOpenGL is not installed."""
-        gpu_active = False
+        """CPU-only canvas when PyOpenGL is not installed."""
 
-        def set_scene(self, scene: dict) -> None:
+        gpu_active = False
+        gpu_failed = Signal(str)
+
+        def __init__(self, assets=None, parent=None):
+            super().__init__(assets, parent)
+            self.setMinimumSize(320, 240)
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.gl_version = "CPU fallback · PyOpenGL unavailable"
+            self.gpu_ready = False
+
+        @staticmethod
+        def _flatten_scene(scene: dict) -> Image.Image:
+            from engine.visual.compositor import VisualCompositor
+
             image = scene["background"].copy()
             for layer in scene["layers"]:
-                image.alpha_composite(layer["image"], layer["position"])
-            self.set_frame(image)
+                if layer.get("image") is not None:
+                    VisualCompositor._blend_at(
+                        image, layer["image"], layer["position"],
+                        layer.get("blend_mode", "Normal"), layer.get("opacity", 1.0),
+                    )
+            return image
+
+        def set_scene(self, scene: dict) -> None:
+            self.set_frame(self._flatten_scene(scene))
