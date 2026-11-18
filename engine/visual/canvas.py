@@ -3,7 +3,7 @@ from __future__ import annotations
 from PIL import Image
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 CANVAS_SIZE = (1920, 1440)
 
@@ -214,10 +214,7 @@ if GL is not None:
             self._target_size = (0, 0)
             self.gl_version = "OpenGL pending"
             self.setMinimumSize(320, 240)
-            self.setSizePolicy(
-                __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Policy.Expanding,
-                __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Policy.Expanding,
-            )
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         def set_frame(self, image: Image.Image) -> None:
             self._scene = None
