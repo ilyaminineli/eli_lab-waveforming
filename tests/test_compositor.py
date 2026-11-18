@@ -120,6 +120,20 @@ def test_monochrome_scope_inverts_on_white_paper():
 
 
 
+def test_gpu_scene_keeps_layers_separate_for_gpu_blending():
+    compositor = VisualCompositor(AssetCatalog(Path("missing-assets")), render_size=(128, 96))
+    layer = VisualLayer(
+        name="GPU layer", generator="PHASE ORBIT",
+        mask_mode="FULL", pass_mode="NONE",
+    )
+    scene = compositor.render_scene(
+        packet=None, seconds=0.0, layers=[layer], screen="No guide"
+    )
+    assert scene["background"].size == (128, 96)
+    assert len(scene["layers"]) == 1
+    assert scene["layers"][0]["image"].mode == "RGBA"
+
+
 def test_compositor_supports_an_independent_export_resolution():
     assets = AssetCatalog(Path("missing-assets"))
     compositor = VisualCompositor(assets, render_size=(128, 96))

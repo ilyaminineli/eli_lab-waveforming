@@ -13,11 +13,13 @@ import soundfile as sf
 from PySide6.QtCore import QThread, Signal
 
 from engine.audio.analyzer import AudioAnalyzer
+from engine.audio.feature_bus import FeatureBus
 from engine.timeline import Timeline
 from engine.visual.assets import AssetCatalog
 from engine.visual.compositor import PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
+from engine.visual.composition_director import CompositionDirector, vary_composition
 
 
 class OfflineRenderWorker(QThread):
@@ -44,6 +46,7 @@ class OfflineRenderWorker(QThread):
         fps: int = 24,
         resolution: tuple[int, int] = PROJECT_SIZE,
         feedback: dict | None = None,
+        director_mode: str = "SEMI-AUTO",
         parent=None,
     ):
         super().__init__(parent)
@@ -60,6 +63,8 @@ class OfflineRenderWorker(QThread):
                 "muted": bool(source.get("muted", False)),
                 "solo": bool(source.get("solo", False)),
                 "analysis_enabled": bool(source.get("analysis_enabled", True)),
+                "group_id": str(source.get("group_id", "")),
+                "group_name": str(source.get("group_name", "")),
             }
             for source in sources
         ]
@@ -77,6 +82,7 @@ class OfflineRenderWorker(QThread):
             max(2, int(resolution[1]) // 2 * 2),
         )
         self.feedback = dict(feedback or {})
+        self.director_mode = director_mode if director_mode in CompositionDirector.MODES else "SEMI-AUTO"
         self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -165,13 +171,14 @@ class OfflineRenderWorker(QThread):
 
         ids = list(mono_blocks)
         correlation = np.eye(len(ids), dtype=np.float32)
-        for i in range(len(ids)):
-            a = mono_blocks[ids[i]]
-            for j in range(i + 1, len(ids)):
-                b = mono_blocks[ids[j]]
-                denominator = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
-                value = float(np.dot(a, b) / denominator)
-                correlation[i, j] = correlation[j, i] = np.clip(value, -1.0, 1.0)
+        if len(ids) <= 12:
+            for i in range(len(ids)):
+                a = mono_blocks[ids[i]]
+                for j in range(i + 1, len(ids)):
+                    b = mono_blocks[ids[j]]
+                    denominator = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
+                    value = float(np.dot(a, b) / denominator)
+                    correlation[i, j] = correlation[j, i] = np.clip(value, -1.0, 1.0)
         return {"frames": frame_map, "source_ids": ids, "correlation": correlation}
 
     def run(self) -> None:
@@ -229,13 +236,35 @@ class OfflineRenderWorker(QThread):
                 analyzers = {}
 
                 try:
+                    feature_bus = FeatureBus()
+                    source_groups = {
+                        source["track_id"]: source["group_id"]
+                        for source in self.sources if source["group_id"]
+                    }
+                    director = CompositionDirector(self.director_mode)
                     for frame_index in range(total_frames):
                         if self.cancelled:
                             process.terminate()
                             break
                         seconds = frame_index / float(self.fps)
                         packet = self._analysis_packet(seconds, analyzers)
+                        packet["position"] = seconds
+                        packet = feature_bus.update(packet, source_groups)
+                        director_output = director.update(packet, seconds)
+                        if director_output.request_variation and self.layers:
+                            # A frame-derived seed makes automatic offline changes reproducible.
+                            seed = (int(self.settings.seed) + frame_index * 104729) & 0x7FFFFFFF
+                            self.layers = vary_composition(
+                                self.layers, compositor.generator_names(), seed
+                            )
+                            self.settings.seed = seed
                         frame_settings = self.timeline.settings_at(seconds, self.settings)
+                        frame_settings = GeneratorSettings(
+                            complexity=max(5.0, min(100.0, frame_settings.complexity * director_output.complexity_scale)),
+                            motion=max(0.0, min(100.0, frame_settings.motion * director_output.motion_scale)),
+                            sensitivity=frame_settings.sensitivity,
+                            seed=frame_settings.seed,
+                        )
                         image = compositor.render(
                             packet=packet,
                             seconds=seconds,

@@ -23,6 +23,7 @@ class VisualLayer:
     source_id: str = ""
     palette_mode: str = "EDITORIAL TRICOLOR"
     palette_index: int = 0
+    role: str = "MOTION"
 
     def to_dict(self) -> dict:
         return asdict(self)
