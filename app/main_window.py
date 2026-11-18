@@ -1197,10 +1197,10 @@ class MainWindow(QMainWindow):
         if not is_newer_preview_frame(sequence, self._displayed_sequence):
             return
         self._displayed_sequence = sequence
-            if isinstance(image, dict) and hasattr(self.canvas, "set_scene"):
-                self.canvas.set_scene(image)
-            else:
-                self.canvas.set_frame(image)
+        if isinstance(image, dict) and hasattr(self.canvas, "set_scene"):
+            self.canvas.set_scene(image)
+        else:
+            self.canvas.set_frame(image)
 
     def _preview_quality_changed(self, *_args) -> None:
         profile = PREVIEW_PROFILES.get(
