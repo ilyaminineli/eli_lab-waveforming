@@ -107,7 +107,7 @@ vec4 interferenceField(vec2 uv) {
     float mid = uProcB.y;
     float high = uProcB.z;
     float energy = uProcB.w;
-    float centroid = uProcC.x;
+    float spectralCentroid = uProcC.x;
     float crossSignal = uProcC.y;
     float coherence = uProcC.z;
     float transient = uProcC.w;
@@ -119,7 +119,7 @@ vec4 interferenceField(vec2 uv) {
     float fieldA = sin(
         (p.x * (8.0 + 22.0 * density)
         + sin(p.y * (4.0 + 10.0 * mid) + motion) * 1.8)
-        * (1.0 + centroid)
+        * (1.0 + spectralCentroid)
     );
     float fieldB = cos(
         (p.y * (9.0 + 25.0 * density)
@@ -127,7 +127,7 @@ vec4 interferenceField(vec2 uv) {
         * (1.0 + crossSignal)
     );
     float fieldC = sin(
-        (p.x + p.y) * (4.0 + 14.0 * centroid)
+        (p.x + p.y) * (4.0 + 14.0 * spectralCentroid)
         + motion * 1.7 + transient * 2.5
     );
     float field = fieldA + fieldB * (0.65 + coherence * 0.4) + fieldC * 0.32;
