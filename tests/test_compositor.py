@@ -322,8 +322,8 @@ def test_gpu_native_interference_scene_builds_with_frame_mask():
     )
 
     assert len(scene["layers"]) == 1
-    assert scene["layers"][0]["gpu_instrument"]["kind"] == "interference"
-    assert scene["layers"][0]["gpu_instrument"]["rect"][2:] == (
-        scene["layers"][0]["gpu_instrument"]["rect"][2],
-        scene["layers"][0]["gpu_instrument"]["rect"][3],
-    )
+    descriptor = scene["layers"][0]["gpu_instrument"]
+    x, y, width, height = descriptor["rect"]
+    assert descriptor["kind"] == "interference"
+    assert (x, y, width, height) == (5, 5, 118, 86)
+    assert descriptor["seconds"] == pytest.approx(2.5)
