@@ -648,20 +648,14 @@ class VisualCompositor:
             screen: str = "No guide",
             gpu_native: bool = False,
             include_guide: bool = True,
-            feedback_enabled: bool = False,
-            feedback_amount: float = 0.35,
-            feedback_decay: float = 0.90,
-            feedback_shift: float = 0.0,
-    ) -> dict | Image.Image:
-        """Render a complete CPU frame or a layer-separated GPU scene.
-
-        The CPU result is a normal RGBA frame. The GPU result contains CPU
-        snapshots plus optional shader-native instrument descriptors.
-        """
+    ) -> dict:
+        """Build a layer-separated scene for GPU composition."""
         settings = settings or GeneratorSettings()
         layers = layers or []
         background = Image.new("RGBA", self.size, (10, 10, 10, 255))
         guide = self._screen(screen)
+        if guide is not None and include_guide:
+            background.alpha_composite(guide)
         frame_box = self._frame_box(screen)
         rendered_layers = []
 
@@ -682,7 +676,6 @@ class VisualCompositor:
                         "layer_id": layer.layer_id,
                     })
                     continue
-
             if layer.generator == "INTERFERENCE FIELD":
                 rendered = self._render_interference_reference(
                     layer, packet, seconds, settings, screen, frame_box
@@ -701,46 +694,6 @@ class VisualCompositor:
                 "opacity": layer.opacity,
                 "layer_id": layer.layer_id,
             })
-
-        if not gpu_native:
-            frame = background.copy()
-            for layer_data in rendered_layers:
-                self._blend_at(
-                    frame,
-                    layer_data["image"],
-                    layer_data["position"],
-                    layer_data["blend_mode"],
-                    layer_data["opacity"],
-                )
-            if self._last_time is not None and seconds < self._last_time:
-                self._feedback = None
-            if self._feedback is not None and seconds > self._last_time:
-                dx = int(round(float(feedback_shift) * self.size[0]))
-                dy = int(round(float(feedback_shift) * self.size[1] * 0.62))
-                previous = self._feedback.copy()
-                if dx or dy:
-                    previous = previous.transform(
-                        self.size, Image.Transform.AFFINE,
-                        (1, 0, -dx, 0, 1, -dy),
-                        resample=Image.Resampling.BILINEAR,
-                    )
-                alpha = previous.getchannel("A").point(
-                    [int(value * float(np.clip(feedback_decay, 0.0, 0.99)))
-                     for value in range(256)]
-                )
-                previous.putalpha(alpha)
-                self._blend_at(
-                    frame, previous, (0, 0), "Screen",
-                    float(np.clip(feedback_amount, 0.0, 1.0)),
-                )
-            self._feedback = frame.copy() if feedback_enabled else None
-            self._last_time = float(seconds)
-            if include_guide and guide is not None:
-                frame.alpha_composite(guide)
-            return frame
-
-        if include_guide and guide is not None:
-            background.alpha_composite(guide)
         if not include_guide and guide is not None:
             rendered_layers.append({
                 "image": guide,
@@ -756,6 +709,65 @@ class VisualCompositor:
             "time": float(seconds),
             "screen": screen,
         }
+
+    def render_cpu_frame(
+            self,
+            packet: dict | None,
+            seconds: float,
+            layers: list[VisualLayer] | None = None,
+            settings: GeneratorSettings | None = None,
+            screen: str = "No guide",
+            feedback_enabled: bool = False,
+            feedback_amount: float = 0.35,
+            feedback_decay: float = 0.90,
+            feedback_shift: float = 0.0,
+    ) -> Image.Image:
+        """Compose every generator and effect into a complete CPU RGBA frame."""
+        scene = self.render_scene(
+            packet=packet,
+            seconds=seconds,
+            layers=layers,
+            settings=settings,
+            screen=screen,
+            gpu_native=False,
+            include_guide=False,
+        )
+        frame = scene["background"].copy()
+        for layer in scene["layers"]:
+            self._blend_at(
+                frame,
+                layer["image"],
+                layer["position"],
+                layer.get("blend_mode", "Normal"),
+                layer.get("opacity", 1.0),
+            )
+        if self._last_time is not None and seconds < self._last_time:
+            self._feedback = None
+        if feedback_enabled and self._feedback is not None and seconds > (self._last_time or seconds):
+            dx = int(round(float(feedback_shift) * self.size[0]))
+            dy = int(round(float(feedback_shift) * self.size[1] * 0.62))
+            previous = self._feedback.copy()
+            if dx or dy:
+                previous = previous.transform(
+                    self.size, Image.Transform.AFFINE,
+                    (1, 0, -dx, 0, 1, -dy),
+                    resample=Image.Resampling.BILINEAR,
+                )
+            alpha = previous.getchannel("A").point(
+                [int(value * float(np.clip(feedback_decay, 0.0, 0.99)))
+                 for value in range(256)]
+            )
+            previous.putalpha(alpha)
+            self._blend_at(
+                frame, previous, (0, 0), "Screen",
+                float(np.clip(feedback_amount, 0.0, 1.0)),
+            )
+        self._feedback = frame.copy() if feedback_enabled else None
+        self._last_time = float(seconds)
+        guide = self._screen(screen)
+        if guide is not None:
+            frame.alpha_composite(guide)
+        return frame
 
     def render(self, packet: dict | None, seconds: float,
                layers: list[VisualLayer] | None = None,
