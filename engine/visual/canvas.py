@@ -150,14 +150,17 @@ if GL is not None:
             self.update()
 
         def set_scene(self, scene: dict) -> None:
+            # Do not flatten on the UI thread on every frame. Layer blending belongs
+            # to paintGL; the CPU fallback is only prepared if OpenGL fails.
             self._scene = scene
-            # Keep a CPU fallback ready in case this machine cannot create
-            # the requested OpenGL context or compile the shader.
+            self.update()
+
+        @staticmethod
+        def _flatten_scene(scene: dict) -> Image.Image:
             preview = scene["background"].copy()
             for layer in scene["layers"]:
                 preview.alpha_composite(layer["image"], layer["position"])
-            self._fallback = _pixmap_from_image(preview)
-            self.update()
+            return preview
 
         def initializeGL(self) -> None:
             try:
@@ -186,6 +189,7 @@ if GL is not None:
                 self.gl_version = "CPU fallback"
                 if self._scene is not None:
                     self._fallback = _pixmap_from_image(self._flatten_scene(self._scene))
+                    self._scene = None
 
         @staticmethod
         def _compile_shader(kind: int, source: str) -> int:
@@ -357,6 +361,9 @@ if GL is not None:
                 self._draw_pass(self._target_textures[current], base_is_fbo=True)
             except Exception:
                 self.gpu_active = False
+                if self._scene is not None:
+                    self._fallback = _pixmap_from_image(self._flatten_scene(self._scene))
+                    self._scene = None
                 self.update()
 
 else:
