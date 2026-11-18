@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -20,6 +19,7 @@ from engine.visual.compositor import PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
 from engine.visual.composition_director import CompositionDirector, vary_composition
+from engine.render.ffmpeg import resolve_ffmpeg
 
 
 class OfflineRenderWorker(QThread):
@@ -125,11 +125,13 @@ class OfflineRenderWorker(QThread):
                     right_gain = 1.0 if pan >= 0 else 1.0 + pan
                     mix[:take, 0] += segment[:, 0] * source["gain"] * left_gain
                     mix[:take, 1] += segment[:, 1] * source["gain"] * right_gain
-                magnitude = np.abs(mix)
-                over = magnitude > 0.98
-                mix[over] = np.sign(mix[over]) * (
-                    0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
-                )
+                peak = max(float(np.max(mix)), float(-np.min(mix)))
+                if peak > 0.98:
+                    magnitude = np.abs(mix)
+                    over = magnitude > 0.98
+                    mix[over] = np.sign(mix[over]) * (
+                        0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
+                    )
                 output.write(np.clip(mix, -1.0, 1.0))
 
     @staticmethod
@@ -182,10 +184,11 @@ class OfflineRenderWorker(QThread):
         return {"frames": frame_map, "source_ids": ids, "correlation": correlation}
 
     def run(self) -> None:
-        ffmpeg = shutil.which("ffmpeg")
+        ffmpeg = resolve_ffmpeg()
         if not ffmpeg:
             self.failed.emit(
-                "FFmpeg was not found in PATH. Install FFmpeg and restart WAVEFORMING before exporting MP4."
+                "FFmpeg was not found. Install the project requirements (imageio-ffmpeg), "
+                "add ffmpeg.exe to PATH, or set FFMPEG_BINARY to its full path."
             )
             return
         if not self.sources:
@@ -242,15 +245,25 @@ class OfflineRenderWorker(QThread):
                         for source in self.sources if source["group_id"]
                     }
                     director = CompositionDirector(self.director_mode)
+                    analysis_stride = max(1, int(round(self.fps / min(8.0, float(self.fps)))))
+                    cached_packet = None
                     for frame_index in range(total_frames):
                         if self.cancelled:
                             process.terminate()
                             break
                         seconds = frame_index / float(self.fps)
-                        packet = self._analysis_packet(seconds, analyzers)
+                        if cached_packet is None or frame_index % analysis_stride == 0:
+                            raw_packet = self._analysis_packet(seconds, analyzers)
+                            raw_packet["position"] = seconds
+                            cached_packet = feature_bus.update(raw_packet, source_groups)
+                        packet = dict(cached_packet)
                         packet["position"] = seconds
-                        packet = feature_bus.update(packet, source_groups)
                         director_output = director.update(packet, seconds)
+                        packet["director_output"] = {
+                            "glitch_amount": director_output.glitch_amount,
+                            "accent_amount": director_output.accent_amount,
+                            "state": director_output.state,
+                        }
                         if director_output.request_variation and self.layers:
                             # A frame-derived seed makes automatic offline changes reproducible.
                             seed = (int(self.settings.seed) + frame_index * 104729) & 0x7FFFFFFF
