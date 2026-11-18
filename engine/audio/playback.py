@@ -476,12 +476,13 @@ class PlaybackEngine(QObject):
                 # Each packet already contains a complete FFT-sized PCM window.
                 # No history concatenation or second copy is needed here.
                 frames[track_id] = analyzer.analyze(block, sample_rate)
-                correlation_blocks[track_id] = np.mean(block, axis=1)
+                if len(snapshots) <= 12:
+                    correlation_blocks[track_id] = np.mean(block, axis=1)
 
-            ids = list(correlation_blocks)
+            ids = list(frames)
             matrix = np.eye(len(ids), dtype=np.float32)
-            common_length = min((len(correlation_blocks[key]) for key in ids), default=0)
             if len(ids) <= 12:
+                common_length = min((len(correlation_blocks[key]) for key in ids), default=0)
                 for i in range(len(ids)):
                     a = correlation_blocks[ids[i]][-common_length:] if common_length else np.zeros(0, np.float32)
                     for j in range(i+1, len(ids)):
