@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from time import time_ns
+from time import monotonic, time_ns
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QPixmap
@@ -104,7 +104,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("eli_lab / WAVEFORMING")
-        self.resize(1640, 1000)
+        # Start inside a typical 1280×720–1366×768 workspace rather than
+        # requesting a width larger than many laptop displays can provide.
+        self.resize(1240, 900)
+        self.setMinimumSize(900, 620)
         self.sources: dict[str, AudioSource] = {}
         self._last_packet: dict = {}
         self._last_position = 0.0
@@ -118,6 +121,9 @@ class MainWindow(QMainWindow):
         self._loading_project = False
         self._render_sequence = 0
         self._displayed_sequence = -1
+        self._preview_clock_started = monotonic()
+        self._preview_animation_seconds = 0.0
+        self._last_preview_tick = self._preview_clock_started
         self._export_worker = None
         self._export_progress = None
         self._project_path: Path | None = None
@@ -142,8 +148,9 @@ class MainWindow(QMainWindow):
         self._apply_style()
         self._configure_analysis()
         self._render_timer = QTimer(self)
+        self._render_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._render_timer.setInterval(200)
-        self._render_timer.timeout.connect(self._render_frame)
+        self._render_timer.timeout.connect(self._preview_tick)
         self.preview_quality.currentIndexChanged.connect(self._preview_quality_changed)
         self._variation_timer = QTimer(self)
         self._variation_timer.setInterval(12000)
@@ -395,8 +402,8 @@ class MainWindow(QMainWindow):
         left_scroll.setWidget(left_content)
 
         # A compact property panel remains usable on smaller displays.
-        left_scroll.setMinimumWidth(435)
-        left_scroll.setMaximumWidth(610)
+        left_scroll.setMinimumWidth(300)
+        left_scroll.setMaximumWidth(520)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
@@ -498,7 +505,7 @@ class MainWindow(QMainWindow):
 
         split.addWidget(left_scroll)
         split.addWidget(right)
-        split.setSizes([520, 1080])
+        split.setSizes([390, 850])
         split.setStretchFactor(1, 1)
 
         # All layer property edits update the selected layer, never the audio callback.
@@ -1149,10 +1156,19 @@ class MainWindow(QMainWindow):
             self.window.currentText().lower(),
         )
 
+    def _preview_tick(self) -> None:
+        """Advance the visual clock independently of the audio transport."""
+        now = monotonic()
+        elapsed = max(0.0, min(0.5, now - self._last_preview_tick))
+        self._last_preview_tick = now
+        self._preview_animation_seconds += elapsed
+        self._render_frame()
+
     def _render_frame(self, *_args) -> None:
         self._render_sequence += 1
-        seconds = self._last_position
-        director_output = self.director.update(self._last_packet, seconds)
+        audio_seconds = self._last_position
+        seconds = float(self._preview_animation_seconds)
+        director_output = self.director.update(self._last_packet, audio_seconds)
 
         if director_output.request_variation and self.audio.is_playing and self.layer_stack.layers:
             selected = self._current_layer()
