@@ -18,7 +18,7 @@ from engine.audio.playback import PlaybackEngine, MAX_AUDIO_SOURCES
 from engine.audio.feature_bus import FeatureBus
 from engine.audio.source import AudioSource
 from engine.visual.assets import AssetCatalog
-from engine.visual.canvas import CompositionCanvas
+from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.compositor import PREVIEW_SIZE, PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.preview_worker import PreviewRenderWorker
@@ -415,7 +415,7 @@ class MainWindow(QMainWindow):
         preview_header.addWidget(self.zoom)
         right_layout.addLayout(preview_header)
 
-        self.canvas = CompositionCanvas(self.assets)
+        self.canvas = GpuCompositionCanvas(self.assets)
         right_layout.addWidget(self.canvas, 1)
 
         transport = QHBoxLayout()
@@ -1133,6 +1133,10 @@ class MainWindow(QMainWindow):
             feedback_decay=self.feedback_decay.value()/100.0,
             feedback_shift=self.feedback_shift.value()/100.0,
             sequence=self._render_sequence,
+            gpu_composite=(
+                bool(getattr(self.canvas, "gpu_active", False))
+                and not self.feedback_enabled.isChecked()
+            ),
         )
 
     def _on_preview_frame(self, image, seconds: float, sequence: int) -> None:
@@ -1142,7 +1146,10 @@ class MainWindow(QMainWindow):
             return
         if sequence >= self._displayed_sequence:
             self._displayed_sequence = sequence
-            self.canvas.set_frame(image)
+            if isinstance(image, dict) and hasattr(self.canvas, "set_scene"):
+                self.canvas.set_scene(image)
+            else:
+                self.canvas.set_frame(image)
 
     def _preview_quality_changed(self, *_args) -> None:
         profile = PREVIEW_PROFILES.get(
