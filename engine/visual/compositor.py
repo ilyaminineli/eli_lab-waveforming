@@ -451,6 +451,92 @@ class VisualCompositor:
             transformed, position, screen, layer.mask_mode, frame_box, self._mask
         )
 
+    def _render_interference_reference(
+            self,
+            layer: VisualLayer,
+            packet: dict | None,
+            seconds: float,
+            settings: GeneratorSettings,
+            size: tuple[int, int],
+            screen: str,
+    ) -> tuple[Image.Image, tuple[int, int]]:
+        """CPU reference implementation of the GPU interference instrument."""
+        from .generators import VisualMetrics
+
+        metrics = VisualMetrics.from_packet(packet, source_id=layer.source_id or None)
+        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        x = np.linspace(-2.4, 2.4, width, dtype=np.float32)[None, :]
+        y = np.linspace(-1.8, 1.8, height, dtype=np.float32)[:, None]
+        motion = float(seconds) * (0.15 + settings.speed * 1.8)
+        drive = metrics.energy * settings.response
+        field_a = np.sin(
+            (x * (8.0 + 22.0 * settings.density)
+             + np.sin(y * (4.0 + 10.0 * metrics.mid) + motion) * 1.8)
+            * (1.0 + metrics.centroid)
+        )
+        field_b = np.cos(
+            (y * (9.0 + 25.0 * settings.density)
+             + np.sin(x * (3.0 + 12.0 * metrics.low) - motion) * 1.6)
+            * (1.0 + metrics.cross)
+        )
+        field_c = np.sin(
+            (x + y) * (4.0 + 14.0 * metrics.centroid)
+            + motion * 1.7 + metrics.transient * 2.5
+        )
+        field = field_a + field_b * (0.65 + metrics.coherence * 0.4) + field_c * 0.32
+        ridge = np.abs(np.sin(
+            field * (3.0 + settings.density * 13.0)
+            + metrics.entropy * 3.0 + drive
+        ))
+        threshold = 0.035 + (1.0 - settings.density) * 0.025 + metrics.transient * 0.045
+        alpha = np.where(
+            ridge < threshold,
+            np.clip(0.3 + (1.0 - ridge / threshold) * 0.7, 0.0, 1.0),
+            0.0,
+        )
+        luminance = np.clip(
+            155.0 + (1.0 - ridge) * 95.0 + drive * 50.0
+            + metrics.high * 35.0,
+            0.0, 255.0,
+        )
+        white_plate = screen.upper().endswith("/ WHITE")
+        if layer.palette_mode == "MONOCHROME":
+            ink = np.asarray((10, 10, 10) if white_plate else (236, 236, 232), dtype=np.float32)
+        else:
+            palette = EDITORIAL_TRICOLOR_LIGHT if white_plate else EDITORIAL_TRICOLOR_DARK
+            source_ids = list(
+                (packet or {}).get("source_ids")
+                or (packet or {}).get("frames", {}).keys()
+            )
+            palette_index = (
+                source_ids.index(layer.source_id)
+                if layer.source_id and layer.source_id in source_ids
+                else int(layer.palette_index)
+            )
+            ink = np.asarray(palette[palette_index % len(palette)], dtype=np.float32)
+        rgb = np.clip(ink[None, None, :] * (0.46 + luminance[..., None] / 255.0 * 0.54), 0, 255)
+        rgba = np.zeros((height, width, 4), dtype=np.uint8)
+        rgba[..., :3] = rgb.astype(np.uint8)
+        rgba[..., 3] = (alpha * 235.0).astype(np.uint8)
+        visual = Image.fromarray(rgba, "RGBA")
+        visual = self._apply_director_effects(visual, packet, seconds, layer.layer_id)
+        visual = self._apply_pass_mode(
+            visual, layer.pass_mode, layer.pass_strength, layer.pass_map
+        )
+        visual = self._apply_palette(
+            visual, layer, packet, white_plate=white_plate
+        )
+        center = (width / 2.0, height / 2.0)
+        transformed, position = self._transform(
+            visual, center, layer.x_offset, layer.y_offset,
+            layer.scale, layer.rotation
+        )
+        frame_box = self._frame_box_for_size(screen, size)
+        return self._apply_mask_crop(
+            transformed, position, screen, layer.mask_mode,
+            frame_box, self._mask
+        )
+
     def _gpu_interference_spec(
             self,
             layer: VisualLayer,
