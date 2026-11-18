@@ -554,12 +554,13 @@ class VisualCompositor:
             settings: GeneratorSettings | None = None,
             screen: str = "No guide",
             gpu_native: bool = False,
+            include_guide: bool = True,
     ) -> dict:
         """Build a scene for GPU blending; optionally keep interference fields GPU-resident."""
         settings = settings or GeneratorSettings()
         layers = layers or []
         background = Image.new("RGBA", self.size, (10, 10, 10, 255))
-        guide = self._screen(screen)
+        guide = self._screen(screen) if include_guide else None
         if guide is not None:
             background.alpha_composite(guide)
 
@@ -596,6 +597,16 @@ class VisualCompositor:
                 "opacity": layer.opacity,
                 "layer_id": layer.layer_id,
             })
+        if not include_guide:
+            guide = self._screen(screen)
+            if guide is not None:
+                rendered_layers.append({
+                    "image": guide,
+                    "position": (0, 0),
+                    "blend_mode": "Normal",
+                    "opacity": 1.0,
+                    "layer_id": "__screen_guide__",
+                })
         return {
             "background": background,
             "layers": rendered_layers,
