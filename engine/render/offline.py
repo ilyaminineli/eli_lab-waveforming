@@ -240,13 +240,15 @@ class OfflineRenderWorker(QThread):
                 analyzers = {}
 
                 try:
-                    feature_bus = FeatureBus(analysis_rate=8.0)
+                    analysis_stride = max(
+                        1, int(math.ceil(self.fps / min(8.0, float(self.fps))))
+                    )
+                    feature_bus = FeatureBus(analysis_rate=self.fps / analysis_stride)
                     source_groups = {
                         source["track_id"]: source["group_id"]
                         for source in self.sources if source["group_id"]
                     }
                     director = CompositionDirector(self.director_mode)
-                    analysis_stride = max(1, int(round(self.fps / min(8.0, float(self.fps)))))
                     cached_packet = None
                     for frame_index in range(total_frames):
                         if self.cancelled:
