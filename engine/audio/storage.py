@@ -129,10 +129,13 @@ class StreamedAudioBuffer:
         position = max(0, int(position))
         with self._condition:
             end = position + length
-            if position < self._ring_start and end <= self._head_frames:
+            # Serve the synchronously pre-read head before the background ring
+            # catches up. This avoids silence on the first audio blocks and also
+            # makes an imported streamed source available to the still preview.
+            if end <= self._head_frames:
                 destination[:] = self._head[position:end]
                 if update_request:
-                    self._requested_pos = end
+                    self._requested_pos = max(self._requested_pos, end)
                     self._condition.notify()
                 return length
             if position < self._ring_start or end > self._write_pos:
