@@ -75,6 +75,13 @@ uniform int uUseLayer;
 uniform int uBlendMode;
 uniform float uOpacity;
 uniform vec4 uRect;
+uniform int uProcKind;
+uniform vec4 uProcA; // density, speed, response, seconds
+uniform vec4 uProcB; // low, mid, high, energy
+uniform vec4 uProcC; // centroid, cross, coherence, transient
+uniform float uProcEntropy;
+uniform vec3 uProcInk;
+uniform int uProcMonochrome;
 
 vec3 blendColor(vec3 base, vec3 source, int mode) {
     if (mode == 1) return min(vec3(1.0), base + source);
@@ -89,6 +96,60 @@ vec3 blendColor(vec3 base, vec3 source, int mode) {
     if (mode == 6) return max(base, source);
     if (mode == 7) return min(base, source);
     return source;
+}
+
+vec4 interferenceField(vec2 uv) {
+    float density = clamp(uProcA.x, 0.05, 1.0);
+    float speed = uProcA.y;
+    float response = uProcA.z;
+    float seconds = uProcA.w;
+    float low = uProcB.x;
+    float mid = uProcB.y;
+    float high = uProcB.z;
+    float energy = uProcB.w;
+    float centroid = uProcC.x;
+    float crossSignal = uProcC.y;
+    float coherence = uProcC.z;
+    float transient = uProcC.w;
+
+    vec2 p = vec2(mix(-2.4, 2.4, uv.x), mix(-1.8, 1.8, uv.y));
+    float motion = seconds * (0.15 + speed * 1.8);
+    float drive = energy * response;
+
+    float fieldA = sin(
+        (p.x * (8.0 + 22.0 * density)
+        + sin(p.y * (4.0 + 10.0 * mid) + motion) * 1.8)
+        * (1.0 + centroid)
+    );
+    float fieldB = cos(
+        (p.y * (9.0 + 25.0 * density)
+        + sin(p.x * (3.0 + 12.0 * low) - motion) * 1.6)
+        * (1.0 + crossSignal)
+    );
+    float fieldC = sin(
+        (p.x + p.y) * (4.0 + 14.0 * centroid)
+        + motion * 1.7 + transient * 2.5
+    );
+    float field = fieldA + fieldB * (0.65 + coherence * 0.4) + fieldC * 0.32;
+    float ridge = abs(sin(
+        field * (3.0 + density * 13.0)
+        + uProcEntropy * 3.0 + drive
+    ));
+    float threshold = 0.035 + (1.0 - density) * 0.025 + transient * 0.045;
+    float alpha = ridge < threshold
+        ? clamp(0.3 + (1.0 - ridge / threshold) * 0.7, 0.0, 1.0)
+        : 0.0;
+    float luminance = clamp(
+        155.0 + (1.0 - ridge) * 95.0 + drive * 50.0 + high * 35.0,
+        0.0, 255.0
+    ) / 255.0;
+
+    vec3 rgb = vec3(luminance);
+    if (uProcMonochrome == 0) {
+        float inkLight = 0.46 + luminance * 0.54;
+        rgb = clamp(uProcInk * inkLight, 0.0, 1.0);
+    }
+    return vec4(rgb, alpha * (235.0 / 255.0));
 }
 
 void main() {
@@ -106,7 +167,16 @@ void main() {
         return;
     }
 
-    vec4 source = texture(uLayer, localUV);
+    vec4 source;
+    if (uUseLayer == 2 && uProcKind == 1) {
+        source = interferenceField(localUV);
+    } else if (uUseLayer == 1) {
+        source = texture(uLayer, localUV);
+    } else {
+        fragColor = destination;
+        return;
+    }
+
     source.a *= clamp(uOpacity, 0.0, 1.0);
     float outAlpha = source.a + destination.a * (1.0 - source.a);
     vec3 blended = blendColor(destination.rgb, source.rgb, uBlendMode);
