@@ -642,17 +642,19 @@ class VisualCompositor:
             screen: str = "No guide",
             gpu_native: bool = False,
             include_guide: bool = True,
-    ) -> dict:
-        """Build a scene for GPU blending; optionally keep interference fields GPU-resident."""
+    ) -> dict | Image.Image:
+        """Render a complete CPU frame or a layer-separated GPU scene.
+
+        The CPU result is a normal RGBA frame. The GPU result contains CPU
+        snapshots plus optional shader-native instrument descriptors.
+        """
         settings = settings or GeneratorSettings()
         layers = layers or []
         background = Image.new("RGBA", self.size, (10, 10, 10, 255))
-        guide = self._screen(screen) if include_guide else None
-        if guide is not None:
-            background.alpha_composite(guide)
-
+        guide = self._screen(screen)
         frame_box = self._frame_box(screen)
         rendered_layers = []
+
         for layer in layers:
             if not layer.visible:
                 continue
@@ -671,7 +673,7 @@ class VisualCompositor:
                     })
                     continue
 
-            if layer.generator == "INTERFERENCE FIELD" and gpu_native is False:
+            if layer.generator == "INTERFERENCE FIELD":
                 rendered = self._render_interference_reference(
                     layer, packet, seconds, settings, self.size, screen
                 )
@@ -689,16 +691,50 @@ class VisualCompositor:
                 "opacity": layer.opacity,
                 "layer_id": layer.layer_id,
             })
-        if not include_guide:
-            guide = self._screen(screen)
-            if guide is not None:
-                rendered_layers.append({
-                    "image": guide,
-                    "position": (0, 0),
-                    "blend_mode": "Normal",
-                    "opacity": 1.0,
-                    "layer_id": "__screen_guide__",
-                })
+
+        if not gpu_native:
+            frame = background.copy()
+            for layer_data in rendered_layers:
+                self._blend_at(
+                    frame,
+                    layer_data["image"],
+                    layer_data["position"],
+                    layer_data["blend_mode"],
+                    layer_data["opacity"],
+                )
+            if self._last_time is not None and seconds < self._last_time:
+                self._feedback = None
+            if self._feedback is not None and seconds > self._last_time:
+                dx = int(round(0.0 * self.size[0]))
+                dy = int(round(0.0 * self.size[1]))
+                previous = self._feedback
+                if dx or dy:
+                    previous = previous.transform(
+                        self.size, Image.Transform.AFFINE,
+                        (1, 0, -dx, 0, 1, -dy),
+                        resample=Image.Resampling.BILINEAR,
+                    )
+                alpha = previous.getchannel("A").point(
+                    [int(value * 0.90) for value in range(256)]
+                )
+                previous.putalpha(alpha)
+                self._blend_at(frame, previous, (0, 0), "Screen", 0.35)
+            self._feedback = frame.copy()
+            self._last_time = float(seconds)
+            if include_guide and guide is not None:
+                frame.alpha_composite(guide)
+            return frame
+
+        if include_guide and guide is not None:
+            background.alpha_composite(guide)
+        if not include_guide and guide is not None:
+            rendered_layers.append({
+                "image": guide,
+                "position": (0, 0),
+                "blend_mode": "Normal",
+                "opacity": 1.0,
+                "layer_id": "__screen_guide__",
+            })
         return {
             "background": background,
             "layers": rendered_layers,
