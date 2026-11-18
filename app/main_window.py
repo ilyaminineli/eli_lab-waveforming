@@ -1243,11 +1243,15 @@ class MainWindow(QMainWindow):
         self.status.setText(message[:90])
 
     def _on_gpu_preview_failed(self, message: str) -> None:
-        if self._gpu_preview_disabled:
-            return
         self._gpu_preview_disabled = True
-        self.status.setText(f"GPU PREVIEW FALLBACK  ·  {message[:56]}")
+        # Keep the full operation/error/renderer details in the status tooltip;
+        # the visible status stays short enough not to distort the layout.
+        self.status.setText("CPU PREVIEW ACTIVE · GPU DISABLED")
+        self.status.setToolTip(str(message))
         self.preview_worker.request_reset()
+        self._force_cpu_preview_frames = max(
+            self._force_cpu_preview_frames, 2
+        )
         self._render_frame()
 
     def _on_features(self, packet: dict) -> None:
