@@ -648,6 +648,10 @@ class VisualCompositor:
             screen: str = "No guide",
             gpu_native: bool = False,
             include_guide: bool = True,
+            feedback_enabled: bool = False,
+            feedback_amount: float = 0.35,
+            feedback_decay: float = 0.90,
+            feedback_shift: float = 0.0,
     ) -> dict | Image.Image:
         """Render a complete CPU frame or a layer-separated GPU scene.
 
@@ -711,9 +715,9 @@ class VisualCompositor:
             if self._last_time is not None and seconds < self._last_time:
                 self._feedback = None
             if self._feedback is not None and seconds > self._last_time:
-                dx = int(round(0.0 * self.size[0]))
-                dy = int(round(0.0 * self.size[1]))
-                previous = self._feedback
+                dx = int(round(float(feedback_shift) * self.size[0]))
+                dy = int(round(float(feedback_shift) * self.size[1] * 0.62))
+                previous = self._feedback.copy()
                 if dx or dy:
                     previous = previous.transform(
                         self.size, Image.Transform.AFFINE,
@@ -721,11 +725,15 @@ class VisualCompositor:
                         resample=Image.Resampling.BILINEAR,
                     )
                 alpha = previous.getchannel("A").point(
-                    [int(value * 0.90) for value in range(256)]
+                    [int(value * float(np.clip(feedback_decay, 0.0, 0.99)))
+                     for value in range(256)]
                 )
                 previous.putalpha(alpha)
-                self._blend_at(frame, previous, (0, 0), "Screen", 0.35)
-            self._feedback = frame.copy()
+                self._blend_at(
+                    frame, previous, (0, 0), "Screen",
+                    float(np.clip(feedback_amount, 0.0, 1.0)),
+                )
+            self._feedback = frame.copy() if feedback_enabled else None
             self._last_time = float(seconds)
             if include_guide and guide is not None:
                 frame.alpha_composite(guide)
