@@ -462,7 +462,9 @@ class VisualCompositor:
         """Describe a GPU-native interference field when no CPU-only operation is needed."""
         if layer.generator != "INTERFERENCE FIELD":
             return None
-        if layer.pass_mode not in ("NONE", "None") or layer.pass_strength > 0.001:
+        if layer.pass_mode not in ("NONE", "None") and layer.pass_strength > 0.001:
+            return None
+        if layer.mask_mode not in ("FULL", "FRAME"):
             return None
         if (
             abs(layer.x_offset) > 1e-6 or abs(layer.y_offset) > 1e-6
@@ -485,11 +487,10 @@ class VisualCompositor:
         if layer.mask_mode == "FULL":
             x0, y0, x1, y1 = 0, 0, size[0], size[1]
         else:
-            x0, y0, x1, y1 = (
-                (0, 0, size[0], size[1])
-                if screen == "No guide" and layer.mask_mode == "FRAME"
-                else self._frame_box_for_size(screen, size)
-            )
+            x0, y0, x1, y1 = self._frame_box_for_size(screen, size)
+            # Match the FRAME mask's exact inner registration margin.
+            inset = max(1, int(min(x1 - x0, y1 - y0) * 0.006))
+            x0, y0, x1, y1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
         width, height = max(1, x1 - x0), max(1, y1 - y0)
         white_plate = screen.upper().endswith("/ WHITE")
         if layer.palette_mode == "MONOCHROME":
