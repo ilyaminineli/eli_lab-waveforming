@@ -131,7 +131,7 @@ def create_auto_composition(
     source_ids: list[str],
     seed: int,
 ) -> list[VisualLayer]:
-    """Build a deliberate, bounded multi-layer plate from available sources."""
+    """Build a bounded composition with a distinct visual cell for each source."""
     rng = random.Random(seed)
     available = [name for name in AUTO_GENERATORS if name in generator_names]
     if not available:
@@ -141,54 +141,69 @@ def create_auto_composition(
 
     layers: list[VisualLayer] = []
     base_name = "GEOMETRIC PLATE" if "GEOMETRIC PLATE" in generator_names else available[0]
-    base = VisualLayer(
+    layers.append(VisualLayer(
         name="PLATE / STRUCTURE",
         generator=base_name,
-        blend_mode="Normal",
-        opacity=0.94,
+        blend_mode="Screen",
+        opacity=0.28,
         mask_mode="FRAME",
         pass_mode="PAPER RELIEF",
         pass_map="DISPLACEMENT",
-        pass_strength=0.34,
+        pass_strength=0.22,
         palette_mode="MONOCHROME",
         palette_index=0,
         role="STRUCTURE",
-    )
-    layers.append(base)
+    ))
 
-    # One visual channel per project group, not one layer per audio stem.
-    # Cap the automatically generated stack to retain negative space and FPS.
+    # Audio can contain up to 64 stems, but the auto-generated visual stack is
+    # intentionally bounded to eight channels to protect preview frame time.
     channel_ids = list(source_ids[:8]) if source_ids else [""] * 3
+    count = len(channel_ids)
+    if count <= 1:
+        columns, rows, tile_scale = 1, 1, 0.82
+    elif count <= 2:
+        columns, rows, tile_scale = 2, 1, 0.47
+    elif count <= 4:
+        columns, rows, tile_scale = 2, 2, 0.44
+    else:
+        columns, rows, tile_scale = 3, 3, 0.30
+
     preferred = [
         "AXONOMETRIC FIELD", "GEOMETRIC FIELD", "POLYHEDRAL FIELD",
         "PHASE ORBIT", "MOBIUS FIELD", "SPECTRAL TOPOGRAPHY", "PHYLLOTAXIS",
     ]
-    roles = ("ANCHOR", "MOTION", "TEXTURE", "ACCENT", "ATMOSPHERE", "MOTION", "TEXTURE", "ACCENT")
+    roles = ("ANCHOR", "MOTION", "TEXTURE", "ACCENT",
+             "ATMOSPHERE", "MOTION", "TEXTURE", "ACCENT")
+
     for index, source_id in enumerate(channel_ids):
         candidates = [name for name in preferred if name in generator_names]
         if not candidates:
             candidates = available
         generator = candidates[index % len(candidates)]
-        layer = VisualLayer(
-            name=f"GROUP {index + 1:02d} / {generator}",
+        row, column = divmod(index, columns)
+        x_offset = ((column + 0.5) / columns - 0.5) * 0.94 if columns > 1 else 0.0
+        y_offset = ((row + 0.5) / rows - 0.5) * 0.90 if rows > 1 else 0.0
+
+        layers.append(VisualLayer(
+            name=f"CHANNEL {index + 1:02d} / {generator}",
             generator=generator,
             blend_mode=("Screen", "Normal", "Difference", "Add")[index % 4],
-            opacity=round(rng.uniform(0.48, 0.86), 2),
-            x_offset=round(rng.uniform(-0.06, 0.06), 3),
-            y_offset=round(rng.uniform(-0.055, 0.055), 3),
-            scale=round(rng.uniform(0.76, 1.12), 2),
+            opacity=round(rng.uniform(0.62, 0.78), 2),
+            x_offset=round(x_offset, 3),
+            y_offset=round(y_offset, 3),
+            scale=tile_scale,
             rotation=0,
             mask_mode="FRAME",
-            pass_mode="PAPER RELIEF" if index % 2 == 0 else "NORMAL LIGHT",
+            # Relief is reserved for the background plate. Avoid running the
+            # same full-layer paper pass seven times per preview frame.
+            pass_mode="NONE",
             pass_map="DISPLACEMENT",
-            pass_strength=round(rng.uniform(0.26, 0.55), 2),
+            pass_strength=0.0,
             source_id=source_id,
             palette_mode="EDITORIAL TRICOLOR",
             palette_index=index,
             role=roles[index % len(roles)],
-        )
-        layers.append(layer)
-
+        ))
     return layers
 
 
@@ -223,9 +238,6 @@ def vary_composition(
                 layer.name = f"{layer.role} / {layer.generator}"
         layer.blend_mode = rng.choice(BLEND_MODES)
         layer.opacity = round(rng.uniform(0.48, 0.88), 2)
-        layer.x_offset = round(rng.uniform(-0.10, 0.10), 3)
-        layer.y_offset = round(rng.uniform(-0.085, 0.085), 3)
-        layer.scale = round(rng.uniform(0.72, 1.20), 2)
         layer.rotation = rng.choice((0, 0, 0, 90, 180, 270))
         layer.pass_strength = round(rng.uniform(0.22, 0.62), 2)
     return layers
