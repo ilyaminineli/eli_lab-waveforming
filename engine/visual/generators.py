@@ -821,6 +821,18 @@ class GeneratorBank:
         for key in [key for key in self._instances if key[0] == state_key]:
             self._instances.pop(key, None)
 
+    def retain_layers(self, active_layers: dict[str, str]) -> None:
+        """Drop generator state for removed/hidden/replaced layers."""
+        for state_key, generator_name in tuple(self._instances):
+            if active_layers.get(state_key) != generator_name:
+                self._instances.pop((state_key, generator_name), None)
+
+    def resize_states(self, size: tuple[int, int]) -> None:
+        """Recreate simulation buffers after a preview-resolution change."""
+        for key, generator in tuple(self._instances.items()):
+            if isinstance(generator, (CellularSystem, ReactionDiffusion)):
+                generator.reset()
+
     def render(self, name: str, packet: dict | None, seconds: float,
                size: tuple[int, int], settings: GeneratorSettings,
                state_key: str | None = None, source_id: str | None = None) -> Image.Image:
