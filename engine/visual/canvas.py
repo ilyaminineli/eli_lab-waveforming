@@ -378,7 +378,13 @@ if GL is not None:
                 GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
                 GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
                 pixels = np.frombuffer(rgba.tobytes(), dtype=np.uint8).reshape(height, width, 4)
+                # Qt and other GL users share this context; restore neutral
+                # unpack state and ensure client memory, not a PBO offset.
+                GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
                 GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
+                GL.glPixelStorei(GL.GL_UNPACK_ROW_LENGTH, 0)
+                GL.glPixelStorei(GL.GL_UNPACK_SKIP_PIXELS, 0)
+                GL.glPixelStorei(GL.GL_UNPACK_SKIP_ROWS, 0)
                 GL.glTexImage2D(
                     GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
                     GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels,
@@ -389,7 +395,11 @@ if GL is not None:
             texture, old_size = cached
             GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
             pixels = np.frombuffer(rgba.tobytes(), dtype=np.uint8).reshape(height, width, 4)
+            GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
             GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
+            GL.glPixelStorei(GL.GL_UNPACK_ROW_LENGTH, 0)
+            GL.glPixelStorei(GL.GL_UNPACK_SKIP_PIXELS, 0)
+            GL.glPixelStorei(GL.GL_UNPACK_SKIP_ROWS, 0)
             if old_size != (width, height):
                 self._textures[key] = (texture, (width, height))
                 GL.glTexImage2D(
@@ -438,7 +448,9 @@ if GL is not None:
                 self._gl_check("framebuffer/attach-color-texture")
                 self._target_textures.append(texture)
                 self._framebuffers.append(framebuffer)
-            GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+            GL.glBindFramebuffer(
+                GL.GL_FRAMEBUFFER, self.defaultFramebufferObject()
+            )
             self._gl_check("framebuffer/complete")
             self._target_size = size
 
@@ -525,8 +537,14 @@ if GL is not None:
                 background = self._scene["background"]
                 width, height = background.size
                 self._ensure_targets((width, height))
+                # QOpenGLWidget shares a context with Qt's paint engine. Do
+                # not inherit stale scissor/cull/stencil/color-mask state.
                 GL.glDisable(GL.GL_BLEND)
                 GL.glDisable(GL.GL_DEPTH_TEST)
+                GL.glDisable(GL.GL_SCISSOR_TEST)
+                GL.glDisable(GL.GL_STENCIL_TEST)
+                GL.glDisable(GL.GL_CULL_FACE)
+                GL.glColorMask(GL.GL_TRUE, GL.GL_TRUE, GL.GL_TRUE, GL.GL_TRUE)
                 base_texture = self._texture("background", background)
                 current = 0
                 GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self._framebuffers[current])
@@ -562,11 +580,15 @@ if GL is not None:
                     )
                     current = next_target
 
-                GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+                # QOpenGLWidget does not present to framebuffer 0. Qt owns
+                # the widget target and may recreate it after every resize.
+                widget_fbo = int(self.defaultFramebufferObject())
+                GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, widget_fbo)
                 GL.glClearColor(0.0, 0.0, 0.0, 1.0)
                 GL.glClear(GL.GL_COLOR_BUFFER_BIT)
-                widget_w = max(1, self.width())
-                widget_h = max(1, self.height())
+                dpr = float(self.devicePixelRatioF())
+                widget_w = max(1, int(round(self.width() * dpr)))
+                widget_h = max(1, int(round(self.height() * dpr)))
                 scale = min(widget_w / width, widget_h / height)
                 view_w, view_h = int(width * scale), int(height * scale)
                 GL.glViewport((widget_w - view_w) // 2, (widget_h - view_h) // 2, view_w, view_h)
