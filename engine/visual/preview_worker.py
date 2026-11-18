@@ -173,6 +173,14 @@ class PreviewRenderWorker(threading.Thread):
                             gpu_native=True,
                             include_guide=False,
                         )
+                    elif request["feedback_enabled"]:
+                        image = self._compositor.render(
+                            **render_args,
+                            feedback_enabled=True,
+                            feedback_amount=request["feedback_amount"],
+                            feedback_decay=request["feedback_decay"],
+                            feedback_shift=request["feedback_shift"],
+                        )
                     else:
                         image = self._compositor.render_scene(
                             **render_args,
