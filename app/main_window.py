@@ -1206,7 +1206,7 @@ class MainWindow(QMainWindow):
             feedback_shift=self.feedback_shift.value() / 100.0,
             sequence=self._render_sequence,
             gpu_composite=(
-                    bool(getattr(self.canvas, "gpu_active", False))
+                    bool(getattr(self.canvas, "gpu_ready", False))
                     and not self._gpu_preview_disabled
                     and not self.feedback_enabled.isChecked()
             ),
