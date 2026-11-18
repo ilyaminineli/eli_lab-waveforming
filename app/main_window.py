@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
         self._preview_clock_started = monotonic()
         self._preview_animation_seconds = 0.0
         self._last_preview_tick = self._preview_clock_started
+        self._force_cpu_preview_frames = 2
         self._export_worker = None
         self._export_progress = None
         self._project_path: Path | None = None
@@ -1194,6 +1195,9 @@ class MainWindow(QMainWindow):
             "accent_amount": director_output.accent_amount,
             "state": director_output.state,
         }
+        force_cpu_preview = self._force_cpu_preview_frames > 0
+        if force_cpu_preview:
+            self._force_cpu_preview_frames -= 1
         self.preview_worker.submit(
             packet=frame_packet,
             seconds=seconds,
@@ -1206,7 +1210,8 @@ class MainWindow(QMainWindow):
             feedback_shift=self.feedback_shift.value() / 100.0,
             sequence=self._render_sequence,
             gpu_composite=(
-                    bool(getattr(self.canvas, "gpu_ready", False))
+                    self._force_cpu_preview_frames <= 0
+                    and bool(getattr(self.canvas, "gpu_ready", False))
                     and not self._gpu_preview_disabled
                     and not self.feedback_enabled.isChecked()
             ),
