@@ -355,21 +355,63 @@ if GL is not None:
             GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
             self._target_size = size
 
+        def _uniform_location(self, name: str) -> int:
+            return GL.glGetUniformLocation(self._program, name)
+
         def _draw_pass(self, base_texture: int, layer_texture: int = 0,
                        rect=(0.0, 0.0, 1.0, 1.0), blend=0, opacity=1.0,
-                       use_layer=False, base_is_fbo=False) -> None:
+                       use_layer=False, base_is_fbo=False,
+                       gpu_instrument: dict | None = None) -> None:
             GL.glUseProgram(self._program)
             GL.glActiveTexture(GL.GL_TEXTURE0)
             GL.glBindTexture(GL.GL_TEXTURE_2D, base_texture)
-            GL.glUniform1i(GL.glGetUniformLocation(self._program, "uBase"), 0)
-            GL.glUniform1i(GL.glGetUniformLocation(self._program, "uBaseFlip"), 1 if base_is_fbo else 0)
+            GL.glUniform1i(self._uniform_location("uBase"), 0)
+            GL.glUniform1i(self._uniform_location("uBaseFlip"), 1 if base_is_fbo else 0)
             GL.glActiveTexture(GL.GL_TEXTURE1)
             GL.glBindTexture(GL.GL_TEXTURE_2D, layer_texture)
-            GL.glUniform1i(GL.glGetUniformLocation(self._program, "uLayer"), 1)
-            GL.glUniform1i(GL.glGetUniformLocation(self._program, "uUseLayer"), 1 if use_layer else 0)
-            GL.glUniform1i(GL.glGetUniformLocation(self._program, "uBlendMode"), int(blend))
-            GL.glUniform1f(GL.glGetUniformLocation(self._program, "uOpacity"), float(opacity))
-            GL.glUniform4f(GL.glGetUniformLocation(self._program, "uRect"), *rect)
+            GL.glUniform1i(self._uniform_location("uLayer"), 1)
+            layer_kind = 0 if not use_layer else (2 if gpu_instrument else 1)
+            GL.glUniform1i(self._uniform_location("uUseLayer"), layer_kind)
+            GL.glUniform1i(self._uniform_location("uBlendMode"), int(blend))
+            GL.glUniform1f(self._uniform_location("uOpacity"), float(opacity))
+            GL.glUniform4f(self._uniform_location("uRect"), *rect)
+
+            proc_kind = 0
+            if gpu_instrument and gpu_instrument.get("kind") == "interference":
+                proc_kind = 1
+                params = gpu_instrument
+                settings = params["settings"]
+                metrics = params["metrics"]
+                GL.glUniform1i(self._uniform_location("uProcKind"), proc_kind)
+                GL.glUniform4f(
+                    self._uniform_location("uProcA"),
+                    settings["density"], settings["speed"], settings["response"],
+                    params["seconds"],
+                )
+                GL.glUniform4f(
+                    self._uniform_location("uProcB"),
+                    metrics["low"], metrics["mid"], metrics["high"], metrics["energy"],
+                )
+                GL.glUniform4f(
+                    self._uniform_location("uProcC"),
+                    metrics["centroid"], metrics["cross"], metrics["coherence"],
+                    metrics["transient"],
+                )
+                GL.glUniform1f(
+                    self._uniform_location("uProcEntropy"), metrics["entropy"]
+                )
+                ink = params["ink"]
+                GL.glUniform3f(
+                    self._uniform_location("uProcInk"),
+                    ink[0] / 255.0, ink[1] / 255.0, ink[2] / 255.0,
+                )
+                GL.glUniform1i(
+                    self._uniform_location("uProcMonochrome"),
+                    1 if params["palette_mode"] == "MONOCHROME" else 0,
+                )
+            else:
+                GL.glUniform1i(self._uniform_location("uProcKind"), 0)
+
             GL.glBindVertexArray(self._vao)
             GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
             GL.glBindVertexArray(0)
@@ -399,10 +441,16 @@ if GL is not None:
                 self._draw_pass(base_texture)
 
                 for index, layer in enumerate(self._scene["layers"]):
-                    image = layer["image"]
-                    x, y = layer["position"]
-                    layer_w, layer_h = image.size
-                    texture = self._texture(f"layer-{index}", image)
+                    gpu_instrument = layer.get("gpu_instrument")
+                    if gpu_instrument is not None:
+                        x, y, layer_w, layer_h = gpu_instrument["rect"]
+                        texture = 0
+                    else:
+                        image = layer["image"]
+                        x, y = layer["position"]
+                        layer_w, layer_h = image.size
+                        texture = self._texture(f"layer-{index}", image)
+
                     next_target = 1 - current
                     GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self._framebuffers[next_target])
                     rect = (
@@ -417,6 +465,7 @@ if GL is not None:
                         self._target_textures[current], texture, rect,
                         self.BLEND_CODES.get(layer["blend_mode"], 0),
                         float(layer["opacity"]), True, True,
+                        gpu_instrument=gpu_instrument,
                     )
                     current = next_target
 
