@@ -361,7 +361,16 @@ def test_gpu_interference_scene_keeps_cpu_fallback_layer_snapshot():
         "GPU interference", "INTERFERENCE FIELD",
         mask_mode="FRAME", pass_mode="NONE", pass_strength=0.0,
     )
-    cpu = compositor.render_cpu_frame(
+    cpu_scene = compositor.render_scene(
+        packet=None,
+        seconds=1.25,
+        layers=[layer],
+        settings=GeneratorSettings(),
+        screen="SCREEN 1 / BLACK",
+        gpu_native=False,
+        include_guide=False,
+    )
+    cpu_frame = compositor.render_cpu_frame(
         packet=None,
         seconds=1.25,
         layers=[layer],
@@ -378,5 +387,6 @@ def test_gpu_interference_scene_keeps_cpu_fallback_layer_snapshot():
         include_guide=False,
     )
 
-    assert isinstance(cpu, Image.Image)
+    assert "image" in cpu_scene["layers"][0]
+    assert np.count_nonzero(np.asarray(cpu_frame)[..., :3]) > 100
     assert "gpu_instrument" in gpu["layers"][0]
