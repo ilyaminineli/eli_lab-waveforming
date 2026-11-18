@@ -174,13 +174,24 @@ class PreviewRenderWorker(threading.Thread):
                             include_guide=False,
                         )
                     else:
-                        image = self._compositor.render(
+                        # CPU path always materializes every instrument, including
+                        # the same interference field used by the GPU shader.
+                        image = self._compositor.render_scene(
                             **render_args,
-                            feedback_enabled=request["feedback_enabled"],
-                            feedback_amount=request["feedback_amount"],
-                            feedback_decay=request["feedback_decay"],
-                            feedback_shift=request["feedback_shift"],
+                            gpu_native=False,
+                            include_guide=False,
                         )
+                        image = self._compositor.flatten_scene(image)
+                        if request["feedback_enabled"]:
+                            # Feedback remains in the CPU compositor so its
+                            # visual history follows exactly the CPU frame path.
+                            image = self._compositor.apply_feedback(
+                                image,
+                                request["seconds"],
+                                request["feedback_amount"],
+                                request["feedback_decay"],
+                                request["feedback_shift"],
+                            )
                     self.signals.frame_ready.emit(
                         image, request["audio_seconds"], request["sequence"]
                     )
