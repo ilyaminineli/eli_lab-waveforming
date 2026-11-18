@@ -192,3 +192,111 @@ def test_printable_mask_uses_offline_canvas_dimensions():
 
     assert mask.size == (1920, 1440)
     assert mask.getbbox() is not None
+
+
+def test_gpu_native_interference_emits_shader_descriptor_without_cpu_image():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(128, 96)
+    )
+    layer = VisualLayer(
+        name="Interference / GPU",
+        generator="INTERFERENCE FIELD",
+        mask_mode="FULL",
+        pass_mode="NONE",
+        pass_strength=0.0,
+        palette_mode="EDITORIAL TRICOLOR",
+        palette_index=2,
+        blend_mode="Screen",
+    )
+    packet = {
+        "source_ids": ["track-a"],
+        "frames": {
+            "track-a": type("Frame", (), {
+                "bands": np.full(32, 0.25, dtype=np.float32),
+                "rms": 0.2,
+                "flux": 0.01,
+                "centroid_norm": 0.45,
+                "flatness": 0.3,
+                "entropy": 0.5,
+                "zcr": 0.1,
+                "stereo_width": 0.2,
+                "rolloff": 0.7,
+                "crest": 2.0,
+            })()
+        },
+    }
+    scene = compositor.render_scene(
+        packet, 1.25, [layer], GeneratorSettings(), "No guide", gpu_native=True
+    )
+
+    assert len(scene["layers"]) == 1
+    descriptor = scene["layers"][0]["gpu_instrument"]
+    assert descriptor["kind"] == "interference"
+    assert descriptor["rect"] == (0, 0, 128, 96)
+    assert descriptor["blend_mode"] == "Screen"
+    assert descriptor["settings"]["density"] == pytest.approx(0.58)
+    assert descriptor["seconds"] == pytest.approx(1.25)
+    assert descriptor["palette_mode"] == "TRICOLOR"
+    assert "image" not in scene["layers"][0]
+
+
+def test_gpu_native_interference_falls_back_for_cpu_only_effects():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(128, 96)
+    )
+    cases = [
+        VisualLayer(
+            "Paper pass", "INTERFERENCE FIELD",
+            mask_mode="FULL", pass_mode="PAPER RELIEF", pass_strength=0.5,
+        ),
+        VisualLayer(
+            "Scaled", "INTERFERENCE FIELD",
+            mask_mode="FULL", pass_mode="NONE", pass_strength=0.0, scale=0.8,
+        ),
+        VisualLayer(
+            "Rotated", "INTERFERENCE FIELD",
+            mask_mode="FULL", pass_mode="NONE", pass_strength=0.0, rotation=90,
+        ),
+        VisualLayer(
+            "Unsupported palette", "INTERFERENCE FIELD",
+            mask_mode="FULL", pass_mode="NONE", pass_strength=0.0,
+            palette_mode="SOME CUSTOM MAP",
+        ),
+    ]
+
+    for layer in cases:
+        scene = compositor.render_scene(
+            None, 0.0, [layer], GeneratorSettings(), "No guide", gpu_native=True
+        )
+        assert len(scene["layers"]) == 1
+        assert "gpu_instrument" not in scene["layers"][0]
+        assert scene["layers"][0]["image"].mode == "RGBA"
+
+
+def test_gpu_native_interference_falls_back_when_director_effects_are_active():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(96, 72)
+    )
+    layer = VisualLayer(
+        "Glitch fallback", "INTERFERENCE FIELD",
+        mask_mode="FULL", pass_mode="NONE", pass_strength=0.0,
+    )
+    scene = compositor.render_scene(
+        {"director_output": {"glitch_amount": 0.5}},
+        0.5, [layer], GeneratorSettings(), "No guide", gpu_native=True,
+    )
+
+    assert "gpu_instrument" not in scene["layers"][0]
+    assert scene["layers"][0]["image"].mode == "RGBA"
+
+
+def test_gpu_shader_contains_procedural_interference_uniforms():
+    from engine.visual.canvas import FRAGMENT_SHADER
+
+    for uniform in (
+        "uProcKind", "uProcA", "uProcB", "uProcC",
+        "uProcEntropy", "uProcInk", "uProcMonochrome",
+    ):
+        assert uniform in FRAGMENT_SHADER
+    assert "vec4 interferenceField(vec2 uv)" in FRAGMENT_SHADER
+    assert "fieldA" in FRAGMENT_SHADER and "fieldB" in FRAGMENT_SHADER
