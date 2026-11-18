@@ -450,11 +450,110 @@ class VisualCompositor:
             transformed, position, screen, layer.mask_mode, frame_box, self._mask
         )
 
-    def render_scene(self, packet: dict | None, seconds: float,
-                     layers: list[VisualLayer] | None = None,
-                     settings: GeneratorSettings | None = None,
-                     screen: str = "No guide") -> dict:
-        """Render generator surfaces on CPU and leave layer blending to OpenGL."""
+    @staticmethod
+    def _gpu_interference_spec(
+        layer: VisualLayer,
+        packet: dict | None,
+        seconds: float,
+        settings: GeneratorSettings,
+        size: tuple[int, int],
+        screen: str,
+    ) -> dict | None:
+        """Describe a GPU-native interference field when no CPU-only operation is needed."""
+        if layer.generator != "INTERFERENCE FIELD":
+            return None
+        if layer.pass_mode not in ("NONE", "None") or layer.pass_strength > 0.001:
+            return None
+        if (
+            abs(layer.x_offset) > 1e-6 or abs(layer.y_offset) > 1e-6
+            or abs(layer.scale - 1.0) > 1e-6
+            or abs(layer.rotation) > 1e-6
+        ):
+            return None
+        if layer.palette_mode not in ("EDITORIAL TRICOLOR", "MUTED PRIDE", "MONOCHROME"):
+            return None
+
+        output = (packet or {}).get("director_output") or {}
+        if (
+            float(output.get("glitch_amount", 0.0)) > 0.001
+            or float(output.get("accent_amount", 0.0)) > 0.001
+        ):
+            return None
+
+        from .generators import VisualMetrics
+        metrics = VisualMetrics.from_packet(packet, source_id=layer.source_id or None)
+        if layer.mask_mode == "FULL":
+            x0, y0, x1, y1 = 0, 0, size[0], size[1]
+        else:
+            x0, y0, x1, y1 = (
+                (0, 0, size[0], size[1])
+                if screen == "No guide" and layer.mask_mode == "FRAME"
+                else self._frame_box_for_size(screen, size)
+            )
+        width, height = max(1, x1 - x0), max(1, y1 - y0)
+        white_plate = screen.upper().endswith("/ WHITE")
+        if layer.palette_mode == "MONOCHROME":
+            ink = (10, 10, 10) if white_plate else (236, 236, 232)
+            palette_mode = "MONOCHROME"
+        else:
+            palette = EDITORIAL_TRICOLOR_LIGHT if white_plate else EDITORIAL_TRICOLOR_DARK
+            source_ids = list((packet or {}).get("source_ids") or (packet or {}).get("frames", {}).keys())
+            if layer.source_id and layer.source_id in source_ids:
+                palette_index = source_ids.index(layer.source_id)
+            else:
+                palette_index = int(layer.palette_index)
+            ink = palette[palette_index % len(palette)]
+            palette_mode = "TRICOLOR"
+
+        return {
+            "kind": "interference",
+            "size": (width, height),
+            "rect": (x0, y0, width, height),
+            "blend_mode": layer.blend_mode,
+            "opacity": float(layer.opacity),
+            "palette_mode": palette_mode,
+            "ink": tuple(int(channel) for channel in ink),
+            "metrics": {
+                "low": float(metrics.low),
+                "mid": float(metrics.mid),
+                "high": float(metrics.high),
+                "energy": float(metrics.energy),
+                "centroid": float(metrics.centroid),
+                "cross": float(metrics.cross),
+                "coherence": float(metrics.coherence),
+                "transient": float(metrics.transient),
+                "entropy": float(metrics.entropy),
+            },
+            "settings": {
+                "density": float(settings.density),
+                "speed": float(settings.speed),
+                "response": float(settings.response),
+            },
+            "seconds": float(seconds),
+            "layer_id": layer.layer_id,
+        }
+
+    def _frame_box_for_size(
+        self, screen: str, size: tuple[int, int]
+    ) -> tuple[int, int, int, int]:
+        normalized = self.assets.frame_box(screen)
+        width, height = size
+        x0, y0, x1, y1 = normalized
+        return (
+            int(round(x0 * width)), int(round(y0 * height)),
+            int(round(x1 * width)), int(round(y1 * height)),
+        )
+
+    def render_scene(
+        self,
+        packet: dict | None,
+        seconds: float,
+        layers: list[VisualLayer] | None = None,
+        settings: GeneratorSettings | None = None,
+        screen: str = "No guide",
+        gpu_native: bool = False,
+    ) -> dict:
+        """Build a scene for GPU blending; optionally keep interference fields GPU-resident."""
         settings = settings or GeneratorSettings()
         layers = layers or []
         background = Image.new("RGBA", self.size, (10, 10, 10, 255))
@@ -467,6 +566,21 @@ class VisualCompositor:
         for layer in layers:
             if not layer.visible:
                 continue
+            if gpu_native:
+                spec = self._gpu_interference_spec(
+                    layer, packet, seconds, settings, self.size, screen
+                )
+                if spec is not None:
+                    rendered_layers.append({
+                        "gpu_instrument": spec,
+                        "position": (spec["rect"][0], spec["rect"][1]),
+                        "size": (spec["rect"][2], spec["rect"][3]),
+                        "blend_mode": layer.blend_mode,
+                        "opacity": layer.opacity,
+                        "layer_id": layer.layer_id,
+                    })
+                    continue
+
             rendered = self._render_layer(
                 layer, packet, seconds, settings, screen, frame_box
             )
