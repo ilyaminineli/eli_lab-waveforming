@@ -248,6 +248,13 @@ class CellularSystem(VisualGenerator):
         self._last_time = None
         self._accumulator = 0.0
 
+    def reset(self) -> None:
+        self._grid = None
+        self._shape = None
+        self._rng = None
+        self._last_time = None
+        self._accumulator = 0.0
+
     def _reset(self, size, settings):
         gw = max(160, int(size[0] // 3))
         gh = max(120, int(size[1] // 3))
@@ -380,6 +387,13 @@ class ReactionDiffusion(VisualGenerator):
                 padded[2:, :-2] + padded[2:, 2:]
         )
         return cardinals * 0.2 + diagonals * 0.05 - field
+
+    def reset(self) -> None:
+        self.u = None
+        self.v = None
+        self._shape = None
+        self._last_time = None
+        self._accumulator = 0.0
 
     def _reset(self, size, settings):
         gh = max(112, int(size[1] // 3))
