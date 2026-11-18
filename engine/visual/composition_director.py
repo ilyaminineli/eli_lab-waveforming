@@ -177,15 +177,13 @@ def create_auto_composition(
     channel_ids = list(source_ids[:8]) if source_ids else [""] * 3
     count = len(channel_ids)
     if count <= 1:
-        columns, rows, tile_scale = 1, 1, 0.88
+        columns, rows, tile_scale = 1, 1, 0.82
     elif count <= 2:
-        columns, rows, tile_scale = 2, 1, 0.58
+        columns, rows, tile_scale = 2, 1, 0.47
     elif count <= 4:
-        columns, rows, tile_scale = 2, 2, 0.52
-    elif count <= 6:
-        columns, rows, tile_scale = 3, 2, 0.40
+        columns, rows, tile_scale = 2, 2, 0.44
     else:
-        columns, rows, tile_scale = 3, 3, 0.34
+        columns, rows, tile_scale = 3, 3, 0.30
 
     preferred = [
         "AXONOMETRIC FIELD", "GEOMETRIC FIELD", "POLYHEDRAL FIELD",
