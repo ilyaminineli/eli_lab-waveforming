@@ -117,3 +117,12 @@ The current application exposes the engine's 64-source limit in both import and 
 The screen catalogue resolves resources/screens first and supports the former screens directory as a fallback. The composition director is initialized in the window, its MANUAL / SEMI-AUTO / AUTO selector is saved with the project, and its motion, complexity, glitch and accent values are applied to both preview and offline render.
 
 AUTO COMPOSE uses distinct 2-column or 3-column channel cells (up to eight visually routed sources). Channel variation preserves those cell positions. Export feature analysis is sampled at up to 8 Hz and held between analysis updates, rather than recalculating every track FFT on every video frame.
+
+
+## Incremental GPU-native generator path
+
+The live OpenGL preview can evaluate INTERFERENCE FIELD directly in a GLSL 3.3 fragment shader. The preview worker passes a compact parameter packet (audio descriptors, generator settings, ink and rectangle) to the canvas instead of rasterizing this compatible layer into a Pillow image and uploading it each frame. This path currently requires FULL or FRAME masks, identity transform, no active paper-relief/displacement/texture pass, a supported editorial/monochrome palette and no director glitch/accent operation. Unsupported combinations intentionally use the existing CPU generator path. The other generators, paper-relief fields and offline render remain CPU-side; a real GPU performance gain must be measured on target hardware before promoting the shader path to a default.
+
+## HTML artwork extraction
+
+The two PSD-to-HTML exports are 1920×1440 static layer compositions. The full version has 23 image layers and the simple version 18; 18 positioned layer instances match and five are full-only. The extraction utility preserves embedded PNGs, DOM draw order, exact top-left rectangles, accumulated group offsets, opacity, CSS blend mode, group hierarchy and nested inline image styles. GitHub Actions regenerates the deduplicated parts and manifest under resources/layout/artwork. This artwork manifest remains separate from the printable-area masks in layout_profiles.json.
