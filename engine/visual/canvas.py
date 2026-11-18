@@ -229,10 +229,16 @@ if GL is not None:
             return bool(self.gpu_active and self._gl_ready and not self._gl_failed)
 
         def set_scene(self, scene: dict) -> None:
-            # Always retain a CPU snapshot. If GL fails after receiving this
-            # scene, the preview must still have a complete visible frame.
-            self._fallback = _pixmap_from_image(self._flatten_scene(scene))
+            # Retain a complete CPU frame when one is supplied. GPU descriptors
+            # do not contain pixels, so for those scenes the preview worker must
+            # submit a CPU-rendered frame after GPU initialization failure.
+            if all(layer.get("image") is not None for layer in scene["layers"]):
+                self._fallback = _pixmap_from_image(self._flatten_scene(scene))
             self._scene = scene if self.gpu_ready else None
+            if self._scene is None and self._fallback.isNull():
+                self.gpu_failed.emit(
+                    "GPU scene arrived before context initialization and had no CPU fallback"
+                )
             self.update()
 
         @staticmethod
