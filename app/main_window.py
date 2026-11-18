@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
         self.timeline = Timeline()
         self.layer_stack = LayerStack()
         self._auto_composed = False
+        self._gpu_preview_disabled = False
         self._loading_project = False
         self._render_sequence = 0
         self._displayed_sequence = -1
@@ -420,6 +421,9 @@ class MainWindow(QMainWindow):
         right_layout.addLayout(preview_header)
 
         self.canvas = GpuCompositionCanvas(self.assets)
+        gpu_failed = getattr(self.canvas, "gpu_failed", None)
+        if gpu_failed is not None:
+            gpu_failed.connect(self._on_gpu_preview_failed)
         right_layout.addWidget(self.canvas, 1)
 
         transport = QHBoxLayout()
@@ -1187,6 +1191,7 @@ class MainWindow(QMainWindow):
             sequence=self._render_sequence,
             gpu_composite=(
                 bool(getattr(self.canvas, "gpu_active", False))
+                and not self._gpu_preview_disabled
                 and not self.feedback_enabled.isChecked()
             ),
         )
@@ -1215,6 +1220,14 @@ class MainWindow(QMainWindow):
 
     def _on_preview_error(self, message: str) -> None:
         self.status.setText(message[:90])
+
+    def _on_gpu_preview_failed(self, message: str) -> None:
+        if self._gpu_preview_disabled:
+            return
+        self._gpu_preview_disabled = True
+        self.status.setText(f"GPU PREVIEW FALLBACK  ·  {message[:56]}")
+        self.preview_worker.request_reset()
+        self._render_frame()
 
     def _on_features(self, packet: dict) -> None:
         source_groups = {
