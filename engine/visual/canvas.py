@@ -81,6 +81,7 @@ uniform vec4 uProcC; // centroid, cross, coherence, transient
 uniform float uProcEntropy;
 uniform vec3 uProcInk;
 uniform int uProcMonochrome;
+uniform float uPreviewClock;
 
 vec3 blendColor(vec3 base, vec3 source, int mode) {
     if (mode == 1) return min(vec3(1.0), base + source);
@@ -101,7 +102,7 @@ vec4 interferenceField(vec2 uv) {
     float density = clamp(uProcA.x, 0.05, 1.0);
     float speed = uProcA.y;
     float response = uProcA.z;
-    float seconds = uProcA.w;
+    float seconds = uPreviewClock;
     float low = uProcB.x;
     float mid = uProcB.y;
     float high = uProcB.z;
@@ -416,6 +417,9 @@ if GL is not None:
                 GL.glUniform1f(
                     self._uniform_location("uProcEntropy"), metrics["entropy"]
                 )
+                GL.glUniform1f(
+                    self._uniform_location("uPreviewClock"), params["seconds"]
+                )
                 ink = params["ink"]
                 GL.glUniform3f(
                     self._uniform_location("uProcInk"),
@@ -427,6 +431,7 @@ if GL is not None:
                 )
             else:
                 GL.glUniform1i(self._uniform_location("uProcKind"), 0)
+                GL.glUniform1f(self._uniform_location("uPreviewClock"), 0.0)
 
             GL.glBindVertexArray(self._vao)
             GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
