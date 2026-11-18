@@ -30,13 +30,15 @@ class AudioSource:
         path: Path,
         *,
         target_sample_rate: int | None = None,
-        preload_threshold_mb: float = 192.0,
+        preload_threshold_mb: float = 96.0,
     ) -> "AudioSource":
         path = Path(path)
         info = sf.info(str(path))
         if info.frames <= 0 or info.channels <= 0:
             raise ValueError("Audio source is empty.")
         expected_bytes = int(info.frames) * min(int(info.channels), 2) * 4
+        group_id = path.parent.resolve().as_posix().casefold()
+        group_name = path.parent.name or "Ungrouped"
         threshold_bytes = max(1, int(float(preload_threshold_mb) * 1024 * 1024))
         can_stream = (
             target_sample_rate is not None
@@ -51,8 +53,8 @@ class AudioSource:
                 name=path.stem,
                 frame_count=int(info.frames),
                 storage_mode="stream",
-                group_id=path.parent.name or "ungrouped",
-                group_name=path.parent.name or "Ungrouped",
+                group_id=group_id,
+                group_name=group_name,
             )
 
         data = cls._read_all(path)
@@ -63,8 +65,8 @@ class AudioSource:
             name=path.stem,
             frame_count=len(data),
             storage_mode="memory",
-            group_id=path.parent.name or "ungrouped",
-            group_name=path.parent.name or "Ungrouped",
+            group_id=group_id,
+            group_name=group_name,
         )
 
     @staticmethod
