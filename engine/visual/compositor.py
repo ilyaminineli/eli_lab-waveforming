@@ -56,10 +56,12 @@ class VisualCompositor:
     def pass_names(self) -> list[str]:
         return ["None", *self.assets.pass_names()]
 
-    def reset_feedback(self) -> None:
+    def reset_feedback(self, *, preserve_generators: bool = False) -> None:
+        """Clear temporal feedback; optionally retain stateful generator simulations."""
         self._feedback = None
         self._last_time = None
-        self.generators.reset_states()
+        if not preserve_generators:
+            self.generators.reset_states()
 
     def _screen(self, name: str) -> Image.Image | None:
         if name == "No guide":
