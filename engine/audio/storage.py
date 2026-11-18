@@ -118,8 +118,10 @@ class StreamedAudioBuffer:
                 self._stop = True
                 self._condition.notify_all()
 
-    def read_into(self, position: int, destination: np.ndarray) -> int:
-        """Copy a contiguous range without waiting; return copied frame count."""
+    def read_into(
+        self, position: int, destination: np.ndarray, *, update_request: bool = True
+    ) -> int:
+        """Copy buffered samples without waiting; optionally leave prefetch state untouched."""
         if destination.ndim != 2 or destination.shape[1] != 2:
             raise ValueError("Destination must have shape (frames, 2).")
         destination.fill(0.0)
@@ -128,24 +130,25 @@ class StreamedAudioBuffer:
         with self._condition:
             end = position + length
             if position < self._ring_start and end <= self._head_frames:
-                # Keep the loop/seek head resident so a wrap does not produce
-                # a one-buffer silence while the disk reader seeks back to zero.
                 destination[:] = self._head[position:end]
-                self._requested_pos = end
-                self._condition.notify()
+                if update_request:
+                    self._requested_pos = end
+                    self._condition.notify()
                 return length
             if position < self._ring_start or end > self._write_pos:
-                self._requested_pos = position
-                self.underruns += 1
-                self._condition.notify()
+                if update_request:
+                    self._requested_pos = position
+                    self._condition.notify()
+                    self.underruns += 1
                 return 0
             offset = position % self.capacity
             first = min(length, self.capacity - offset)
             destination[:first] = self._ring[offset:offset + first]
             if first < length:
                 destination[first:] = self._ring[:length - first]
-            self._requested_pos = end
-            self._condition.notify()
+            if update_request:
+                self._requested_pos = end
+                self._condition.notify()
             return length
 
     def close(self) -> None:
