@@ -25,7 +25,7 @@ def resolve_ffmpeg() -> str | None:
 
     # Common Windows package-manager locations; these do not require a PATH edit.
     local_app_data = Path(os.environ.get("LOCALAPPDATA", ""))
-    program_data = Path(os.environ.get("ProgramData", r"C:\\ProgramData"))
+    program_data = Path(os.environ.get("ProgramData", r"C:\ProgramData"))
     windows_candidates = (
         Path("C:/ffmpeg/bin/ffmpeg.exe"),
         Path("C:/Program Files/FFmpeg/bin/ffmpeg.exe"),
