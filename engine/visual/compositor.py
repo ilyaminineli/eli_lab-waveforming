@@ -457,14 +457,18 @@ class VisualCompositor:
             packet: dict | None,
             seconds: float,
             settings: GeneratorSettings,
-            size: tuple[int, int],
             screen: str,
-    ) -> tuple[Image.Image, tuple[int, int]]:
-        """CPU reference implementation of the GPU interference instrument."""
+            frame_box: tuple[int, int, int, int],
+    ) -> tuple[Image.Image, tuple[int, int]] | None:
+        """CPU reference for the shader instrument, using the same layer geometry."""
         from .generators import VisualMetrics
 
         metrics = VisualMetrics.from_packet(packet, source_id=layer.source_id or None)
-        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        x0, y0, x1, y1 = (
+            (0, 0, self.size[0], self.size[1])
+            if layer.mask_mode == "FULL" else frame_box
+        )
+        width, height = max(1, x1 - x0), max(1, y1 - y0)
         x = np.linspace(-2.4, 2.4, width, dtype=np.float32)[None, :]
         y = np.linspace(-1.8, 1.8, height, dtype=np.float32)[:, None]
         motion = float(seconds) * (0.15 + settings.speed * 1.8)
@@ -514,9 +518,12 @@ class VisualCompositor:
                 else int(layer.palette_index)
             )
             ink = np.asarray(palette[palette_index % len(palette)], dtype=np.float32)
-        rgb = np.clip(ink[None, None, :] * (0.46 + luminance[..., None] / 255.0 * 0.54), 0, 255)
+        rgb = np.clip(
+            ink[None, None, :] * (0.46 + luminance[..., None] / 255.0 * 0.54),
+            0.0, 255.0,
+        )
         rgba = np.zeros((height, width, 4), dtype=np.uint8)
-        rgba[..., :3] = rgb.astype(np.uint8)
+        rgba[..., :3] = np.broadcast_to(rgb, (height, width, 3)).astype(np.uint8)
         rgba[..., 3] = (alpha * 235.0).astype(np.uint8)
         visual = Image.fromarray(rgba, "RGBA")
         visual = self._apply_director_effects(visual, packet, seconds, layer.layer_id)
@@ -526,15 +533,14 @@ class VisualCompositor:
         visual = self._apply_palette(
             visual, layer, packet, white_plate=white_plate
         )
-        center = (width / 2.0, height / 2.0)
         transformed, position = self._transform(
-            visual, center, layer.x_offset, layer.y_offset,
-            layer.scale, layer.rotation
+            visual,
+            ((x0 + x1) / 2.0, (y0 + y1) / 2.0),
+            layer.x_offset, layer.y_offset, layer.scale, layer.rotation,
         )
-        frame_box = self._frame_box_for_size(screen, size)
         return self._apply_mask_crop(
             transformed, position, screen, layer.mask_mode,
-            frame_box, self._mask
+            frame_box, self._mask,
         )
 
     def _gpu_interference_spec(
@@ -675,7 +681,7 @@ class VisualCompositor:
 
             if layer.generator == "INTERFERENCE FIELD":
                 rendered = self._render_interference_reference(
-                    layer, packet, seconds, settings, self.size, screen
+                    layer, packet, seconds, settings, screen, frame_box
                 )
             else:
                 rendered = self._render_layer(
