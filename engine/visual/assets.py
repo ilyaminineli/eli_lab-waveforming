@@ -19,6 +19,16 @@ DEFAULT_FRAME_RECT = (
 class AssetCatalog:
     """Screen plates, pre-designed plates and pixel-accurate content-region metadata."""
 
+    @staticmethod
+    def locate_project_assets(project_root: Path) -> Path:
+        """Find screen assets in current or legacy repository layouts."""
+        project_root = Path(project_root)
+        candidates = (
+            project_root / "resources" / "screens",
+            project_root / "screens",
+        )
+        return next((path for path in candidates if path.is_dir()), candidates[0])
+
     LEGACY_FRAME_BOXES = {
         "SCREEN 1 / BLACK": (0.075, 0.085, 0.925, 0.835),
         "SCREEN 1 / WHITE": (0.075, 0.085, 0.925, 0.835),
