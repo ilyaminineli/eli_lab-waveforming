@@ -107,7 +107,7 @@ class MainWindow(QMainWindow):
         self._last_position = 0.0
         self._settings = GeneratorSettings()
         self.director = CompositionDirector("SEMI-AUTO")
-        self.feature_bus = FeatureBus()
+        self.feature_bus = FeatureBus(analysis_rate=8.0)
         self.timeline = Timeline()
         self.layer_stack = LayerStack()
         self._loading_project = False
