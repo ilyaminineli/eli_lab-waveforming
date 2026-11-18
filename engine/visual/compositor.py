@@ -671,9 +671,14 @@ class VisualCompositor:
                     })
                     continue
 
-            rendered = self._render_layer(
-                layer, packet, seconds, settings, screen, frame_box
-            )
+            if layer.generator == "INTERFERENCE FIELD" and gpu_native is False:
+                rendered = self._render_interference_reference(
+                    layer, packet, seconds, settings, self.size, screen
+                )
+            else:
+                rendered = self._render_layer(
+                    layer, packet, seconds, settings, screen, frame_box
+                )
             if rendered is None:
                 continue
             image, position = rendered
