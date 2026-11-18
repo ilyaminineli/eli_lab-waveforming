@@ -451,8 +451,8 @@ class VisualCompositor:
             transformed, position, screen, layer.mask_mode, frame_box, self._mask
         )
 
-    @staticmethod
     def _gpu_interference_spec(
+            self,
             layer: VisualLayer,
             packet: dict | None,
             seconds: float,
@@ -489,7 +489,6 @@ class VisualCompositor:
             x0, y0, x1, y1 = 0, 0, size[0], size[1]
         else:
             x0, y0, x1, y1 = self._frame_box_for_size(screen, size)
-            # Match the FRAME mask's exact inner registration margin.
             inset = max(1, int(min(x1 - x0, y1 - y0) * 0.006))
             x0, y0, x1, y1 = x0 + inset, y0 + inset, x1 - inset, y1 - inset
         width, height = max(1, x1 - x0), max(1, y1 - y0)
@@ -571,7 +570,7 @@ class VisualCompositor:
                 continue
             if gpu_native:
                 spec = self._gpu_interference_spec(
-                    layer, packet, seconds, settings, self.size, screen
+                    self, layer, packet, seconds, settings, self.size, screen
                 )
                 if spec is not None:
                     rendered_layers.append({
