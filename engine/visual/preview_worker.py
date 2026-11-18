@@ -169,7 +169,9 @@ class PreviewRenderWorker(threading.Thread):
                     }
                     if request["gpu_composite"] and not request["feedback_enabled"]:
                         image = self._compositor.render_scene(
-                            **render_args, gpu_native=True
+                            **render_args,
+                            gpu_native=True,
+                            include_guide=False,
                         )
                     else:
                         image = self._compositor.render(
