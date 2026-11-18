@@ -774,6 +774,8 @@ class MainWindow(QMainWindow):
     def _remove_source(self, track_id: str, row: SourceRow) -> None:
         self.audio.remove_source(track_id)
         self.sources.pop(track_id, None)
+        self.feature_bus.reset()
+        self._last_packet = {}
         for layer in self.layer_stack.layers:
             if layer.source_id == track_id:
                 layer.source_id = ""
