@@ -55,7 +55,7 @@ Implemented MP4 export:
 
 For a reproducible output, keep the same audio files, layer state, generator seed, timeline/automation, frame rate, resolution and software version. The export is deterministic for that fixed project state; changes to FFmpeg codec builds can still alter compressed MP4 bytes even when rendered frames are identical.
 
-**FFmpeg is an external executable.** It must be available on PATH. Verify with ffmpeg -version. The application uses H.264 / AAC with the ultrafast x264 preset to reduce encoding overhead. Frame generation itself remains CPU-based.
+**FFmpeg is an external executable.** WAVEFORMING resolves it from PATH, FFMPEG_BINARY, common Windows package-manager locations or the bundled imageio-ffmpeg package. The application uses H.264 / AAC with the ultrafast x264 preset to reduce encoding overhead. Frame generation itself remains CPU-based.
 
 ## M5.5 — Low-power preview and audio scheduling
 
@@ -72,10 +72,10 @@ The renderer is CPU/Pillow/NumPy based; it does not currently use the Radeon GPU
 - A dedicated preview thread owns the compositor. The UI sends immutable snapshots through a one-item latest-frame queue; obsolete pending renders are dropped.
 - Preview and live analysis threads are set to below-normal priority where supported, yielding CPU time to the Qt event loop and audio output.
 - Preview frames can finish late and still display in sequence; the UI does not wait for rendering.
-- Live feature analysis is throttled to **8 updates per second** instead of taking and analysing a new FFT window on every 1024-sample audio callback.
+- Live feature analysis is throttled to **8 updates per second** up to eight sources, **6 Hz** up to sixteen, and **3 Hz** for larger sessions instead of taking and analysing a new FFT window on every 1024-sample audio callback.
 - Each analysis snapshot contains a complete FFT-sized PCM window ending at the current playhead. Dropping a stale queue item therefore never causes an FFT to combine non-contiguous audio.
 - The audio callback mixes track segments directly into the master buffer instead of allocating an extra zero-filled block per source; the soft limiter skips magnitude arrays unless the mix actually exceeds its ceiling.
-- Analysis packets carry a configuration revision; changing FFT settings, or adding/removing a source, invalidates stale packets before they can reach the analyzer.
+- Analysis packets carry a configuration revision; changing FFT settings, or adding/removing a source, invalidates stale packets before they can reach the analyzer. Streamed-source FFT reads do not alter the forward disk-prefetch target.
 - Offline rendering has its own compositor instance and does not alter the live preview's state.
 
 These limits are conservative starting points for the supplied low-power CPU, not a promise of a fixed frame rate under every seven-layer composition. The offline 1920×1440 renderer is intentionally slower than real time.
@@ -108,3 +108,12 @@ These limits are conservative starting points for the supplied low-power CPU, no
 - Printable-area masks now use the compositor instance's canvas dimensions. The previous preview constant caused an incompatible 480×360 mask during 1920×1440 export.
 - Offline analysis now takes the same trailing FFT-sized window ending at each frame timestamp as live analysis; it no longer uses a centred window that shifts audio-reactive content by half an FFT window.
 - FFmpeg writes to a temporary MP4 and atomically replaces the destination only after a successful encode. Cancelled or failed exports do not leave a partial file at the requested destination.
+
+
+## Integration corrections — multichannel application wiring
+
+The current application exposes the engine's 64-source limit in both import and status UI. Multi-file import and recursive folder import use the same path, and folder IDs are persisted with each project source. Long device-rate-matched stems above 96 MB use the ring reader; per-track stream scratch memory is reused in the audio callback.
+
+The screen catalogue resolves resources/screens first and supports the former screens directory as a fallback. The composition director is initialized in the window, its MANUAL / SEMI-AUTO / AUTO selector is saved with the project, and its motion, complexity, glitch and accent values are applied to both preview and offline render.
+
+AUTO COMPOSE uses distinct 2-column or 3-column channel cells (up to eight visually routed sources). Channel variation preserves those cell positions. Export feature analysis is sampled at up to 8 Hz and held between analysis updates, rather than recalculating every track FFT on every video frame.
