@@ -21,13 +21,16 @@ from engine.visual.assets import AssetCatalog
 from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.compositor import PREVIEW_SIZE, PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
-from engine.visual.preview_worker import PreviewRenderWorker
+from engine.visual.preview_worker import (
+    PreviewRenderWorker, is_newer_preview_frame,
+)
 from engine.render.offline import OfflineRenderWorker
 from engine.timeline import Timeline
 from app.timeline_widget import TimelineWidget
 from engine.visual.layers import LayerStack, VisualLayer
 from engine.visual.composition_director import (
-    CompositionDirector, create_auto_composition, vary_composition,
+    CompositionDirector, create_auto_composition, is_default_placeholder_composition,
+    vary_composition,
 )
 from engine.project.session import scan_audio_tree
 from engine.render.ffmpeg import resolve_ffmpeg
@@ -110,6 +113,7 @@ class MainWindow(QMainWindow):
         self.feature_bus = FeatureBus(analysis_rate=8.0)
         self.timeline = Timeline()
         self.layer_stack = LayerStack()
+        self._auto_composed = False
         self._loading_project = False
         self._render_sequence = 0
         self._displayed_sequence = -1
@@ -546,6 +550,7 @@ class MainWindow(QMainWindow):
         self._select_layer()
 
     def add_layer(self) -> None:
+        self._auto_composed = False
         generator = self.layer_generator.currentText()
         layer = self.layer_stack.add(generator)
         layer.palette_index = len(self.layer_stack.layers) - 1
@@ -553,6 +558,7 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def auto_compose(self) -> None:
+        self._auto_composed = True
         seed = int(time_ns() & 0x7FFFFFFF)
         self.layer_stack.layers = create_auto_composition(
             self.compositor.generator_names(), list(self.sources.keys()), seed
@@ -585,6 +591,7 @@ class MainWindow(QMainWindow):
             self._variation_timer.stop()
 
     def duplicate_layer(self) -> None:
+        self._auto_composed = False
         layer = self._current_layer()
         if layer is None:
             return
@@ -594,6 +601,7 @@ class MainWindow(QMainWindow):
             self._render_frame()
 
     def move_layer(self, direction: int) -> None:
+        self._auto_composed = False
         layer = self._current_layer()
         if layer is None:
             return
@@ -602,6 +610,7 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def remove_layer(self) -> None:
+        self._auto_composed = False
         layer = self._current_layer()
         if layer is None:
             return
@@ -613,6 +622,7 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def _layer_visibility_changed(self, item: QListWidgetItem) -> None:
+        self._auto_composed = False
         layer_id = item.data(Qt.ItemDataRole.UserRole)
         layer = next((entry for entry in self.layer_stack.layers if entry.layer_id == layer_id), None)
         if layer is not None:
@@ -651,6 +661,7 @@ class MainWindow(QMainWindow):
     def _layer_property_changed(self, *_args) -> None:
         if self._updating_layer_controls:
             return
+        self._auto_composed = False
         layer = self._current_layer()
         if layer is None:
             return
@@ -714,6 +725,10 @@ class MainWindow(QMainWindow):
         self.feature_bus = FeatureBus(analysis_rate=analysis_rate)
 
     def _import_audio_paths(self, paths: list[Path]) -> None:
+        rebuild_auto_composition = (
+            self._auto_composed
+            or is_default_placeholder_composition(self.layer_stack.layers)
+        )
         imported = 0
         errors: list[str] = []
         limit_reached = False
@@ -753,7 +768,12 @@ class MainWindow(QMainWindow):
             self._update_status()
             self._update_time_label()
             self._update_timeline_duration()
-            self._render_frame()
+            if rebuild_auto_composition:
+                self.auto_compose()
+            else:
+                self._render_frame()
+            # Generate an initial spectral snapshot even before playback starts.
+            self.audio.request_preview_analysis()
 
     def _refresh_source_options(self) -> None:
         if not hasattr(self, "layer_source"):
@@ -779,20 +799,38 @@ class MainWindow(QMainWindow):
         self.layer_source.blockSignals(False)
 
     def _remove_source(self, track_id: str, row: SourceRow) -> None:
+        rebuild_auto_composition = self._auto_composed
         self.audio.remove_source(track_id)
         self.sources.pop(track_id, None)
         self._replace_feature_bus()
         self._last_packet = {}
-        for layer in self.layer_stack.layers:
-            if layer.source_id == track_id:
-                layer.source_id = ""
         row.deleteLater()
         self._refresh_source_options()
-        self._refresh_layer_list(self._current_layer().layer_id if self._current_layer() else None)
+        if rebuild_auto_composition and self.sources:
+            self.auto_compose()
+        else:
+            for layer in self.layer_stack.layers:
+                if layer.source_id == track_id:
+                    layer.source_id = ""
+            if rebuild_auto_composition and not self.sources:
+                self._auto_composed = False
+                default = VisualLayer(
+                    name="PHASE LATTICE 01", generator="PHASE LATTICE",
+                    pass_mode="PAPER RELIEF", pass_map="DISPLACEMENT",
+                    pass_strength=0.55,
+                )
+                self.layer_stack.layers = [default]
+            selected = (
+                self._current_layer().layer_id
+                if self._current_layer() else
+                self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+            )
+            self._refresh_layer_list(selected)
+            self._render_frame()
         self._update_status()
         self._update_time_label()
         self._update_timeline_duration()
-        self._render_frame()
+        self.audio.request_preview_analysis()
 
     def save_project(self) -> None:
         filename, _ = QFileDialog.getSaveFileName(
@@ -806,6 +844,7 @@ class MainWindow(QMainWindow):
             "format": "eli_lab.waveforming",
             "version": 1,
             "director_mode": self.director.mode,
+            "auto_composed": self._auto_composed,
             "settings": asdict(self._settings),
             "layers": self.layer_stack.to_list(),
             "timeline": self.timeline.to_dict(),
@@ -901,6 +940,7 @@ class MainWindow(QMainWindow):
         self.motion.setValue(int(self._settings.motion))
         self.sensitivity.setValue(int(self._settings.sensitivity))
         self.layer_stack.from_list(data.get("layers", []))
+        self._auto_composed = bool(data.get("auto_composed", False))
         valid_groups = {source.group_id for source in self.sources.values() if source.group_id}
         for layer in self.layer_stack.layers:
             if layer.source_id.startswith("group:"):
@@ -938,6 +978,7 @@ class MainWindow(QMainWindow):
         self._project_path = Path(filename)
         self.preview_worker.request_reset()
         self._render_frame()
+        self.audio.request_preview_analysis()
         if missing_sources:
             QMessageBox.warning(
                 self, "Some audio sources were not loaded",
@@ -1153,10 +1194,9 @@ class MainWindow(QMainWindow):
     def _on_preview_frame(self, image, seconds: float, sequence: int) -> None:
         # A render may finish after several newer requests have been queued.
         # Drop visibly stale frames instead of making the preview jump backwards.
-        if sequence < self._render_sequence - 1:
+        if not is_newer_preview_frame(sequence, self._displayed_sequence):
             return
-        if sequence >= self._displayed_sequence:
-            self._displayed_sequence = sequence
+        self._displayed_sequence = sequence
             if isinstance(image, dict) and hasattr(self.canvas, "set_scene"):
                 self.canvas.set_scene(image)
             else:
