@@ -302,3 +302,28 @@ def test_gpu_shader_contains_procedural_interference_uniforms():
         assert uniform in FRAGMENT_SHADER
     assert "vec4 interferenceField(vec2 uv)" in FRAGMENT_SHADER
     assert "fieldA" in FRAGMENT_SHADER and "fieldB" in FRAGMENT_SHADER
+
+
+def test_gpu_native_interference_scene_builds_with_frame_mask():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(128, 96)
+    )
+    layer = VisualLayer(
+        "GPU interference", "INTERFERENCE FIELD",
+        mask_mode="FRAME", pass_mode="NONE", pass_strength=0.0,
+    )
+    scene = compositor.render_scene(
+        packet=None,
+        seconds=2.5,
+        layers=[layer],
+        settings=GeneratorSettings(),
+        screen="SCREEN 1 / BLACK",
+        gpu_native=True,
+    )
+
+    assert len(scene["layers"]) == 1
+    assert scene["layers"][0]["gpu_instrument"]["kind"] == "interference"
+    assert scene["layers"][0]["gpu_instrument"]["rect"][2:] == (
+        scene["layers"][0]["gpu_instrument"]["rect"][2],
+        scene["layers"][0]["gpu_instrument"]["rect"][3],
+    )
