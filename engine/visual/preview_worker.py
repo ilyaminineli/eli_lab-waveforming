@@ -174,10 +174,8 @@ class PreviewRenderWorker(threading.Thread):
                             include_guide=False,
                         )
                     else:
-                        image = self._compositor.render_scene(
+                        image = self._compositor.render_cpu_frame(
                             **render_args,
-                            gpu_native=False,
-                            include_guide=True,
                             feedback_enabled=request["feedback_enabled"],
                             feedback_amount=request["feedback_amount"],
                             feedback_decay=request["feedback_decay"],
