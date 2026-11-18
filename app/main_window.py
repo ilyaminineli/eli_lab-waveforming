@@ -852,6 +852,17 @@ class MainWindow(QMainWindow):
                 + "\n".join(missing_sources[:12]),
             )
 
+    @staticmethod
+    def _export_source_samples(source: AudioSource):
+        samples = source.samples if source.samples is not None else source.load_into_memory()
+        if getattr(samples, "ndim", 0) != 2 or samples.shape[1] < 1:
+            raise ValueError(f"Audio source {source.name!r} has an invalid channel layout.")
+        if samples.shape[1] == 1:
+            samples = samples.repeat(2, axis=1)
+        elif samples.shape[1] > 2:
+            samples = samples[:, :2]
+        return samples
+
     def export_video(self) -> None:
         if not self.sources:
             QMessageBox.information(self, "Export video", "Import audio sources before exporting.")
@@ -875,7 +886,7 @@ class MainWindow(QMainWindow):
         source_snapshot = [
             {
                 "track_id": track_id,
-                "samples": source.samples,
+                "samples": self._export_source_samples(source),
                 "gain": source.gain,
                 "pan": source.pan,
                 "muted": source.muted,
