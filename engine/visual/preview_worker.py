@@ -13,6 +13,11 @@ from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
 
 
+def is_newer_preview_frame(sequence: int, displayed_sequence: int) -> bool:
+    """Accept the next completed frame even when newer requests are still queued."""
+    return int(sequence) > int(displayed_sequence)
+
+
 class PreviewSignals(QObject):
     frame_ready = Signal(object, float, int)
     render_error = Signal(str)
