@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .assets import AssetCatalog
 from .generators import GeneratorBank, GeneratorSettings
 from .layers import VisualLayer
-
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
@@ -16,13 +15,13 @@ PROJECT_SIZE = (1920, 1440)
 # Three-ink editorial palette based on the user's reference artwork:
 # dusty cobalt, aged yellow and violet, with tonal variants for seven channels.
 EDITORIAL_TRICOLOR_DARK = (
-    (86, 102, 164),   # muted cobalt
-    (196, 183, 89),   # aged yellow
+    (86, 102, 164),  # muted cobalt
+    (196, 183, 89),  # aged yellow
     (157, 116, 173),  # dusty violet
     (113, 124, 166),  # blue-grey
-    (176, 160, 91),   # ochre
+    (176, 160, 91),  # ochre
     (145, 111, 157),  # violet-grey
-    (94, 117, 143),   # slate blue
+    (94, 117, 143),  # slate blue
 )
 EDITORIAL_TRICOLOR_LIGHT = (
     (52, 67, 121),
@@ -87,8 +86,8 @@ class VisualCompositor:
             w, h = self.size
             x0, y0, x1, y1 = normalized
             self._frame_cache[screen] = (
-                int(round(x0*w)), int(round(y0*h)),
-                int(round(x1*w)), int(round(y1*h)),
+                int(round(x0 * w)), int(round(y0 * h)),
+                int(round(x1 * w)), int(round(y1 * h)),
             )
         return self._frame_cache[screen]
 
@@ -104,16 +103,16 @@ class VisualCompositor:
             draw = ImageDraw.Draw(mask)
             x0, y0, x1, y1 = frame_box
             if mode == "FULL":
-                draw.rectangle((0, 0, w-1, h-1), fill=255)
+                draw.rectangle((0, 0, w - 1, h - 1), fill=255)
             elif mode == "ELLIPSE":
                 draw.ellipse((x0, y0, x1, y1), fill=255)
             elif mode == "INSET":
-                pad_x = int((x1-x0)*0.075)
-                pad_y = int((y1-y0)*0.075)
-                draw.rectangle((x0+pad_x, y0+pad_y, x1-pad_x, y1-pad_y), fill=255)
+                pad_x = int((x1 - x0) * 0.075)
+                pad_y = int((y1 - y0) * 0.075)
+                draw.rectangle((x0 + pad_x, y0 + pad_y, x1 - pad_x, y1 - pad_y), fill=255)
             else:
-                inset = max(1, int(min(x1-x0, y1-y0)*0.006))
-                draw.rectangle((x0+inset, y0+inset, x1-inset, y1-inset), fill=255)
+                inset = max(1, int(min(x1 - x0, y1 - y0) * 0.006))
+                draw.rectangle((x0 + inset, y0 + inset, x1 - inset, y1 - inset), fill=255)
             self._mask_cache[key] = mask
         return self._mask_cache[key]
 
@@ -123,10 +122,10 @@ class VisualCompositor:
         gray = np.asarray(gray_image, dtype=np.float32)
         center = float(np.mean(gray))
         spread = float(np.std(gray))
-        low, high = center - 2.2*spread, center + 2.2*spread
+        low, high = center - 2.2 * spread, center + 2.2 * spread
         if high <= low + 1e-5:
             return np.zeros_like(gray, dtype=np.float32) + 0.5
-        return np.clip((gray-low)/(high-low), 0.0, 1.0)
+        return np.clip((gray - low) / (high - low), 0.0, 1.0)
 
     def _grid(self, size: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
         if size not in self._grid_cache:
@@ -165,14 +164,14 @@ class VisualCompositor:
 
         if normals is None:
             amount = 5.0
-            nx, ny = -gx*amount, -gy*amount
+            nx, ny = -gx * amount, -gy * amount
             nz = np.ones_like(nx)
-            length = np.sqrt(nx*nx + ny*ny + nz*nz) + 1e-8
-            normals = np.stack((nx/length, ny/length, nz/length), axis=-1)
+            length = np.sqrt(nx * nx + ny * ny + nz * nz) + 1e-8
+            normals = np.stack((nx / length, ny / length, nz / length), axis=-1)
 
         light = np.asarray([-0.42, -0.48, 0.77], dtype=np.float32)
         light /= np.linalg.norm(light)
-        diffuse = np.clip(np.sum(normals*light, axis=-1), 0.0, 1.0)
+        diffuse = np.clip(np.sum(normals * light, axis=-1), 0.0, 1.0)
 
         texture_image = self._pass("TEXTURE", size)
         if texture_image is None:
@@ -181,8 +180,8 @@ class VisualCompositor:
             grain = np.asarray(texture_image.convert("L"), dtype=np.float32)
             center = float(np.mean(grain))
             spread = float(np.std(grain))
-            grain = np.clip((grain-(center-1.8*spread))/(3.6*spread+1e-6), 0, 1)
-            grain_gain = 0.92 + (grain-0.5)*0.18
+            grain = np.clip((grain - (center - 1.8 * spread)) / (3.6 * spread + 1e-6), 0, 1)
+            grain_gain = 0.92 + (grain - 0.5) * 0.18
 
         result = (gx, gy, diffuse.astype(np.float32), grain_gain.astype(np.float32))
         self._paper_cache[key] = result
@@ -197,14 +196,14 @@ class VisualCompositor:
         gx, gy, diffuse, grain_gain = self._paper_fields(image.size, pass_map)
         yy, xx = self._grid(image.size)
         shift = 1.2 + amount * 8.0
-        sx = np.clip((xx + gx*shift).astype(np.int32), 0, w-1)
-        sy = np.clip((yy + gy*shift).astype(np.int32), 0, h-1)
+        sx = np.clip((xx + gx * shift).astype(np.int32), 0, w - 1)
+        sy = np.clip((yy + gy * shift).astype(np.int32), 0, h - 1)
 
         rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
         warped = rgba[sy, sx].copy()
-        shade = 0.66 + diffuse*(0.28 + 0.34*amount)
+        shade = 0.66 + diffuse * (0.28 + 0.34 * amount)
         rgb = warped[..., :3].astype(np.float32)
-        rgb *= (shade*grain_gain)[..., None]
+        rgb *= (shade * grain_gain)[..., None]
         warped[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
         return Image.fromarray(warped, "RGBA")
 
@@ -220,21 +219,21 @@ class VisualCompositor:
         if mode == "DISPLACE":
             yy, xx = self._grid(image.size)
             rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
-            sx = np.clip((xx + gx*amount*6.0).astype(np.int32), 0, w-1)
-            sy = np.clip((yy + gy*amount*6.0).astype(np.int32), 0, h-1)
+            sx = np.clip((xx + gx * amount * 6.0).astype(np.int32), 0, w - 1)
+            sy = np.clip((yy + gy * amount * 6.0).astype(np.int32), 0, h - 1)
             return Image.fromarray(rgba[sy, sx].copy(), "RGBA")
         if mode == "NORMAL LIGHT":
             rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
-            shade = np.clip(0.58 + diffuse*(0.42 + amount*0.42), 0.3, 1.22)
+            shade = np.clip(0.58 + diffuse * (0.42 + amount * 0.42), 0.3, 1.22)
             rgba[..., :3] = np.clip(
-                rgba[..., :3].astype(np.float32)*shade[..., None], 0, 255
+                rgba[..., :3].astype(np.float32) * shade[..., None], 0, 255
             ).astype(np.uint8)
             return Image.fromarray(rgba, "RGBA")
         if mode == "TEXTURE":
             rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
-            gain = 0.76 + grain_gain*(0.34 + amount*0.25)
+            gain = 0.76 + grain_gain * (0.34 + amount * 0.25)
             rgba[..., :3] = np.clip(
-                rgba[..., :3].astype(np.float32)*gain[..., None], 0, 255
+                rgba[..., :3].astype(np.float32) * gain[..., None], 0, 255
             ).astype(np.uint8)
             return Image.fromarray(rgba, "RGBA")
         return image
@@ -262,16 +261,16 @@ class VisualCompositor:
             return Image.fromarray(rgba, "RGBA")
         rgb = rgba[..., :3].astype(np.float32)
         luminance = (
-            rgb[..., 0]*0.2126 + rgb[..., 1]*0.7152 + rgb[..., 2]*0.0722
-        ) / 255.0
-        intensity = 0.46 + luminance*0.54
-        tinted = np.clip(colour[None, None, :]*intensity[..., None], 0, 255).astype(np.uint8)
+                            rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+                    ) / 255.0
+        intensity = 0.46 + luminance * 0.54
+        tinted = np.clip(colour[None, None, :] * intensity[..., None], 0, 255).astype(np.uint8)
         rgba[..., :3][visible] = tinted[visible]
         return Image.fromarray(rgba, "RGBA")
 
     @staticmethod
     def _apply_director_effects(
-        image: Image.Image, packet: dict | None, seconds: float, layer_id: str
+            image: Image.Image, packet: dict | None, seconds: float, layer_id: str
     ) -> Image.Image:
         """Apply deterministic, restrained glitch and accent impulses to one layer."""
         output = (packet or {}).get("director_output") or {}
@@ -318,7 +317,7 @@ class VisualCompositor:
         if abs(scale - 1.0) < 1e-4 and quarter_turn == 0:
             transformed = layer
         else:
-            tw, th = max(1, int(round(sw*scale))), max(1, int(round(sh*scale)))
+            tw, th = max(1, int(round(sw * scale))), max(1, int(round(sh * scale)))
             transformed = (
                 layer if (tw, th) == (sw, sh)
                 else layer.resize((tw, th), Image.Resampling.BILINEAR)
@@ -329,11 +328,11 @@ class VisualCompositor:
                 transformed = transformed.transpose(Image.Transpose.ROTATE_180)
             elif quarter_turn == 3:
                 transformed = transformed.transpose(Image.Transpose.ROTATE_270)
-        cx = center[0] + x_offset*self.size[0]
-        cy = center[1] + y_offset*self.size[1]
+        cx = center[0] + x_offset * self.size[0]
+        cy = center[1] + y_offset * self.size[1]
         return transformed, (
-            int(round(cx-transformed.width/2)),
-            int(round(cy-transformed.height/2)),
+            int(round(cx - transformed.width / 2)),
+            int(round(cy - transformed.height / 2)),
         )
 
     def _apply_mask_crop(self, source: Image.Image, position: tuple[int, int],
@@ -343,10 +342,10 @@ class VisualCompositor:
         px, py = position
         sw, sh = source.size
         x0, y0 = max(0, px), max(0, py)
-        x1, y1 = min(self.size[0], px+sw), min(self.size[1], py+sh)
+        x1, y1 = min(self.size[0], px + sw), min(self.size[1], py + sh)
         if x1 <= x0 or y1 <= y0:
             return None
-        crop = source.crop((x0-px, y0-py, x1-px, y1-py))
+        crop = source.crop((x0 - px, y0 - py, x1 - px, y1 - py))
         mask = masks(mode, screen, frame_box).crop((x0, y0, x1, y1))
         alpha = ImageChops.multiply(crop.getchannel("A"), mask)
         crop.putalpha(alpha)
@@ -362,14 +361,14 @@ class VisualCompositor:
         px, py = position
         sw, sh = source.size
         x0, y0 = max(0, px), max(0, py)
-        x1, y1 = min(destination.width, px+sw), min(destination.height, py+sh)
+        x1, y1 = min(destination.width, px + sw), min(destination.height, py + sh)
         if x1 <= x0 or y1 <= y0 or opacity <= 0.001:
             return
-        src = source.crop((x0-px, y0-py, x1-px, y1-py)).convert("RGBA")
+        src = source.crop((x0 - px, y0 - py, x1 - px, y1 - py)).convert("RGBA")
         if mode == "Normal":
             if opacity < 0.999:
                 alpha = src.getchannel("A").point(
-                    [int(value*opacity) for value in range(256)]
+                    [int(value * opacity) for value in range(256)]
                 )
                 src.putalpha(alpha)
             destination.alpha_composite(src, (x0, y0))
@@ -384,16 +383,16 @@ class VisualCompositor:
         sa = src_arr[..., 3:4] / 255.0 * float(np.clip(opacity, 0.0, 1.0))
 
         if mode == "Add":
-            blended = np.clip(cb+cs, 0.0, 1.0)
+            blended = np.clip(cb + cs, 0.0, 1.0)
         elif mode == "Multiply":
-            blended = cb*cs
+            blended = cb * cs
         elif mode == "Screen":
-            blended = 1.0-(1.0-cb)*(1.0-cs)
+            blended = 1.0 - (1.0 - cb) * (1.0 - cs)
         elif mode == "Difference":
-            blended = np.abs(cb-cs)
+            blended = np.abs(cb - cs)
         elif mode == "Overlay":
-            blended = np.where(cb <= 0.5, 2.0*cb*cs,
-                               1.0-2.0*(1.0-cb)*(1.0-cs))
+            blended = np.where(cb <= 0.5, 2.0 * cb * cs,
+                               1.0 - 2.0 * (1.0 - cb) * (1.0 - cs))
         elif mode == "Lighten":
             blended = np.maximum(cb, cs)
         elif mode == "Darken":
@@ -401,16 +400,16 @@ class VisualCompositor:
         else:
             blended = cs
 
-        out_alpha = sa + da*(1.0-sa)
+        out_alpha = sa + da * (1.0 - sa)
         premult = (
-            (1.0-sa)*da*cb
-            + (1.0-da)*sa*cs
-            + da*sa*blended
+                (1.0 - sa) * da * cb
+                + (1.0 - da) * sa * cs
+                + da * sa * blended
         )
-        out_rgb = np.where(out_alpha > 1e-8, premult/np.maximum(out_alpha, 1e-8), 0.0)
+        out_rgb = np.where(out_alpha > 1e-8, premult / np.maximum(out_alpha, 1e-8), 0.0)
         out = np.empty_like(dst_arr, dtype=np.uint8)
-        out[..., :3] = np.clip(out_rgb*255.0, 0, 255).astype(np.uint8)
-        out[..., 3] = np.clip(out_alpha[..., 0]*255.0, 0, 255).astype(np.uint8)
+        out[..., :3] = np.clip(out_rgb * 255.0, 0, 255).astype(np.uint8)
+        out[..., 3] = np.clip(out_alpha[..., 0] * 255.0, 0, 255).astype(np.uint8)
         destination.paste(Image.fromarray(out, "RGBA"), (x0, y0))
 
     @staticmethod
@@ -430,7 +429,7 @@ class VisualCompositor:
         else:
             target_box = frame_box
         x0, y0, x1, y1 = target_box
-        local_size = (max(1, x1-x0), max(1, y1-y0))
+        local_size = (max(1, x1 - x0), max(1, y1 - y0))
 
         visual = self.generators.render(
             layer.generator, packet, seconds, local_size, settings,
@@ -442,7 +441,7 @@ class VisualCompositor:
         visual = self._apply_palette(
             visual, layer, packet, white_plate=screen.upper().endswith("/ WHITE")
         )
-        center = ((x0+x1)/2, (y0+y1)/2)
+        center = ((x0 + x1) / 2, (y0 + y1) / 2)
         transformed, position = self._transform(
             visual, center, layer.x_offset, layer.y_offset, layer.scale, layer.rotation
         )
@@ -452,12 +451,12 @@ class VisualCompositor:
 
     @staticmethod
     def _gpu_interference_spec(
-        layer: VisualLayer,
-        packet: dict | None,
-        seconds: float,
-        settings: GeneratorSettings,
-        size: tuple[int, int],
-        screen: str,
+            layer: VisualLayer,
+            packet: dict | None,
+            seconds: float,
+            settings: GeneratorSettings,
+            size: tuple[int, int],
+            screen: str,
     ) -> dict | None:
         """Describe a GPU-native interference field when no CPU-only operation is needed."""
         if layer.generator != "INTERFERENCE FIELD":
@@ -467,9 +466,9 @@ class VisualCompositor:
         if layer.mask_mode not in ("FULL", "FRAME"):
             return None
         if (
-            abs(layer.x_offset) > 1e-6 or abs(layer.y_offset) > 1e-6
-            or abs(layer.scale - 1.0) > 1e-6
-            or abs(layer.rotation) > 1e-6
+                abs(layer.x_offset) > 1e-6 or abs(layer.y_offset) > 1e-6
+                or abs(layer.scale - 1.0) > 1e-6
+                or abs(layer.rotation) > 1e-6
         ):
             return None
         if layer.palette_mode not in ("EDITORIAL TRICOLOR", "MUTED PRIDE", "MONOCHROME"):
@@ -477,8 +476,8 @@ class VisualCompositor:
 
         output = (packet or {}).get("director_output") or {}
         if (
-            float(output.get("glitch_amount", 0.0)) > 0.001
-            or float(output.get("accent_amount", 0.0)) > 0.001
+                float(output.get("glitch_amount", 0.0)) > 0.001
+                or float(output.get("accent_amount", 0.0)) > 0.001
         ):
             return None
 
@@ -535,7 +534,7 @@ class VisualCompositor:
         }
 
     def _frame_box_for_size(
-        self, screen: str, size: tuple[int, int]
+            self, screen: str, size: tuple[int, int]
     ) -> tuple[int, int, int, int]:
         normalized = self.assets.frame_box(screen)
         width, height = size
@@ -546,13 +545,13 @@ class VisualCompositor:
         )
 
     def render_scene(
-        self,
-        packet: dict | None,
-        seconds: float,
-        layers: list[VisualLayer] | None = None,
-        settings: GeneratorSettings | None = None,
-        screen: str = "No guide",
-        gpu_native: bool = False,
+            self,
+            packet: dict | None,
+            seconds: float,
+            layers: list[VisualLayer] | None = None,
+            settings: GeneratorSettings | None = None,
+            screen: str = "No guide",
+            gpu_native: bool = False,
     ) -> dict:
         """Build a scene for GPU blending; optionally keep interference fields GPU-resident."""
         settings = settings or GeneratorSettings()
@@ -633,8 +632,8 @@ class VisualCompositor:
             if self._last_time is not None and seconds < self._last_time:
                 self._feedback = None
             if self._feedback is not None:
-                dx = int(round(feedback_shift*self.size[0]))
-                dy = int(round(feedback_shift*self.size[1]*0.62))
+                dx = int(round(feedback_shift * self.size[0]))
+                dy = int(round(feedback_shift * self.size[1] * 0.62))
                 previous = self._feedback
                 if dx or dy:
                     previous = previous.transform(
@@ -643,7 +642,7 @@ class VisualCompositor:
                         resample=Image.Resampling.BILINEAR,
                     )
                 alpha = previous.getchannel("A").point(
-                    [int(value*float(np.clip(feedback_decay, 0, 0.99)))
+                    [int(value * float(np.clip(feedback_decay, 0, 0.99)))
                      for value in range(256)]
                 )
                 previous.putalpha(alpha)

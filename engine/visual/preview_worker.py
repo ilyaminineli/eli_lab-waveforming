@@ -59,18 +59,18 @@ class PreviewRenderWorker(threading.Thread):
             self._reset_requested = True
 
     def submit(
-        self,
-        packet: dict | None,
-        seconds: float,
-        layers: list[VisualLayer],
-        settings: GeneratorSettings,
-        screen: str,
-        feedback_enabled: bool,
-        feedback_amount: float,
-        feedback_decay: float,
-        feedback_shift: float,
-        sequence: int,
-        gpu_composite: bool = False,
+            self,
+            packet: dict | None,
+            seconds: float,
+            layers: list[VisualLayer],
+            settings: GeneratorSettings,
+            screen: str,
+            feedback_enabled: bool,
+            feedback_amount: float,
+            feedback_decay: float,
+            feedback_shift: float,
+            sequence: int,
+            gpu_composite: bool = False,
     ) -> None:
         # Snapshot UI-owned state. Audio feature packets are immutable after emit;
         # large NumPy arrays are shared read-only to avoid duplicating RAM.

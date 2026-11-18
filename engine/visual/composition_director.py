@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from .layers import VisualLayer
 
-
 AUTO_GENERATORS = (
     "GEOMETRIC FIELD",
     "AXONOMETRIC FIELD",
@@ -98,10 +97,10 @@ class CompositionDirector:
 
         request_variation = False
         if (
-            self.mode == "AUTO"
-            and self.state in ("EMERGENCE", "INSTABILITY")
-            and novelty >= 0.58
-            and now - self._last_variation >= self.variation_cooldown
+                self.mode == "AUTO"
+                and self.state in ("EMERGENCE", "INSTABILITY")
+                and novelty >= 0.58
+                and now - self._last_variation >= self.variation_cooldown
         ):
             request_variation = True
             self._last_variation = now
@@ -132,22 +131,22 @@ def is_default_placeholder_composition(layers: list[VisualLayer]) -> bool:
         return False
     layer = layers[0]
     return (
-        layer.name == "PHASE LATTICE 01"
-        and layer.generator == "PHASE LATTICE"
-        and not layer.source_id
-        and layer.pass_mode == "PAPER RELIEF"
-        and layer.pass_map == "DISPLACEMENT"
-        and abs(layer.x_offset) < 1e-9
-        and abs(layer.y_offset) < 1e-9
-        and abs(layer.scale - 1.0) < 1e-9
-        and abs(layer.rotation) < 1e-9
+            layer.name == "PHASE LATTICE 01"
+            and layer.generator == "PHASE LATTICE"
+            and not layer.source_id
+            and layer.pass_mode == "PAPER RELIEF"
+            and layer.pass_map == "DISPLACEMENT"
+            and abs(layer.x_offset) < 1e-9
+            and abs(layer.y_offset) < 1e-9
+            and abs(layer.scale - 1.0) < 1e-9
+            and abs(layer.rotation) < 1e-9
     )
 
 
 def create_auto_composition(
-    generator_names: list[str],
-    source_ids: list[str],
-    seed: int,
+        generator_names: list[str],
+        source_ids: list[str],
+        seed: int,
 ) -> list[VisualLayer]:
     """Build a bounded composition with a distinct visual cell for each source."""
     rng = random.Random(seed)
@@ -237,9 +236,9 @@ def create_auto_composition(
 
 
 def vary_composition(
-    layers: list[VisualLayer],
-    generator_names: list[str],
-    seed: int,
+        layers: list[VisualLayer],
+        generator_names: list[str],
+        seed: int,
 ) -> list[VisualLayer]:
     """Mutate a small subset of visual decisions rather than replacing the entire plate."""
     rng = random.Random(seed)

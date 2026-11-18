@@ -16,7 +16,6 @@ from .analyzer import AudioAnalyzer, FeatureFrame
 from .source import AudioSource
 from .storage import StreamedAudioBuffer
 
-
 MAX_AUDIO_SOURCES = 64
 
 
@@ -332,8 +331,8 @@ class PlaybackEngine(QObject):
 
     @staticmethod
     def _read_stream_window(
-        stream: StreamedAudioBuffer, frame_count: int, end: int,
-        fft_size: int, loop: bool,
+            stream: StreamedAudioBuffer, frame_count: int, end: int,
+            fft_size: int, loop: bool,
     ) -> np.ndarray | None:
         """Copy a full trailing FFT window from bounded ring history."""
         if frame_count <= 0 or fft_size <= 0:
@@ -380,8 +379,8 @@ class PlaybackEngine(QObject):
                 audible = not source.muted and (not has_solo or source.solo)
                 if audible:
                     pan = float(np.clip(source.pan, -1.0, 1.0))
-                    gain_left = float(source.gain) * (1.0 if pan <= 0 else 1.0-pan)
-                    gain_right = float(source.gain) * (1.0 if pan >= 0 else 1.0+pan)
+                    gain_left = float(source.gain) * (1.0 if pan <= 0 else 1.0 - pan)
+                    gain_right = float(source.gain) * (1.0 if pan >= 0 else 1.0 + pan)
                 else:
                     gain_left = gain_right = 0.0
 
@@ -395,19 +394,19 @@ class PlaybackEngine(QObject):
                         offset = 0
                         remaining = frames
                         while remaining:
-                            count = min(remaining, frame_count-position)
-                            track.stream.read_into(position, block[offset:offset+count])
+                            count = min(remaining, frame_count - position)
+                            track.stream.read_into(position, block[offset:offset + count])
                             offset += count
                             remaining -= count
                             position = 0
-                        track.cursor = (start+frames) % frame_count
+                        track.cursor = (start + frames) % frame_count
                         all_finished = False
                         take = frames
                     else:
-                        take = min(frames, max(0, frame_count-start))
+                        take = min(frames, max(0, frame_count - start))
                         if take:
                             track.stream.read_into(start, block[:take])
-                        track.cursor = min(start+frames, frame_count)
+                        track.cursor = min(start + frames, frame_count)
                         if track.cursor < frame_count:
                             all_finished = False
                     if audible and take:
@@ -431,23 +430,23 @@ class PlaybackEngine(QObject):
                     offset = 0
                     remaining = frames
                     while remaining:
-                        count = min(remaining, frame_count-position)
+                        count = min(remaining, frame_count - position)
                         if audible:
-                            segment = pcm[position:position+count]
-                            mix[offset:offset+count, 0] += segment[:, 0] * gain_left
-                            mix[offset:offset+count, 1] += segment[:, 1] * gain_right
+                            segment = pcm[position:position + count]
+                            mix[offset:offset + count, 0] += segment[:, 0] * gain_left
+                            mix[offset:offset + count, 1] += segment[:, 1] * gain_right
                         offset += count
                         remaining -= count
                         position = 0
-                    track.cursor = (start+frames) % frame_count
+                    track.cursor = (start + frames) % frame_count
                     all_finished = False
                 else:
-                    take = min(frames, max(0, frame_count-start))
+                    take = min(frames, max(0, frame_count - start))
                     if audible and take:
-                        segment = pcm[start:start+take]
+                        segment = pcm[start:start + take]
                         mix[:take, 0] += segment[:, 0] * gain_left
                         mix[:take, 1] += segment[:, 1] * gain_right
-                    track.cursor = min(start+frames, frame_count)
+                    track.cursor = min(start + frames, frame_count)
                     if track.cursor < frame_count:
                         all_finished = False
 
@@ -455,27 +454,27 @@ class PlaybackEngine(QObject):
                     window_size = analysis_fft
                     end = track.cursor
                     if loop and frame_count:
-                        window_start = (end-window_size) % frame_count
-                        if window_start+window_size <= frame_count:
+                        window_start = (end - window_size) % frame_count
+                        if window_start + window_size <= frame_count:
                             snapshots[track.track_id] = (
-                                pcm[window_start:window_start+window_size].copy(),
+                                pcm[window_start:window_start + window_size].copy(),
                                 self.sample_rate,
                             )
                     else:
-                        window_start = end-window_size
+                        window_start = end - window_size
                         source_start = max(0, window_start)
                         analysis_block = np.zeros((window_size, 2), dtype=np.float32)
                         if end > source_start:
-                            target_start = source_start-window_start
-                            analysis_block[target_start:target_start+end-source_start] = (
+                            target_start = source_start - window_start
+                            analysis_block[target_start:target_start + end - source_start] = (
                                 pcm[source_start:end]
                             )
                         snapshots[track.track_id] = (analysis_block, self.sample_rate)
 
             if loop and self._max_frames() > 0:
-                self._master_frame = (self._master_frame+frames) % self._max_frames()
+                self._master_frame = (self._master_frame + frames) % self._max_frames()
             else:
-                self._master_frame = min(self._master_frame+frames, self._max_frames())
+                self._master_frame = min(self._master_frame + frames, self._max_frames())
             if all_finished and not loop:
                 self._playing = False
 
@@ -501,13 +500,13 @@ class PlaybackEngine(QObject):
                 magnitude = np.abs(mix)
                 over = magnitude > 0.98
                 mix[over] = np.sign(mix[over]) * (
-                    0.98 + 0.02*np.tanh((magnitude[over]-0.98)/0.02)
+                        0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
                 )
             np.copyto(outdata, mix)
             finished_now = not self._playing
 
         now = time.monotonic()
-        if now-self._last_emit >= 0.08:
+        if now - self._last_emit >= 0.08:
             self._last_emit = now
             self.position_changed.emit(self.position)
         if finished_now:
@@ -566,11 +565,11 @@ class PlaybackEngine(QObject):
                 common_length = min((len(correlation_blocks[key]) for key in ids), default=0)
                 for i in range(len(ids)):
                     a = correlation_blocks[ids[i]][-common_length:] if common_length else np.zeros(0, np.float32)
-                    for j in range(i+1, len(ids)):
+                    for j in range(i + 1, len(ids)):
                         b = correlation_blocks[ids[j]][-common_length:] if common_length else np.zeros(0, np.float32)
-                        denom = float(np.linalg.norm(a)*np.linalg.norm(b)+1e-9)
-                        corr = float(np.dot(a,b)/denom) if common_length else 0.0
-                        matrix[i,j] = matrix[j,i] = np.clip(corr, -1.0, 1.0)
+                        denom = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
+                        corr = float(np.dot(a, b) / denom) if common_length else 0.0
+                        matrix[i, j] = matrix[j, i] = np.clip(corr, -1.0, 1.0)
 
             with self._lock:
                 if packet_revision != self._analysis_revision:
@@ -580,7 +579,7 @@ class PlaybackEngine(QObject):
                     "frames": frames,
                     "correlation": matrix,
                     "source_ids": ids,
-                    "position": frame_position/self.sample_rate,
+                    "position": frame_position / self.sample_rate,
                 })
 
     def close(self) -> None:

@@ -13,13 +13,13 @@ from PySide6.QtCore import QThread, Signal
 
 from engine.audio.analyzer import AudioAnalyzer
 from engine.audio.feature_bus import FeatureBus
+from engine.render.ffmpeg import resolve_ffmpeg
 from engine.timeline import Timeline
 from engine.visual.assets import AssetCatalog
+from engine.visual.composition_director import CompositionDirector, vary_composition
 from engine.visual.compositor import PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
-from engine.visual.composition_director import CompositionDirector, vary_composition
-from engine.render.ffmpeg import resolve_ffmpeg
 
 
 class OfflineRenderWorker(QThread):
@@ -31,23 +31,23 @@ class OfflineRenderWorker(QThread):
     render_cancelled = Signal()
 
     def __init__(
-        self,
-        output_path: Path,
-        assets_root: Path,
-        sources: list[dict],
-        layers: list[dict],
-        settings: dict,
-        timeline: dict,
-        screen: str,
-        sample_rate: int,
-        fft_size: int = 4096,
-        band_count: int = 64,
-        window: str = "hann",
-        fps: int = 24,
-        resolution: tuple[int, int] = PROJECT_SIZE,
-        feedback: dict | None = None,
-        director_mode: str = "SEMI-AUTO",
-        parent=None,
+            self,
+            output_path: Path,
+            assets_root: Path,
+            sources: list[dict],
+            layers: list[dict],
+            settings: dict,
+            timeline: dict,
+            screen: str,
+            sample_rate: int,
+            fft_size: int = 4096,
+            band_count: int = 64,
+            window: str = "hann",
+            fps: int = 24,
+            resolution: tuple[int, int] = PROJECT_SIZE,
+            feedback: dict | None = None,
+            director_mode: str = "SEMI-AUTO",
+            parent=None,
     ):
         super().__init__(parent)
         self.output_path = Path(output_path)
@@ -103,8 +103,8 @@ class OfflineRenderWorker(QThread):
         block_size = 32768
         active_solo = any(source["solo"] and not source["muted"] for source in self.sources)
         with sf.SoundFile(
-            str(path), mode="w", samplerate=self.sample_rate,
-            channels=2, subtype="PCM_16", format="WAV",
+                str(path), mode="w", samplerate=self.sample_rate,
+                channels=2, subtype="PCM_16", format="WAV",
         ) as output:
             for start in range(0, total_frames, block_size):
                 if self.cancelled:
@@ -130,7 +130,7 @@ class OfflineRenderWorker(QThread):
                     magnitude = np.abs(mix)
                     over = magnitude > 0.98
                     mix[over] = np.sign(mix[over]) * (
-                        0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
+                            0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
                     )
                 output.write(np.clip(mix, -1.0, 1.0))
 
@@ -144,8 +144,8 @@ class OfflineRenderWorker(QThread):
         source_start = max(0, window_start)
         source_end = min(len(samples), window_end)
         if source_end > source_start:
-            target_start = source_start-window_start
-            target_end = target_start+(source_end-source_start)
+            target_start = source_start - window_start
+            target_end = target_start + (source_end - source_start)
             block[target_start:target_end] = samples[source_start:source_end]
         return block
 
@@ -157,7 +157,7 @@ class OfflineRenderWorker(QThread):
         mono_blocks = {}
         # Live analysis windows end at the audio playhead. Offline analysis uses
         # the same trailing window; a centred window would shift the visual response.
-        end_frame = int(round(seconds*self.sample_rate))
+        end_frame = int(round(seconds * self.sample_rate))
 
         for source in analysis_sources:
             track_id = source["track_id"]
@@ -207,7 +207,7 @@ class OfflineRenderWorker(QThread):
 
         try:
             with tempfile.TemporaryDirectory(
-                prefix="waveforming_m5_", dir=output_path.parent
+                    prefix="waveforming_m5_", dir=output_path.parent
             ) as temporary:
                 audio_path = Path(temporary) / "mix.wav"
                 temporary_video = Path(temporary) / "rendered.mp4"
@@ -276,7 +276,8 @@ class OfflineRenderWorker(QThread):
                             self.settings.seed = seed
                         frame_settings = self.timeline.settings_at(seconds, self.settings)
                         frame_settings = GeneratorSettings(
-                            complexity=max(5.0, min(100.0, frame_settings.complexity * director_output.complexity_scale)),
+                            complexity=max(5.0,
+                                           min(100.0, frame_settings.complexity * director_output.complexity_scale)),
                             motion=max(0.0, min(100.0, frame_settings.motion * director_output.motion_scale)),
                             sensitivity=frame_settings.sensitivity,
                             seed=frame_settings.seed,

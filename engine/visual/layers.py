@@ -39,7 +39,7 @@ class LayerStack:
         self.layers: list[VisualLayer] = []
 
     def add(self, generator: str, name: str | None = None) -> VisualLayer:
-        layer = VisualLayer(name or f"{generator.title()} {len(self.layers)+1:02d}", generator)
+        layer = VisualLayer(name or f"{generator.title()} {len(self.layers) + 1:02d}", generator)
         self.layers.append(layer)
         return layer
 

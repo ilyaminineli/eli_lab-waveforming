@@ -5,7 +5,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 AUDIO_EXTENSIONS = {".wav", ".flac", ".aiff", ".aif", ".ogg", ".mp3"}
 CANVAS_SIZE = (1920, 1440)
 FRAME_SIZE = (1322, 1058)

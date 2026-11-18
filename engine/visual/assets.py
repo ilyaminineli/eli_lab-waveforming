@@ -5,7 +5,6 @@ from pathlib import Path
 
 from PIL import Image
 
-
 CANVAS_SIZE = (1920, 1440)
 DEFAULT_FRAME_SIZE = (1322, 1058)
 DEFAULT_FRAME_RECT = (

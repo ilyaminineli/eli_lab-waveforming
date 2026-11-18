@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import fields
 from typing import Any
 
 import numpy as np
 
 from .analyzer import FeatureFrame
-
 
 SCALAR_FIELDS = (
     "rms", "peak", "centroid", "centroid_norm", "rolloff", "bandwidth",
@@ -100,9 +98,9 @@ class FeatureBus:
         self._last_event.clear()
 
     def update(
-        self,
-        packet: dict | None,
-        source_groups: dict[str, str] | None = None,
+            self,
+            packet: dict | None,
+            source_groups: dict[str, str] | None = None,
     ) -> dict:
         """Return the analyzer packet enriched with track, group, master and event data."""
         packet = dict(packet or {})

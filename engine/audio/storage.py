@@ -16,14 +16,14 @@ class StreamedAudioBuffer:
     """
 
     def __init__(
-        self,
-        path: Path,
-        frame_count: int,
-        sample_rate: int,
-        *,
-        chunk_frames: int = 8192,
-        ring_chunks: int = 8,
-        lookbehind_frames: int = 16384,
+            self,
+            path: Path,
+            frame_count: int,
+            sample_rate: int,
+            *,
+            chunk_frames: int = 8192,
+            ring_chunks: int = 8,
+            lookbehind_frames: int = 16384,
     ) -> None:
         self.path = Path(path)
         self.frame_count = int(frame_count)
@@ -32,7 +32,7 @@ class StreamedAudioBuffer:
         self.chunk_frames = max(1024, int(chunk_frames))
         self.capacity = self.chunk_frames * max(3, int(ring_chunks))
         self.lookbehind_frames = min(
-            max(0, int(lookbehind_frames)), max(0, self.capacity-self.chunk_frames)
+            max(0, int(lookbehind_frames)), max(0, self.capacity - self.chunk_frames)
         )
         self._ring = np.zeros((self.capacity, 2), dtype=np.float32)
         self._head_frames = min(self.chunk_frames, self.frame_count)
@@ -74,7 +74,7 @@ class StreamedAudioBuffer:
                             self._write_pos = requested
                         elif requested > self._ring_start:
                             # Keep a bounded look-behind for trailing FFT windows.
-                            keep_from = max(0, requested-self.lookbehind_frames)
+                            keep_from = max(0, requested - self.lookbehind_frames)
                             self._ring_start = min(keep_from, self._write_pos)
                         buffered_ahead = self._write_pos - requested
                         free = self.capacity - (self._write_pos - self._ring_start)
@@ -119,7 +119,7 @@ class StreamedAudioBuffer:
                 self._condition.notify_all()
 
     def read_into(
-        self, position: int, destination: np.ndarray, *, update_request: bool = True
+            self, position: int, destination: np.ndarray, *, update_request: bool = True
     ) -> int:
         """Copy buffered samples without waiting; optionally leave prefetch state untouched."""
         if destination.ndim != 2 or destination.shape[1] != 2:

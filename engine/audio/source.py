@@ -26,11 +26,11 @@ class AudioSource:
 
     @classmethod
     def from_file(
-        cls,
-        path: Path,
-        *,
-        target_sample_rate: int | None = None,
-        preload_threshold_mb: float = 96.0,
+            cls,
+            path: Path,
+            *,
+            target_sample_rate: int | None = None,
+            preload_threshold_mb: float = 96.0,
     ) -> "AudioSource":
         path = Path(path)
         info = sf.info(str(path))
@@ -41,9 +41,9 @@ class AudioSource:
         group_name = path.parent.name or "Ungrouped"
         threshold_bytes = max(1, int(float(preload_threshold_mb) * 1024 * 1024))
         can_stream = (
-            target_sample_rate is not None
-            and int(target_sample_rate) == int(info.samplerate)
-            and expected_bytes >= threshold_bytes
+                target_sample_rate is not None
+                and int(target_sample_rate) == int(info.samplerate)
+                and expected_bytes >= threshold_bytes
         )
         if can_stream:
             return cls(

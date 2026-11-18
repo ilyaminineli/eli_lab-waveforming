@@ -14,26 +14,26 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QAbstractItemView, QDoubleSpinBox, QProgressDialog,
 )
 
-from engine.audio.playback import PlaybackEngine, MAX_AUDIO_SOURCES
+from app.timeline_widget import TimelineWidget
 from engine.audio.feature_bus import FeatureBus
+from engine.audio.playback import PlaybackEngine, MAX_AUDIO_SOURCES
 from engine.audio.source import AudioSource
-from engine.visual.assets import AssetCatalog
-from engine.visual.canvas import GpuCompositionCanvas
-from engine.visual.compositor import PREVIEW_SIZE, PROJECT_SIZE, VisualCompositor
-from engine.visual.generators import GeneratorSettings
-from engine.visual.preview_worker import (
-    PreviewRenderWorker, is_newer_preview_frame,
-)
+from engine.project.session import scan_audio_tree
+from engine.render.ffmpeg import resolve_ffmpeg
 from engine.render.offline import OfflineRenderWorker
 from engine.timeline import Timeline
-from app.timeline_widget import TimelineWidget
-from engine.visual.layers import LayerStack, VisualLayer
+from engine.visual.assets import AssetCatalog
+from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.composition_director import (
     CompositionDirector, create_auto_composition, is_default_placeholder_composition,
     vary_composition,
 )
-from engine.project.session import scan_audio_tree
-from engine.render.ffmpeg import resolve_ffmpeg
+from engine.visual.compositor import PREVIEW_SIZE, PROJECT_SIZE, VisualCompositor
+from engine.visual.generators import GeneratorSettings
+from engine.visual.layers import LayerStack, VisualLayer
+from engine.visual.preview_worker import (
+    PreviewRenderWorker, is_newer_preview_frame,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,11 +79,11 @@ class SourceRow(QWidget):
         solo.setChecked(source.solo)
         gain = QSlider(Qt.Orientation.Horizontal)
         gain.setRange(0, 200)
-        gain.setValue(int(round(source.gain*100)))
+        gain.setValue(int(round(source.gain * 100)))
         gain.setFixedWidth(68)
         pan = QSlider(Qt.Orientation.Horizontal)
         pan.setRange(-100, 100)
-        pan.setValue(int(round(source.pan*100)))
+        pan.setValue(int(round(source.pan * 100)))
         pan.setFixedWidth(58)
         remove = QPushButton("×")
         remove.setFixedWidth(23)
@@ -503,14 +503,14 @@ class MainWindow(QMainWindow):
 
         # All layer property edits update the selected layer, never the audio callback.
         for control in (
-            self.layer_generator, self.layer_source, self.layer_palette,
-            self.layer_blend, self.layer_rotation, self.layer_mask,
-            self.layer_pass_map, self.layer_pass_mode,
+                self.layer_generator, self.layer_source, self.layer_palette,
+                self.layer_blend, self.layer_rotation, self.layer_mask,
+                self.layer_pass_map, self.layer_pass_mode,
         ):
             control.currentTextChanged.connect(self._layer_property_changed)
         for control in (
-            self.layer_opacity, self.layer_x, self.layer_y, self.layer_scale,
-            self.layer_pass_strength,
+                self.layer_opacity, self.layer_x, self.layer_y, self.layer_scale,
+                self.layer_pass_strength,
         ):
             control.valueChanged.connect(self._layer_property_changed)
         for control in (self.feedback_enabled,):
@@ -650,16 +650,16 @@ class MainWindow(QMainWindow):
             self.layer_source.setCurrentIndex(max(0, source_index))
             self.layer_palette.setCurrentText(layer.palette_mode)
             self.layer_blend.setCurrentText(layer.blend_mode)
-            self.layer_opacity.setValue(int(layer.opacity*100))
-            self.layer_x.setValue(int(layer.x_offset*100))
-            self.layer_y.setValue(int(layer.y_offset*100))
-            self.layer_scale.setValue(int(layer.scale*100))
+            self.layer_opacity.setValue(int(layer.opacity * 100))
+            self.layer_x.setValue(int(layer.x_offset * 100))
+            self.layer_y.setValue(int(layer.y_offset * 100))
+            self.layer_scale.setValue(int(layer.scale * 100))
             rotation_index = self.layer_rotation.findData(int(layer.rotation) % 360)
             self.layer_rotation.setCurrentIndex(max(0, rotation_index))
             self.layer_mask.setCurrentText(layer.mask_mode)
             self.layer_pass_map.setCurrentText(layer.pass_map)
             self.layer_pass_mode.setCurrentText(layer.pass_mode)
-            self.layer_pass_strength.setValue(int(layer.pass_strength*100))
+            self.layer_pass_strength.setValue(int(layer.pass_strength * 100))
         self._updating_layer_controls = False
 
     def _layer_property_changed(self, *_args) -> None:
@@ -676,15 +676,15 @@ class MainWindow(QMainWindow):
         layer.source_id = str(self.layer_source.currentData() or "")
         layer.palette_mode = self.layer_palette.currentText()
         layer.blend_mode = self.layer_blend.currentText()
-        layer.opacity = self.layer_opacity.value()/100.0
-        layer.x_offset = self.layer_x.value()/100.0
-        layer.y_offset = self.layer_y.value()/100.0
-        layer.scale = self.layer_scale.value()/100.0
+        layer.opacity = self.layer_opacity.value() / 100.0
+        layer.x_offset = self.layer_x.value() / 100.0
+        layer.y_offset = self.layer_y.value() / 100.0
+        layer.scale = self.layer_scale.value() / 100.0
         layer.rotation = float(self.layer_rotation.currentData() or 0)
         layer.mask_mode = self.layer_mask.currentText()
         layer.pass_map = self.layer_pass_map.currentText()
         layer.pass_mode = self.layer_pass_mode.currentText()
-        layer.pass_strength = self.layer_pass_strength.value()/100.0
+        layer.pass_strength = self.layer_pass_strength.value() / 100.0
         item = self._item_ids.get(layer.layer_id)
         if item is not None:
             channel = ""
@@ -730,8 +730,8 @@ class MainWindow(QMainWindow):
 
     def _import_audio_paths(self, paths: list[Path]) -> None:
         rebuild_auto_composition = (
-            self._auto_composed
-            or is_default_placeholder_composition(self.layer_stack.layers)
+                self._auto_composed
+                or is_default_placeholder_composition(self.layer_stack.layers)
         )
         imported = 0
         errors: list[str] = []
@@ -747,7 +747,7 @@ class MainWindow(QMainWindow):
                 track_id = self.audio.add_source(source)
                 self.sources[track_id] = source
                 row = SourceRow(source, track_id, self._remove_source)
-                self.source_rows.insertWidget(self.source_rows.count()-1, row)
+                self.source_rows.insertWidget(self.source_rows.count() - 1, row)
                 imported += 1
             except Exception as exc:
                 errors.append(f"{Path(path).name}: {exc}")
@@ -762,7 +762,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, "Some audio files could not be imported",
                 "\n".join(errors[:10]) + (
-                    f"\n…and {len(errors)-10} more." if len(errors) > 10 else ""
+                    f"\n…and {len(errors) - 10} more." if len(errors) > 10 else ""
                 ),
             )
         if imported:
@@ -935,7 +935,7 @@ class MainWindow(QMainWindow):
                 source_id_map[str(saved.get("track_id", ""))] = track_id
                 self.sources[track_id] = source
                 row = SourceRow(source, track_id, self._remove_source)
-                self.source_rows.insertWidget(self.source_rows.count()-1, row)
+                self.source_rows.insertWidget(self.source_rows.count() - 1, row)
             except Exception as exc:
                 missing_sources.append(f"{path}: {exc}")
 
@@ -1067,9 +1067,9 @@ class MainWindow(QMainWindow):
             resolution=PROJECT_SIZE,
             feedback={
                 "enabled": self.feedback_enabled.isChecked(),
-                "amount": self.feedback_amount.value()/100.0,
-                "decay": self.feedback_decay.value()/100.0,
-                "shift": self.feedback_shift.value()/100.0,
+                "amount": self.feedback_amount.value() / 100.0,
+                "decay": self.feedback_decay.value() / 100.0,
+                "shift": self.feedback_shift.value() / 100.0,
             },
             director_mode=self.director.mode,
         )
@@ -1185,14 +1185,14 @@ class MainWindow(QMainWindow):
             settings=effective_settings,
             screen=self.screen.currentText(),
             feedback_enabled=self.feedback_enabled.isChecked(),
-            feedback_amount=self.feedback_amount.value()/100.0,
-            feedback_decay=self.feedback_decay.value()/100.0,
-            feedback_shift=self.feedback_shift.value()/100.0,
+            feedback_amount=self.feedback_amount.value() / 100.0,
+            feedback_decay=self.feedback_decay.value() / 100.0,
+            feedback_shift=self.feedback_shift.value() / 100.0,
             sequence=self._render_sequence,
             gpu_composite=(
-                bool(getattr(self.canvas, "gpu_active", False))
-                and not self._gpu_preview_disabled
-                and not self.feedback_enabled.isChecked()
+                    bool(getattr(self.canvas, "gpu_active", False))
+                    and not self._gpu_preview_disabled
+                    and not self.feedback_enabled.isChecked()
             ),
         )
 
@@ -1271,13 +1271,13 @@ class MainWindow(QMainWindow):
         duration = self.audio.duration
         if duration > 0 and not self.seek.isSliderDown():
             self.seek.blockSignals(True)
-            self.seek.setValue(int(clamp(seconds/duration,0.0,1.0)*10000))
+            self.seek.setValue(int(clamp(seconds / duration, 0.0, 1.0) * 10000))
             self.seek.blockSignals(False)
 
     def _seek_from_slider(self) -> None:
         duration = self.audio.duration
         if duration > 0:
-            self._seek_to_time((self.seek.value()/10000.0)*duration)
+            self._seek_to_time((self.seek.value() / 10000.0) * duration)
 
     def _seek_to_time(self, seconds: float) -> None:
         duration = self.audio.duration
@@ -1327,7 +1327,7 @@ class MainWindow(QMainWindow):
         if self.audio.is_playing:
             self.audio.pause()
         else:
-            if self.audio.duration > 0 and self.audio.position >= self.audio.duration-0.03:
+            if self.audio.duration > 0 and self.audio.position >= self.audio.duration - 0.03:
                 self.audio.seek(0.0)
                 self._last_position = 0.0
                 self.preview_worker.request_reset()

@@ -54,7 +54,6 @@ except Exception:  # Optional GPU dependency or platform OpenGL context.
     GL = None
     QOpenGLWidget = None
 
-
 VERTEX_SHADER = """#version 330 core
 layout(location = 0) in vec2 aPosition;
 layout(location = 1) in vec2 aUV;
@@ -189,7 +188,6 @@ void main() {
 }
 """
 
-
 if GL is not None:
     class GpuCompositionCanvas(QOpenGLWidget):
         """OpenGL 3.3 layer compositor; generators can migrate to native GLSL incrementally."""
@@ -256,9 +254,9 @@ if GL is not None:
                 self._program = self._build_program(VERTEX_SHADER, FRAGMENT_SHADER)
                 vertices = np.asarray([
                     -1.0, -1.0, 0.0, 1.0,
-                     1.0, -1.0, 1.0, 1.0,
-                    -1.0,  1.0, 0.0, 0.0,
-                     1.0,  1.0, 1.0, 0.0,
+                    1.0, -1.0, 1.0, 1.0,
+                    -1.0, 1.0, 0.0, 0.0,
+                    1.0, 1.0, 1.0, 0.0,
                 ], dtype=np.float32)
                 self._vao = int(GL.glGenVertexArrays(1))
                 self._vbo = int(GL.glGenBuffers(1))
