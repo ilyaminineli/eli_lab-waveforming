@@ -213,7 +213,11 @@ if GL is not None:
             self._target_textures: list[int] = []
             self._target_size = (0, 0)
             self.gl_version = "OpenGL pending"
-            self.setMinimumSize(500, 400)
+            self.setMinimumSize(320, 240)
+            self.setSizePolicy(
+                __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Policy.Expanding,
+                __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Policy.Expanding,
+            )
 
         def set_frame(self, image: Image.Image) -> None:
             self._scene = None
