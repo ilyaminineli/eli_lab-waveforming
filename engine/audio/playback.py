@@ -28,6 +28,7 @@ class _Track:
     cursor: int = 0
     stream: StreamedAudioBuffer | None = None
     frame_count: int = 0
+    scratch: np.ndarray | None = None
 
 
 class PlaybackEngine(QObject):
@@ -53,7 +54,7 @@ class PlaybackEngine(QObject):
         self._analysis_window = "hann"
         self._analysis_revision = 0
         # Visual descriptors do not need one FFT per 1024-sample audio callback.
-        # Eight updates per second keeps seven-source sessions practical on low-power CPUs.
+        # Eight updates per second keeps eight-source sessions practical on low-power CPUs.
         self._analysis_interval_frames = max(self.block_size, int(self.sample_rate / 8))
         self._analysis_frames_elapsed = 0
         self._analysis_queue: Queue = Queue(maxsize=2)
@@ -136,7 +137,16 @@ class PlaybackEngine(QObject):
                 if len(self._tracks) >= MAX_AUDIO_SOURCES:
                     raise ValueError(f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources.")
                 cursor = min(self._master_frame, frame_count)
-                self._tracks.append(_Track(track_id, source, data, cursor, stream, frame_count))
+                self._tracks.append(_Track(
+                    track_id=track_id,
+                    source=source,
+                    pcm=data,
+                    cursor=cursor,
+                    stream=stream,
+                    frame_count=frame_count,
+                    scratch=np.empty((max(self.block_size, 2048), 2), dtype=np.float32),
+                ))
+                self._refresh_analysis_interval_locked()
                 self._invalidate_analysis_locked()
         except Exception:
             if stream is not None:
@@ -149,6 +159,7 @@ class PlaybackEngine(QObject):
             removed = [track for track in self._tracks if track.track_id == track_id]
             self._tracks = [track for track in self._tracks if track.track_id != track_id]
             self._master_frame = min(self._master_frame, max(0, self._max_frames() - 1))
+            self._refresh_analysis_interval_locked()
             self._invalidate_analysis_locked()
         for track in removed:
             if track.stream is not None:
@@ -162,6 +173,13 @@ class PlaybackEngine(QObject):
                 self._analysis_queue.get_nowait()
             except Empty:
                 break
+
+    def _refresh_analysis_interval_locked(self) -> None:
+        count = len(self._tracks)
+        rate = 8.0 if count <= 8 else 6.0 if count <= 16 else 3.0
+        self._analysis_interval_frames = max(
+            self.block_size, int(self.sample_rate / rate)
+        )
 
     def _max_frames(self) -> int:
         return max((track.frame_count for track in self._tracks), default=0)
@@ -245,13 +263,13 @@ class PlaybackEngine(QObject):
             start = (end - fft_size) % frame_count
             if start + fft_size > frame_count:
                 return None
-            return result if stream.read_into(start, result) == fft_size else None
+            return result if stream.read_into(start, result, update_request=False) == fft_size else None
         available = min(fft_size, max(0, end))
         if not available:
             return result
         source_start = end - available
         target_start = fft_size - available
-        copied = stream.read_into(source_start, result[target_start:])
+        copied = stream.read_into(source_start, result[target_start:], update_request=False)
         return result if copied == available else None
 
     def _audio_callback(self, outdata, frames, time_info, status) -> None:
@@ -287,7 +305,10 @@ class PlaybackEngine(QObject):
                     gain_left = gain_right = 0.0
 
                 if track.stream is not None:
-                    block = np.zeros((frames, 2), dtype=np.float32)
+                    if track.scratch is None or track.scratch.shape[0] < frames:
+                        track.scratch = np.empty((frames, 2), dtype=np.float32)
+                    block = track.scratch[:frames]
+                    block.fill(0.0)
                     if frame_count > 0 and loop:
                         position = start % frame_count
                         offset = 0
@@ -416,7 +437,7 @@ class PlaybackEngine(QObject):
         revision = -1
 
         # The analysis thread is deliberately lower priority than the PortAudio
-        # callback so a dense seven-source analysis cannot cause output underruns.
+        # callback so a dense multichannel analysis cannot cause output underruns.
         try:
             if os.name == "nt":
                 import ctypes
