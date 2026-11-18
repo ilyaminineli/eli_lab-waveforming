@@ -80,6 +80,8 @@ class PreviewRenderWorker(threading.Thread):
         # large NumPy arrays are shared read-only to avoid duplicating RAM.
         request = {
             "packet": packet,
+            # Keep the audio playhead and visual animation clock independent.
+            "audio_seconds": float(seconds),
             "seconds": float(seconds),
             "layers": [VisualLayer.from_dict(layer.to_dict()) for layer in layers],
             "settings": replace(settings),
@@ -174,7 +176,7 @@ class PreviewRenderWorker(threading.Thread):
                             feedback_shift=request["feedback_shift"],
                         )
                     self.signals.frame_ready.emit(
-                        image, request["seconds"], request["sequence"]
+                        image, request["audio_seconds"], request["sequence"]
                     )
                 except Exception as exc:
                     self.signals.render_error.emit(f"Preview render failed: {exc}")
