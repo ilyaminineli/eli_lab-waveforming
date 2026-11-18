@@ -162,11 +162,11 @@ def create_auto_composition(
         name="PLATE / STRUCTURE",
         generator=base_name,
         blend_mode="Screen",
-        opacity=0.28,
+        opacity=0.13,
         mask_mode="FRAME",
-        pass_mode="PAPER RELIEF",
+        pass_mode="NONE",
         pass_map="DISPLACEMENT",
-        pass_strength=0.22,
+        pass_strength=0.0,
         palette_mode="MONOCHROME",
         palette_index=0,
         role="STRUCTURE",
@@ -177,13 +177,15 @@ def create_auto_composition(
     channel_ids = list(source_ids[:8]) if source_ids else [""] * 3
     count = len(channel_ids)
     if count <= 1:
-        columns, rows, tile_scale = 1, 1, 0.82
+        columns, rows, tile_scale = 1, 1, 0.88
     elif count <= 2:
-        columns, rows, tile_scale = 2, 1, 0.47
+        columns, rows, tile_scale = 2, 1, 0.58
     elif count <= 4:
-        columns, rows, tile_scale = 2, 2, 0.44
+        columns, rows, tile_scale = 2, 2, 0.52
+    elif count <= 6:
+        columns, rows, tile_scale = 3, 2, 0.40
     else:
-        columns, rows, tile_scale = 3, 3, 0.30
+        columns, rows, tile_scale = 3, 3, 0.34
 
     preferred = [
         "AXONOMETRIC FIELD", "GEOMETRIC FIELD", "POLYHEDRAL FIELD",
@@ -216,7 +218,7 @@ def create_auto_composition(
             name=f"CHANNEL {index + 1:02d} / {generator}",
             generator=generator,
             blend_mode=("Screen", "Normal", "Difference", "Add")[index % 4],
-            opacity=round(rng.uniform(0.62, 0.78), 2),
+            opacity=round(rng.uniform(0.76, 0.90), 2),
             x_offset=round(x_offset, 3),
             y_offset=round(y_offset, 3),
             scale=tile_scale,
