@@ -181,8 +181,19 @@ def create_auto_composition(
             candidates = available
         generator = candidates[index % len(candidates)]
         row, column = divmod(index, columns)
-        x_offset = ((column + 0.5) / columns - 0.5) * 0.94 if columns > 1 else 0.0
-        y_offset = ((row + 0.5) / rows - 0.5) * 0.90 if rows > 1 else 0.0
+        row_start = row * columns
+        row_count = min(columns, count - row_start)
+        column += (columns - row_count) / 2.0
+        # The source cell centres follow the default printable frame, not
+        # the full canvas edges, so no channel is clipped by the FRAME mask.
+        x_offset = (
+            ((column + 0.5) / columns - 0.5) * (1322.0 / 1920.0)
+            if columns > 1 else 0.0
+        )
+        y_offset = (
+            ((row + 0.5) / rows - 0.5) * (1058.0 / 1440.0)
+            if rows > 1 else 0.0
+        )
 
         layers.append(VisualLayer(
             name=f"CHANNEL {index + 1:02d} / {generator}",
