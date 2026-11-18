@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw
 
 from engine.visual.assets import AssetCatalog
 from engine.visual.compositor import PREVIEW_SIZE, VisualCompositor
+from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import LayerStack, VisualLayer
 
 
