@@ -1,0 +1,44 @@
+name: build-layout-artwork-assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "resources/layout/layout.html"
+      - "resources/layout/layout_simple.html"
+      - "tools/extract_layout_html.py"
+      - ".github/workflows/build-layout-artwork-assets.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install image validation dependency
+        run: python -m pip install --upgrade Pillow
+      - name: Extract both HTML variants
+        run: |
+          python tools/extract_layout_html.py \
+            resources/layout/layout.html \
+            resources/layout/layout_simple.html \
+            --output resources/layout/artwork
+      - name: Commit extracted assets and geometry
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add resources/layout/artwork
+          if git diff --cached --quiet; then
+            echo "Extracted artwork is already up to date."
+          else
+            git commit -m "Generate extracted layout artwork assets"
+            git push origin HEAD:main
+          fi
