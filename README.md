@@ -6,11 +6,11 @@ An experimental audio-reactive visual composition workstation for abstract IDM-s
 
 The integrated branch combines the M5 timeline and deterministic export workflow with the multichannel evolution implementation:
 
-- Up to **64 audio sources**, recursive folder import and folder-based visual groups.
-- Hybrid audio storage: short or sample-rate-mismatched stems are preloaded; long device-rate-matched stems use a background ring reader. The audio callback performs no disk I/O.
-- A temporal feature bus derives smoothed track, group and master descriptors, onset density, novelty and transient events. Pairwise correlation is limited to 12 sources to avoid quadratic work in large sessions.
-- MANUAL / SEMI-AUTO / AUTO composition director modes, audio-informed motion and complexity control, hysteresis and cooldown-limited structural variation.
-- OpenGL 3.3 layer blending for the interactive preview, with Pillow retained for temporal feedback and compatibility. Generator simulation and paper-relief preparation remain CPU-side.
+- Up to **64 audio sources**, multi-file and recursive folder import, stable folder groups, and individual or group-based visual routing.
+- Hybrid audio storage: stems larger than 96 MB use a background ring reader when their rate matches the output device; shorter or rate-mismatched stems are decoded/resampled before playback. The audio callback performs no disk I/O and reuses per-track stream buffers.
+- A temporal feature bus derives smoothed track, folder-group and master descriptors, onset density, novelty and transient events. Pairwise correlation is limited to 12 sources; analysis cadence reduces from 8 Hz to 6 Hz or 3 Hz as sessions grow.
+- MANUAL / SEMI-AUTO / AUTO composition director modes are wired into live preview and offline export, including audio-informed motion/complexity, deterministic glitch/accent impulses, hysteresis and cooldown-limited structural variation.
+- OpenGL 3.3 layer blending for interactive preview when a compatible context is available, with Pillow retained for temporal feedback and CPU fallback. Generator simulation and paper-relief preparation remain CPU-side. AUTO COMPOSE lays up to eight channels into a spatial grid rather than stacking them at the canvas centre.
 - Screen plates and layout profiles are loaded from `resources/screens` and `resources/layout`. The native canvas remains 1920×1440; the seven pre-designed plates use the 1322×1058 frame, while legacy SCREEN 1 / SCREEN 2 masks remain unchanged.
 - The M5 latest-frame preview worker, timeline automation, project save/load and deterministic offline MP4 export remain in place. GPU-native instruments and device-specific Windows performance still require separate validation.
 
@@ -42,11 +42,11 @@ The repository includes `pytest.ini` and `tests/conftest.py` so imports such as 
 
 ## M1 — Synchronized audio and analysis
 
-- Up to seven sources share one output clock and can be loaded, removed, muted, soloed, panned and gain-adjusted independently.
+- Up to 64 sources share one output clock and can be loaded individually or recursively by folder, removed, muted, soloed, panned and gain-adjusted independently.
 - Sources with different sample rates are converted to the selected output device rate.
 - Shared play/pause/stop, seek and loop transport.
 - Per-source RMS, peak, FFT spectrum, logarithmic bands, spectral centroid, rolloff, bandwidth, flatness, entropy, spectral flux, zero-crossing rate, stereo width and crest factor.
-- Pairwise zero-lag correlation between active source blocks.
+- Pairwise zero-lag correlation between active source blocks when 12 or fewer tracks are active; large sessions skip the quadratic correlation pass.
 - FFT and descriptor calculations run on a dedicated analysis thread, outside the PortAudio output callback.
 
 ## M2 — Mathematical visual generators
@@ -114,7 +114,7 @@ The automatic variation is intentionally a composition jump, not a crossfade. Be
 - Linear interpolation by default, with HOLD and SMOOTH interpolation available in the timeline model.
 - Save/open .wfp project files containing audio file paths, source controls, layers, settings, paper template, feedback, markers and automation. Audio files are referenced rather than embedded.
 - Export deterministic MP4 at 1920×1440 and 15/24/25/30 fps. Frames are rendered from the same compositor and automation graph at fixed timestamps, with audio features analysed from PCM at each frame.
-- Export requires the FFmpeg executable on PATH. The renderer uses H.264/AAC and pauses live playback while exporting to reserve CPU resources. It analyses trailing FFT windows ending at each frame timestamp and only replaces the chosen output file after a complete successful encode.
+- Export resolves FFmpeg from PATH, FFMPEG_BINARY, common Windows install locations or the bundled imageio-ffmpeg executable. The renderer uses H.264/AAC and pauses live playback while exporting to reserve CPU resources. It analyses trailing FFT windows at up to 8 Hz while rendering at the selected frame rate, and only replaces the output after a successful encode.
 
 The supplied target machine is an AMD Ryzen AI 5 330 at 2.00 GHz with Radeon 820M integrated graphics (512 MB reported graphics memory) and 16 GB RAM. The compositor is still CPU-based, so M5 defaults to an **ECO 5 fps 320×240** preview, with selectable LOW and BALANCED profiles, a one-item latest-frame worker queue and **8 Hz** audio feature analysis. Preview and analysis threads run below normal thread priority where the operating system allows it. A slow preview frame cannot block the audio callback or the UI. Full-resolution offline rendering is independent of preview quality and is intentionally not real-time.
 
@@ -124,13 +124,13 @@ See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implement
 
 - Project coordinate system: **1920 × 1440** (4:3).
 - Interactive preview defaults to **320 × 240** (ECO), with **360 × 270** (LOW) and **480 × 360** (BALANCED) options; all are scaled into the application window without changing the 4:3 project aspect ratio.
-- The compositor uses CPU image-space operations in this milestone. It is structured so a GPU/GLSL backend can replace the preview implementation later.
+- Generator simulation and paper-relief preparation remain CPU-side; OpenGL handles per-layer preview blending when available, with a CPU compositor fallback. This is not yet a fully GPU-native generator pipeline.
 - Offline rendering uses FFmpeg from PATH; the preview remains CPU/Pillow/NumPy based. Printable-area masks scale with the selected render size, and completed MP4s replace the destination atomically.
 
 ## Requirements and limitations
 
-Python 3.12 (64-bit) recommended. Playback requires an available sounddevice/PortAudio output device. MP4 export requires FFmpeg on PATH; ffmpeg -version should succeed.
+Python 3.12 (64-bit) recommended. Playback requires an available sounddevice/PortAudio output device. MP4 export uses the bundled imageio-ffmpeg executable when no system FFmpeg is configured; FFMPEG_BINARY can point to a custom ffmpeg.exe.
 
-- Decoded audio is currently held in memory; long seven-source sessions can require substantial RAM.
+- Long device-rate-matched stems above 96 MB are streamed from disk. Rate-mismatched stems and offline-export snapshots still require memory; large offline exports can therefore need substantial RAM.
 - MP3 support depends on the installed libsndfile build. WAV, FLAC, AIFF and OGG are preferred.
 - The frame-region coordinates are stored per screen template in engine/visual/assets.py and can be tuned if a guide design changes.
