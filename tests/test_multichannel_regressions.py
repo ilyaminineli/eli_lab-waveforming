@@ -29,6 +29,9 @@ def test_auto_composition_separates_seven_audio_channels():
 
     assert [layer.source_id for layer in channels] == source_ids
     assert len({(layer.x_offset, layer.y_offset) for layer in channels}) == 7
+    assert channels[-1].x_offset == pytest.approx(0.0)
+    assert all(abs(layer.x_offset) <= 0.24 for layer in channels)
+    assert all(abs(layer.y_offset) <= 0.25 for layer in channels)
     assert all(layer.scale == pytest.approx(0.30) for layer in channels)
     assert all(layer.pass_mode == "NONE" for layer in channels)
 
