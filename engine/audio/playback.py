@@ -184,6 +184,87 @@ class PlaybackEngine(QObject):
     def _max_frames(self) -> int:
         return max((track.frame_count for track in self._tracks), default=0)
 
+    def request_preview_analysis(self) -> int:
+        """Queue one analysis snapshot per enabled track without starting playback.
+
+        The initial preview uses the next FFT window at the playhead. Streamed
+        sources use their pre-read head/ring cache and never wait for disk I/O.
+        Returns the number of tracks included in the preview packet.
+        """
+        with self._lock:
+            tracks = tuple(self._tracks)
+            revision = self._analysis_revision
+            fft_size = self._analysis_fft
+            band_count = self._analysis_bands
+            window = self._analysis_window
+            master_frame = self._master_frame
+            playing = self._playing
+            loop = self._loop
+
+        snapshots: dict[str, tuple[np.ndarray, int]] = {}
+        packet_end = master_frame
+        for track in tracks:
+            if not track.source.analysis_enabled or track.frame_count <= 0:
+                continue
+
+            frame_count = track.frame_count
+            cursor = min(max(0, int(track.cursor)), frame_count)
+            if playing:
+                end = cursor
+                available = min(fft_size, end)
+                start = end - available
+                target_start = fft_size - available
+            else:
+                start = min(cursor, max(0, frame_count - fft_size))
+                end = min(frame_count, start + fft_size)
+                available = max(0, end - start)
+                target_start = 0
+
+            if not available:
+                continue
+            block = np.zeros((fft_size, 2), dtype=np.float32)
+            destination = block[target_start:target_start + available]
+
+            if track.stream is not None:
+                copied = track.stream.read_into(
+                    start, destination, update_request=False
+                )
+                if copied != available:
+                    continue
+            else:
+                pcm = track.pcm
+                if pcm is None:
+                    continue
+                block_slice = pcm[start:end]
+                if len(block_slice) != available:
+                    continue
+                destination[:] = block_slice
+
+            snapshots[track.track_id] = (block, self.sample_rate)
+            packet_end = max(packet_end, end)
+
+        if not snapshots:
+            return 0
+
+        payload = (
+            snapshots, packet_end, revision, fft_size, band_count, window,
+        )
+        with self._lock:
+            if revision != self._analysis_revision:
+                return 0
+            try:
+                self._analysis_queue.put_nowait(payload)
+            except Full:
+                try:
+                    self._analysis_queue.get_nowait()
+                except Empty:
+                    pass
+                try:
+                    self._analysis_queue.put_nowait(payload)
+                except Full:
+                    return 0
+        return len(snapshots)
+
     def configure_analysis(self, fft_size: int, band_count: int, window: str) -> None:
         with self._lock:
             self._analysis_fft = int(fft_size)
