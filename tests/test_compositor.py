@@ -338,13 +338,12 @@ def test_cpu_scene_renders_gpu_native_interference_as_real_pixels():
         mask_mode="FRAME", pass_mode="NONE", pass_strength=0.0,
         palette_mode="EDITORIAL TRICOLOR",
     )
-    scene = compositor.render_scene(
+    scene = compositor.render_cpu_frame(
         packet=None,
         seconds=1.25,
         layers=[layer],
         settings=GeneratorSettings(),
         screen="SCREEN 1 / BLACK",
-        gpu_native=False,
     )
 
     assert isinstance(scene, Image.Image)
@@ -362,13 +361,12 @@ def test_gpu_interference_scene_keeps_cpu_fallback_layer_snapshot():
         "GPU interference", "INTERFERENCE FIELD",
         mask_mode="FRAME", pass_mode="NONE", pass_strength=0.0,
     )
-    cpu = compositor.render_scene(
+    cpu = compositor.render_cpu_frame(
         packet=None,
         seconds=1.25,
         layers=[layer],
         settings=GeneratorSettings(),
         screen="SCREEN 1 / BLACK",
-        gpu_native=False,
     )
     gpu = compositor.render_scene(
         packet=None,
