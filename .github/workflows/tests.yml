@@ -20,5 +20,18 @@ jobs:
           sudo apt-get install -y libegl1 libgl1 libportaudio2
       - name: Install test dependencies
         run: python -m pip install -r requirements-dev.txt
+      - name: Validate GLSL shader source
+        run: |
+          python -m pip install moderngl glcontext
+          python - <<'PY'
+          from engine.visual.canvas import FRAGMENT_SHADER, VERTEX_SHADER
+          import moderngl
+          context = moderngl.create_standalone_context(require=330, backend="egl")
+          program = context.program(vertex_shader=VERTEX_SHADER, fragment_shader=FRAGMENT_SHADER)
+          assert "uProcA" in program
+          assert "uProcEntropy" in program
+          program.release()
+          context.release()
+          PY
       - name: Run test suite
         run: python -m pytest -q
