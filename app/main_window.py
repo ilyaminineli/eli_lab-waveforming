@@ -1196,8 +1196,6 @@ class MainWindow(QMainWindow):
             "state": director_output.state,
         }
         force_cpu_preview = self._force_cpu_preview_frames > 0
-        if force_cpu_preview:
-            self._force_cpu_preview_frames -= 1
         self.preview_worker.submit(
             packet=frame_packet,
             seconds=seconds,
@@ -1210,12 +1208,16 @@ class MainWindow(QMainWindow):
             feedback_shift=self.feedback_shift.value() / 100.0,
             sequence=self._render_sequence,
             gpu_composite=(
-                    self._force_cpu_preview_frames <= 0
+                    not force_cpu_preview
                     and bool(getattr(self.canvas, "gpu_ready", False))
                     and not self._gpu_preview_disabled
                     and not self.feedback_enabled.isChecked()
             ),
         )
+        if force_cpu_preview:
+            self._force_cpu_preview_frames = max(
+                0, self._force_cpu_preview_frames - 1
+            )
 
     def _on_preview_frame(self, image, seconds: float, sequence: int) -> None:
         # A render may finish after several newer requests have been queued.
