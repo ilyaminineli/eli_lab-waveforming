@@ -1990,7 +1990,7 @@ class MainWindow(QMainWindow):
                     target = target % duration
                     self._tracker_clock_origin = target
                     self._tracker_clock_started = now
-                    self._last_cue_scan_position = target - 1e-6
+                    self._last_cue_scan_position = -1e-6
                     self.preview_worker.request_reset()
                 else:
                     target = duration
@@ -2181,7 +2181,7 @@ class MainWindow(QMainWindow):
         if seconds < previous:
             # Audio loop playback wraps the score clock; let cue scanning begin
             # again from the start of the new pass.
-            self._last_cue_scan_position = seconds - 1e-6
+            self._last_cue_scan_position = -1e-6
             self.preview_worker.request_reset()
             self.feature_bus.reset()
             self.director.reset()
