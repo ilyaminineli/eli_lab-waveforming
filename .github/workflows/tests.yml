@@ -47,7 +47,8 @@ jobs:
           from engine.visual.layers import VisualLayer
           from engine.visual.compositor import VisualCompositor
           from engine.visual.scene import (
-              VisualRelationship, VisualScene, VisualScore,
+              VisualRelationship, VisualScene, VisualScore, VisualScoreCue,
+              crossed_score_cues,
           )
           from engine.visual.project import VisualProject
           from engine.visual.transitions import (
@@ -155,6 +156,23 @@ jobs:
               assert restored_score.cues[0].cue_type == "scene_open" or (
                   restored_score.cues[0].cue_type in ("pattern_enter", "pattern_return")
               )
+
+              # The live cue scanner treats a backward playhead jump as a loop.
+              cycle_cues = [
+                  VisualScoreCue(cue_id="cycle-start", time=0.0),
+                  VisualScoreCue(cue_id="cycle-next", time=0.25),
+                  VisualScoreCue(cue_id="cycle-later", time=1.0),
+              ]
+              assert [
+                  cue.cue_id for cue in crossed_score_cues(
+                      cycle_cues, 32.0, 0.5
+                  )
+              ] == ["cycle-start", "cycle-next"]
+              assert [
+                  cue.cue_id for cue in crossed_score_cues(
+                      cycle_cues, 0.1, 0.5
+                  )
+              ] == ["cycle-next"]
 
               # Legacy projects without graph data are reconstructed from layers.
               migrated_scene = VisualScene()
