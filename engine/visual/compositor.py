@@ -14,6 +14,7 @@ from .scene_pair import (
     build_object_morph_state,
 )
 from .vector_geometry import interpolate_vector_paths, render_vector_paths
+from .temporal_echo import TemporalEchoHistoryBuffer, TemporalEchoSettings
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
@@ -59,6 +60,7 @@ class VisualCompositor:
         self._paper_cache: dict[tuple[str, tuple[int, int]], tuple] = {}
         self._feedback: Image.Image | None = None
         self._last_time: float | None = None
+        self._temporal_echo_history = TemporalEchoHistoryBuffer()
         self.last_profile: dict = {
             "scene_ms": 0.0,
             "compose_ms": 0.0,
@@ -97,6 +99,10 @@ class VisualCompositor:
         self._last_time = None
         if not preserve_generators:
             self.generators.reset_states()
+
+    def reset_temporal_echo(self, reason: str = "manual") -> None:
+        """Clear transition-local echo history without touching global feedback."""
+        self._temporal_echo_history.reset(reason)
 
     def _screen(self, name: str) -> Image.Image | None:
         if name == "No guide":
@@ -1120,7 +1126,7 @@ class VisualCompositor:
                 vector_overrides=vector_overrides,
             )
             profiles = (dict(self.last_profile),)
-        elif contract.render_mode == "crossfade":
+        elif contract.render_mode in ("crossfade", "temporal_echo"):
             outgoing_frame = self.render(
                 packet=packet,
                 seconds=seconds,
@@ -1188,6 +1194,57 @@ class VisualCompositor:
                 visual_scene=selected_scene,
             )
             profiles = (dict(self.last_profile),)
+
+        temporal_echo_profile = {
+            "sample_count": 0,
+            "buffer_size": 0,
+            "oldest_age_seconds": 0.0,
+            "reset_reason": "",
+            "enabled": False,
+            "warning": "",
+        }
+        echo_history = getattr(self, "_temporal_echo_history", None)
+        if echo_history is None:
+            echo_history = TemporalEchoHistoryBuffer()
+            self._temporal_echo_history = echo_history
+        if contract.family == "temporal_echo":
+            transition_metadata = contract.metadata.get("transition_metadata", {})
+            echo_values = (
+                transition_metadata.get("temporal_echo", {})
+                if isinstance(transition_metadata, dict) else {}
+            )
+            try:
+                echo_settings = TemporalEchoSettings.from_mapping(echo_values)
+            except ValueError as exc:
+                echo_settings = TemporalEchoSettings()
+                temporal_echo_profile["warning"] = str(exc)
+            overlays, echo_stats = echo_history.prepare(
+                frame,
+                timestamp=float(seconds),
+                transition_id=contract.transition_id,
+                settings=echo_settings,
+            )
+            for echo_image, position, opacity in overlays:
+                self._blend_at(
+                    frame,
+                    echo_image,
+                    position,
+                    echo_settings.blend_mode,
+                    opacity,
+                )
+            temporal_echo_profile.update(echo_stats)
+            temporal_echo_profile["enabled"] = bool(echo_settings.enabled)
+            temporal_echo_profile["strength"] = echo_settings.strength
+            temporal_echo_profile["decay"] = echo_settings.decay
+            temporal_echo_profile["history_seconds"] = echo_settings.history_seconds
+            temporal_echo_profile["direction"] = [
+                echo_settings.direction_x, echo_settings.direction_y
+            ]
+            temporal_echo_profile["directional_persistence"] = (
+                echo_settings.directional_persistence
+            )
+        else:
+            echo_history.reset("transition_not_temporal_echo")
 
         # render() intentionally resets feedback on standalone, non-feedback
         # frames; restore the pair's history and apply feedback to the final
@@ -1268,15 +1325,10 @@ class VisualCompositor:
                 "split_path_map_count": split_path_map_count if contract.render_mode == "object_morph" else 0,
                 "merge_path_map_count": merge_path_map_count if contract.render_mode == "object_morph" else 0,
                 "path_mapping_warnings": path_mapping_warnings if contract.render_mode == "object_morph" else [],
+                "temporal_echo": temporal_echo_profile if contract.family == "temporal_echo" else None,
                 "lifecycle_fragment_count": fragments if contract.render_mode in ("assembly", "erosion") else 0,
                 "lifecycle_progress": float(np.clip(contract.eased_progress, 0.0, 1.0)) if contract.render_mode in ("assembly", "erosion") else None,
                 "lifecycle_direction": contract.render_mode if contract.render_mode in ("assembly", "erosion") else None,
-                "lifecycle_fragment_count": fragments if contract.render_mode in ("assembly", "erosion") else 0,
-                "lifecycle_progress": float(np.clip(contract.eased_progress, 0.0, 1.0)) if contract.render_mode in ("assembly", "erosion") else None,
-                "lifecycle_direction": contract.render_mode if contract.render_mode in ("assembly", "erosion") else None,
-                "lifecycle_fragment_count": fragments if contract.family in ("assembly", "erosion") else 0,
-                "lifecycle_progress": float(np.clip(contract.eased_progress, 0.0, 1.0)) if contract.family in ("assembly", "erosion") else None,
-                "lifecycle_direction": contract.family if contract.family in ("assembly", "erosion") else None,
             },
         }
         return frame
