@@ -1251,7 +1251,7 @@ class MainWindow(QMainWindow):
             selected_id = selected.layer_id if selected else self.layer_stack.layers[0].layer_id
             seed = (int(self._settings.seed) + int(seconds * 10000.0) * 104729) & 0x7FFFFFFF
             self.layer_stack.layers = vary_composition(
-                self.layer_stack.layers, self.compositor.generator_names(), seed
+                self.layer_stack.layers, self._available_generator_names(), seed
             )
             self._settings.seed = seed
             self.preview_worker.request_reset()
