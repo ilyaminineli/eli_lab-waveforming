@@ -76,11 +76,12 @@ def test_serialised_tracker_packet_matches_live_packet(tmp_path):
 
 
 def test_tempo_effect_updates_subsequent_row_timing(tmp_path):
-    module = load_xm(make_xm(tmp_path / "tempo.xm", tempo_effect=(0, 0)))
+    module = load_xm(make_xm(tmp_path / "tempo.xm", tempo_effect=(1, 0)))
 
     # F03 changes speed to three ticks per row from the first row onward.
     assert module.effect_count == 1
-    assert module.cues[0].end_seconds == pytest.approx(64 * 3 * 2.5 / 125)
+    expected = (6 * 2.5 / 125) + (63 * 3 * 2.5 / 125)
+    assert module.cues[0].end_seconds == pytest.approx(expected)
 
 
 def test_parser_rejects_invalid_xm(tmp_path):
@@ -97,7 +98,7 @@ def test_parser_rejects_truncated_pattern_payload(tmp_path):
     struct.pack_into("<H", header, 58, 0x0104)
     struct.pack_into("<I", header, 60, 276)
     struct.pack_into("<8H", header, 64, 1, 0, 1, 1, 0, 1, 6, 125)
-    pattern = struct.pack("<IBHH", 9, 0, 1, 0)
+    pattern = struct.pack("<IBHH", 9, 0, 1, 1)
     path = tmp_path / "truncated.xm"
     path.write_bytes(bytes(header) + pattern)
     with pytest.raises(XMParseError):
