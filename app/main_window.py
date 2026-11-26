@@ -413,7 +413,8 @@ class MainWindow(QMainWindow):
         self.transition_family.addItems(sorted(TRANSITION_FAMILIES))
         self.transition_family.setCurrentText("dissolve")
         self.transition_family.setToolTip(
-            "M12 transition contract only in M13. Pixel-level effects are added in M14."
+            "DISSOLVE is a real outgoing/incoming crossfade in preview and export. "
+            "CUT switches at completion. Other families remain lifecycle-only until implemented."
         )
         self.transition_duration = QDoubleSpinBox()
         self.transition_duration.setRange(0.0, 120.0)
@@ -424,7 +425,8 @@ class MainWindow(QMainWindow):
         scene_form.addRow("DURATION (S)", self.transition_duration)
         self.scene_transition_button = QPushButton("COMMIT TRANSITION")
         self.scene_transition_button.setToolTip(
-            "Commit through the M12 state machine. Until M14, the renderer switches scenes at completion without blending them."
+            "Commit through M12. DISSOLVE blends the outgoing and incoming scenes; "
+            "future transition families retain lifecycle-only rendering for now."
         )
         self.cue_route_button = QPushButton("ROUTE CURRENT XM CUE")
         scene_form.addRow(self.scene_transition_button)
