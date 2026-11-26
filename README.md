@@ -182,7 +182,7 @@ See [docs/M11_VISUAL_SCORE_SCENE_GRAPH.md](docs/M11_VISUAL_SCORE_SCENE_GRAPH.md)
 - Contracts define duration, trigger metadata, easing, preparation/transformation/establishment proportions, object preservation/discard, interruption and outgoing-scene policies.
 - Separates transition proposal from commit. Proposing validates source/target scenes and object references without mutating scene state.
 - A deterministic, absolute-time controller samples progress and blend weights, and applies completion/cancel/hold/archive lifecycle decisions.
-- Transition contracts are not yet visual effects: renderer-side morph/dissolve/assembly implementations and app-level multi-scene authoring are future steps.
+- Renderer effects are added in M14: dissolve/crossfade and cut use the shared outgoing/incoming scene-pair contract; morph, assembly, erosion and other families remain future implementations.
 
 See [docs/M12_SCENE_STATE_MACHINE_TRANSITIONS.md](docs/M12_SCENE_STATE_MACHINE_TRANSITIONS.md).
 
