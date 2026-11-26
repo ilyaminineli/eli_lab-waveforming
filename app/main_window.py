@@ -560,6 +560,12 @@ class MainWindow(QMainWindow):
         self.export_fps = QComboBox()
         self.export_fps.addItems(["15", "24", "25", "30"])
         self.export_fps.setCurrentText("24")
+        self.export_quality = QComboBox()
+        self.export_quality.addItems(["PERFORMANCE  ·  ⅓", "BALANCED  ·  ½", "HIGH  ·  1×"])
+        self.export_quality.setCurrentText("BALANCED  ·  ½")
+        self.export_quality.setToolTip(
+            "Internal render resolution. MP4 delivery remains 1920×1440."
+        )
         self.export_button = QPushButton("EXPORT MP4")
         timeline_controls.addWidget(self.bpm)
         timeline_controls.addWidget(self.snap_beat)
@@ -570,6 +576,8 @@ class MainWindow(QMainWindow):
         timeline_controls.addStretch()
         timeline_controls.addWidget(QLabel("FPS"))
         timeline_controls.addWidget(self.export_fps)
+        timeline_controls.addWidget(QLabel("QUALITY"))
+        timeline_controls.addWidget(self.export_quality)
         timeline_controls.addWidget(self.export_button)
         timeline_layout.addLayout(timeline_controls)
         self.timeline_widget = TimelineWidget(self.timeline)
@@ -1296,9 +1304,9 @@ class MainWindow(QMainWindow):
                 "A system-wide PATH change is no longer required when imageio-ffmpeg is installed.",
             )
             return
-        if not self.sources:
+        if not self.sources and not self._tracker_data:
             QMessageBox.information(
-                self, "Export video", "Import audio sources before exporting."
+                self, "Export video", "Import an XM tracker score or audio source before exporting."
             )
             return
         if self._export_worker is not None and self._export_worker.isRunning():
@@ -1335,9 +1343,18 @@ class MainWindow(QMainWindow):
             }
             for track_id, source in self.sources.items()
         ]
-        frame_total = max(1, int(self.audio.duration * fps + 0.999))
+        render_scale = {
+            "PERFORMANCE  ·  ⅓": 1.0 / 3.0,
+            "BALANCED  ·  ½": 0.5,
+            "HIGH  ·  1×": 1.0,
+        }.get(self.export_quality.currentText(), 0.5)
+        duration = max(float(self.audio.duration), float(self._tracker_duration))
+        frame_total = max(1, int(duration * fps + 0.999))
+        render_width = max(2, int(PROJECT_SIZE[0] * render_scale) // 2 * 2)
+        render_height = max(2, int(PROJECT_SIZE[1] * render_scale) // 2 * 2)
         self._export_progress = QProgressDialog(
-            "Rendering 1920 × 1440 frames…", "CANCEL", 0, frame_total, self
+            f"Rendering {render_width} × {render_height} → 1920 × 1440…",
+            "CANCEL", 0, frame_total, self
         )
         self._export_progress.setWindowTitle("WAVEFORMING / OFFLINE RENDER")
         self._export_progress.setWindowModality(Qt.WindowModality.WindowModal)
@@ -1365,6 +1382,7 @@ class MainWindow(QMainWindow):
             },
             director_mode=self.director.mode,
             tracker_data=self._tracker_data,
+            render_scale=render_scale,
         )
         self._export_progress.canceled.connect(self._export_worker.cancel)
         self._export_worker.progress.connect(self._on_export_progress)
