@@ -235,11 +235,11 @@ def interpolate_vector_paths(source,target,progress,path_correspondence=None):
   if mode=="pair":
    pairs=[(source_ids[0],target_ids[0],1.0,1.0)]
   elif mode=="split":
-   divisor=float(len(target_ids))
-   pairs=[(source_ids[0],target_id,1.0/divisor,1.0) for target_id in target_ids]
+   # Coincident copies rasterize into one layer; they do not accumulate alpha.
+   pairs=[(source_ids[0],target_id,1.0,1.0) for target_id in target_ids]
   elif mode=="merge":
-   divisor=float(len(source_ids))
-   pairs=[(source_id,target_ids[0],1.0,1.0/divisor) for source_id in source_ids]
+   # Converging copies retain the target's original ink strength.
+   pairs=[(source_id,target_ids[0],1.0,1.0) for source_id in source_ids]
   else:
    raise ValueError(f"Unsupported authored path mapping mode: {mode}")
   for pair_index,(source_id,target_id,source_scale,target_scale) in enumerate(pairs):

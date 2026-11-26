@@ -787,7 +787,7 @@ jobs:
               )
               assert len(split_paths_start) == len(split_paths_mid) == 2
               assert all(item["correspondence_mode"] == "split" for item in split_paths_mid)
-              assert all(abs(item["alpha"] - 80.0) < 1e-6 for item in split_paths_start)
+              assert all(abs(item["alpha"] - 160.0) < 1e-6 for item in split_paths_start)
 
               merge_sources = [
                   {
@@ -807,7 +807,7 @@ jobs:
               )
               assert len(merge_paths_end) == 2
               assert all(item["correspondence_mode"] == "merge" for item in merge_paths_end)
-              assert all(abs(item["alpha"] - 80.0) < 1e-6 for item in merge_paths_end)
+              assert all(abs(item["alpha"] - 160.0) < 1e-6 for item in merge_paths_end)
               assert merge_paths_end[0]["points"] == merge_paths_end[1]["points"]
 
               try:

@@ -48,8 +48,8 @@ SceneTransition.path_correspondence persists path-level authored mappings beside
 Accepted modes:
 
 - pair: exactly one source path to one target path;
-- split: one source path to two or more target paths. Target paths begin coincident with the source, then fan out; source ink is distributed across the copies at the start;
-- merge: two or more source paths to one target path. Source paths converge onto the target; target ink is distributed across the converging copies at completion.
+- split: one source path to two or more target paths. Target paths begin coincident with the source, then fan out while retaining the source ink strength;
+- merge: two or more source paths to one target path. Source paths converge onto the target; the coincident target paths retain the target ink strength at completion.
 
 Example:
 
