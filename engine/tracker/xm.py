@@ -76,6 +76,18 @@ class XMModule:
 
     def visual_data(self) -> dict[str, Any]:
         """Return a compact, JSON-serialisable score for projects and render workers."""
+        cue_data = []
+        for cue in self.cues:
+            rows = self.patterns[cue.pattern]
+            item = cue.to_dict(tuple(
+                tuple(event.note if event.has_note else 0 for event in row)
+                for row in rows
+            ))
+            item["instruments"] = [
+                [event.instrument if event.has_note else 0 for event in row]
+                for row in rows
+            ]
+            cue_data.append(item)
         return {
             "title": self.title,
             "tracker": self.tracker,
@@ -85,22 +97,26 @@ class XMModule:
             "duration": self.duration,
             "effect_count": self.effect_count,
             "flow_control_effect_count": self.flow_control_effect_count,
-            "cues": [
-                cue.to_dict(tuple(
-                    tuple(event.note if event.has_note else 0 for event in row)
-                    for row in self.patterns[cue.pattern]
-                ))
-                for cue in self.cues
-            ],
+            "cues": cue_data,
         }
 
     def visual_packet(self, seconds: float) -> dict[str, Any] | None:
         cue = self.cue_at(seconds)
         if cue is None:
             return None
-        payload = self.visual_data()["cues"][cue.order]
+        rows = self.patterns[cue.pattern]
+        payload = cue.to_dict(tuple(
+            tuple(event.note if event.has_note else 0 for event in row)
+            for row in rows
+        ))
+        payload["instruments"] = [
+            [event.instrument if event.has_note else 0 for event in row]
+            for row in rows
+        ]
         span = max(1e-9, cue.end_seconds - cue.start_seconds)
-        payload["progress"] = max(0.0, min(1.0, (float(seconds) - cue.start_seconds) / span))
+        payload["progress"] = max(
+            0.0, min(1.0, (float(seconds) - cue.start_seconds) / span)
+        )
         return payload
 
 
