@@ -45,6 +45,7 @@ from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.composition_director import (
     CompositionDirector,
     create_auto_composition,
+    create_tracker_composition,
     is_default_placeholder_composition,
     vary_composition,
 )
@@ -146,6 +147,9 @@ class MainWindow(QMainWindow):
         self.sources: dict[str, AudioSource] = {}
         self._last_packet: dict = {}
         self._last_position = 0.0
+        self._tracker_playing = False
+        self._tracker_clock_started = 0.0
+        self._tracker_clock_origin = 0.0
         self._settings = GeneratorSettings()
         self.director = CompositionDirector("SEMI-AUTO")
         self.feature_bus = FeatureBus(analysis_rate=8.0)
@@ -523,7 +527,7 @@ class MainWindow(QMainWindow):
         self.stop_button = QPushButton("■  STOP")
         self.stop_button.clicked.connect(self.stop_playback)
         self.loop_check = QCheckBox("LOOP")
-        self.loop_check.toggled.connect(self.audio.set_loop)
+        self.loop_check.toggled.connect(self._loop_changed)
         self.seek = self._make_slider(0, 10000, 0)
         self.seek.sliderReleased.connect(self._seek_from_slider)
         self.time_label = QLabel("00:00 / 00:00")
@@ -676,15 +680,23 @@ class MainWindow(QMainWindow):
     def _available_generator_names(self) -> list[str]:
         names = self.compositor.generator_names()
         if not self._tracker_data:
-            names = [name for name in names if name != "TRACKER MATRIX"]
+            names = [
+                name for name in names
+                if name not in ("TRACKER MATRIX", "TRACKER ENSEMBLE")
+            ]
         return names
 
     def auto_compose(self) -> None:
         self._auto_composed = True
         seed = int(time_ns() & 0x7FFFFFFF)
-        self.layer_stack.layers = create_auto_composition(
-            self._available_generator_names(), list(self.sources.keys()), seed
-        )
+        if self._tracker_data:
+            self.layer_stack.layers = create_tracker_composition(
+                self._available_generator_names(), self._tracker_data, seed
+            )
+        else:
+            self.layer_stack.layers = create_auto_composition(
+                self._available_generator_names(), list(self.sources.keys()), seed
+            )
         self._settings.seed = seed
         self.preview_worker.request_reset()
         selected = (
@@ -885,8 +897,11 @@ class MainWindow(QMainWindow):
         self.bpm.blockSignals(False)
         self.timeline_widget.set_timeline(self.timeline)
         self._update_timeline_duration()
-        self.preview_worker.request_reset(reset_generators=False)
-        self._render_frame()
+        self.preview_worker.request_reset(reset_generators=True)
+        if self._auto_composed or is_default_placeholder_composition(self.layer_stack.layers):
+            self.auto_compose()
+        else:
+            self._render_frame()
 
         message = (
             f"XM SCORE LOADED · {module.channels} CH · "
