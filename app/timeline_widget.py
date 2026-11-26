@@ -113,16 +113,36 @@ class TimelineWidget(QWidget):
         # Markers and section boundaries sit over the automation lanes.
         for marker in self.timeline.markers:
             x = int(x_for(marker.time))
-            is_section = marker.kind == "SECTION"
-            tone = QColor("#d3c078") if is_section else QColor("#d5d5d5")
-            painter.setPen(QPen(tone, 1))
+            kind = marker.kind.upper()
+            is_section = kind == "SECTION"
+            is_tracker = kind == "TRACKER"
+            tone = (
+                QColor("#83b9be") if is_tracker else
+                QColor("#d3c078") if is_section else
+                QColor("#d5d5d5")
+            )
+            painter.setPen(QPen(tone, 1 if is_tracker else 1))
             painter.drawLine(x, 25, x, self.height() - 5)
             painter.setBrush(tone)
-            painter.drawLine(x, 25, x - 4, 31)
-            painter.drawLine(x - 4, 31, x + 4, 31)
-            painter.drawLine(x + 4, 31, x, 25)
-            painter.setFont(QFont("Segoe UI", 7))
-            painter.drawText(x + 4, 37, marker.label[:16])
+            if is_tracker:
+                painter.drawRect(x - 2, 27, 4, 4)
+            else:
+                painter.drawLine(x, 25, x - 4, 31)
+                painter.drawLine(x - 4, 31, x + 4, 31)
+                painter.drawLine(x + 4, 31, x, 25)
+
+            # Keep all tracker order ticks visible, but label only every fourth
+            # position so the 24-entry arrangement does not become unreadable.
+            show_label = not is_tracker
+            if is_tracker:
+                try:
+                    order = int(marker.label.split("/", 1)[0].strip()[1:])
+                    show_label = order == 0 or order % 4 == 0
+                except (ValueError, IndexError):
+                    show_label = False
+            if show_label:
+                painter.setFont(QFont("Segoe UI", 6 if is_tracker else 7))
+                painter.drawText(x + 4, 37, marker.label[:16])
 
         # Playhead is deliberately drawn last for legibility.
         playhead_x = int(x_for(self.position))
