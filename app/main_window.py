@@ -57,6 +57,12 @@ from engine.visual.preview_worker import (
     is_newer_preview_frame,
 )
 from engine.visual.scene import VisualScene, VisualScore
+from engine.visual.project import VisualProject
+from engine.visual.transitions import (
+    SceneTransition,
+    SceneTransitionController,
+    TRANSITION_FAMILIES,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -158,8 +164,13 @@ class MainWindow(QMainWindow):
         self._tracker_data: dict = {}
         self._tracker_duration = 0.0
         self.layer_stack = LayerStack()
-        self.visual_scene = VisualScene()
+        self.visual_project = VisualProject()
+        self.visual_scene = self.visual_project.active_scene
         self.visual_score = VisualScore()
+        self.scene_transition_controller = SceneTransitionController()
+        self._last_transition_sample: dict | None = None
+        self._last_cue_scan_position = -1e-6
+        self._pending_cue_routes: list[dict] = []
         self._auto_composed = False
         self._gpu_preview_disabled = False
         self._loading_project = False
@@ -208,6 +219,9 @@ class MainWindow(QMainWindow):
         initial.pass_mode = "NONE"
         initial.pass_strength = 0.0
         initial.pass_map = "DISPLACEMENT"
+        self._sync_visual_graph()
+        self._reset_scene_transition_controller()
+        self._refresh_scene_controls()
         self._refresh_layer_list(select_id=initial.layer_id)
         self.preview_worker.request_reset()
         self._preview_quality_changed()
@@ -381,6 +395,46 @@ class MainWindow(QMainWindow):
         self.vary_button.clicked.connect(self.vary_composition)
         self.auto_variation_check.toggled.connect(self._auto_variation_changed)
         left.addWidget(generator_box)
+
+        scene_box = QGroupBox("VISUAL SCENES")
+        scene_form = QFormLayout(scene_box)
+        self.scene_selector = QComboBox()
+        self.scene_target = QComboBox()
+        scene_form.addRow("ACTIVE SCENE", self.scene_selector)
+        scene_form.addRow("TRANSITION TARGET", self.scene_target)
+        scene_buttons = QHBoxLayout()
+        self.add_scene_button = QPushButton("+ SCENE")
+        self.duplicate_scene_button = QPushButton("DUPLICATE")
+        scene_buttons.addWidget(self.add_scene_button)
+        scene_buttons.addWidget(self.duplicate_scene_button)
+        scene_form.addRow(scene_buttons)
+        self.transition_family = QComboBox()
+        self.transition_family.addItems(sorted(TRANSITION_FAMILIES))
+        self.transition_family.setCurrentText("dissolve")
+        self.transition_duration = QDoubleSpinBox()
+        self.transition_duration.setRange(0.0, 120.0)
+        self.transition_duration.setDecimals(2)
+        self.transition_duration.setSingleStep(0.25)
+        self.transition_duration.setValue(2.0)
+        scene_form.addRow("TRANSITION", self.transition_family)
+        scene_form.addRow("DURATION (S)", self.transition_duration)
+        self.scene_transition_button = QPushButton("COMMIT TRANSITION")
+        self.cue_route_button = QPushButton("ROUTE CURRENT XM CUE")
+        scene_form.addRow(self.scene_transition_button)
+        scene_form.addRow(self.cue_route_button)
+        self.scene_status_label = QLabel("1 PERSISTENT SCENE")
+        self.scene_status_label.setObjectName("muted")
+        self.scene_status_label.setWordWrap(True)
+        scene_form.addRow(self.scene_status_label)
+        left.addWidget(scene_box)
+        self.scene_selector.currentIndexChanged.connect(
+            self._scene_selector_changed
+        )
+        self.add_scene_button.clicked.connect(self.add_scene)
+        self.duplicate_scene_button.clicked.connect(self.duplicate_scene)
+        self.scene_transition_button.clicked.connect(self.commit_scene_transition)
+        self.cue_route_button.clicked.connect(self.route_current_xm_cue)
+
         self.complexity.valueChanged.connect(self._settings_changed)
         self.motion.valueChanged.connect(self._settings_changed)
         self.sensitivity.valueChanged.connect(self._settings_changed)
@@ -702,9 +756,13 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def _sync_visual_graph(self) -> VisualScene:
-        """Keep the persistent scene graph aligned with renderer layers and XM voices."""
+        """Synchronize the active scene and persist its renderer-layer snapshot."""
+        self.visual_scene = self.visual_project.active_scene
         self.visual_scene.synchronize_layers(
             self.layer_stack.layers, self._tracker_data
+        )
+        self.visual_project.store_layers(
+            self.visual_scene.scene_id, self.layer_stack.to_list()
         )
         source_score_id = str(self._tracker_data.get("score_id", ""))
         if (
@@ -725,6 +783,297 @@ class MainWindow(QMainWindow):
             )
         self.visual_scene.score_position = max(0.0, float(self._last_position))
         return self.visual_scene
+
+    def _reset_scene_transition_controller(self) -> None:
+        """Rebuild the M12 controller around the project's current scene objects."""
+        self.scene_transition_controller = SceneTransitionController()
+        self.visual_project._normalise_active_state()
+        for scene in self.visual_project.scenes:
+            self.scene_transition_controller.register_scene(
+                scene,
+                active=(scene.scene_id == self.visual_project.active_scene_id),
+            )
+
+    def _refresh_scene_controls(self) -> None:
+        if not hasattr(self, "scene_selector"):
+            return
+        active_id = self.visual_project.active_scene_id
+        self.scene_selector.blockSignals(True)
+        self.scene_target.blockSignals(True)
+        self.scene_selector.clear()
+        self.scene_target.clear()
+        for scene in self.visual_project.scenes:
+            label = f"{scene.name}  ·  {scene.state}"
+            self.scene_selector.addItem(label, scene.scene_id)
+            if scene.scene_id != active_id:
+                self.scene_target.addItem(scene.name, scene.scene_id)
+        active_index = self.scene_selector.findData(active_id)
+        self.scene_selector.setCurrentIndex(max(0, active_index))
+        self.scene_selector.blockSignals(False)
+        self.scene_target.blockSignals(False)
+        scene_count = len(self.visual_project.scenes)
+        self.scene_status_label.setText(
+            f"{scene_count} PERSISTENT SCENES  ·  "
+            f"{len(self.visual_project.cue_routes)} XM CUE ROUTES"
+        )
+        has_target = self.scene_target.count() > 0
+        self.scene_target.setEnabled(has_target)
+        self.scene_transition_button.setEnabled(has_target)
+        self.cue_route_button.setEnabled(
+            has_target and bool(self._tracker_data and self.visual_score.cues)
+        )
+
+    def _scene_selector_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        scene_id = self.scene_selector.itemData(index)
+        if scene_id:
+            self.select_scene(str(scene_id))
+
+    def add_scene(self) -> None:
+        self._sync_visual_graph()
+        scene = VisualScene(
+            name=f"SCENE {len(self.visual_project.scenes) + 1:02d}",
+            state="INACTIVE",
+        )
+        self.visual_project.register_scene(scene, [])
+        self._reset_scene_transition_controller()
+        self._refresh_scene_controls()
+        self.scene_status_label.setText(f"CREATED {scene.name}")
+
+    def duplicate_scene(self) -> None:
+        self._sync_visual_graph()
+        scene = self.visual_project.duplicate_scene(
+            self.visual_project.active_scene_id
+        )
+        self.select_scene(scene.scene_id)
+        self.scene_status_label.setText(
+            f"DUPLICATED {scene.metadata.get('duplicated_from_scene_id', '')[:14]}"
+        )
+
+    def select_scene(self, scene_id: str) -> None:
+        if scene_id == self.visual_project.active_scene_id:
+            return
+        if self.scene_transition_controller.transition_active:
+            result = self.scene_transition_controller.interrupt()
+            if result == "rejected":
+                self.scene_status_label.setText(
+                    "SCENE SELECTION BLOCKED BY ACTIVE TRANSITION"
+                )
+                self._refresh_scene_controls()
+                return
+        self._sync_visual_graph()
+        scene = self.visual_project.select_scene(scene_id)
+        self.layer_stack.from_list(
+            self.visual_project.layers_for_scene(scene.scene_id)
+        )
+        self.visual_scene = scene
+        self._pending_cue_routes.clear()
+        self._last_transition_sample = None
+        self._reset_scene_transition_controller()
+        self.preview_worker.request_reset(reset_generators=True)
+        selected = (
+            self.layer_stack.layers[0].layer_id
+            if self.layer_stack.layers else None
+        )
+        self._refresh_scene_controls()
+        self._refresh_layer_list(selected)
+        self._render_frame()
+
+    def _selected_transition_target(self) -> str:
+        return str(self.scene_target.currentData() or "")
+
+    def _transition_contract(
+        self, target_scene_id: str, *, trigger: dict | None = None,
+        route: dict | None = None
+    ) -> SceneTransition:
+        route = dict(route or {})
+        return SceneTransition(
+            source_scene_id=self.visual_project.active_scene_id,
+            target_scene_id=str(target_scene_id),
+            family=str(route.get("family") or self.transition_family.currentText()),
+            duration_seconds=float(
+                route.get("duration_seconds", self.transition_duration.value())
+            ),
+            easing=str(route.get("easing", "smoothstep")),
+            interruption_policy=str(route.get("interruption_policy", "cancel")),
+            outgoing_policy=str(route.get("outgoing_policy", "archive")),
+            trigger=dict(trigger or {"type": "manual"}),
+        )
+
+    def _begin_scene_transition(
+        self, target_scene_id: str, *, trigger: dict | None = None,
+        route: dict | None = None
+    ) -> bool:
+        if not target_scene_id or target_scene_id == self.visual_project.active_scene_id:
+            return False
+        if self.scene_transition_controller.transition_active:
+            outcome = self.scene_transition_controller.interrupt()
+            if outcome == "rejected":
+                return False
+            if outcome == "completed":
+                self._apply_transition_completion(
+                    self.scene_transition_controller.active_scene_id
+                )
+        transition = self._transition_contract(
+            target_scene_id, trigger=trigger, route=route
+        )
+        try:
+            proposal = self.scene_transition_controller.propose(
+                transition,
+                proposed_at=float(self._preview_animation_seconds),
+                rationale=(
+                    "XM score cue" if (trigger or {}).get("type") == "tracker_cue"
+                    else "User-authored scene transition"
+                ),
+            )
+            sample = self.scene_transition_controller.commit(
+                proposal.proposal_id,
+                start_time=float(self._preview_animation_seconds),
+            )
+        except (ValueError, RuntimeError) as exc:
+            self.scene_status_label.setText(f"TRANSITION NOT COMMITTED: {exc}")
+            return False
+        self.visual_project.add_transition(transition)
+        self._last_transition_sample = sample
+        self.scene_status_label.setText(
+            f"{transition.family.upper()}  ·  "
+            f"{transition.source_scene_id[:10]} → {transition.target_scene_id[:10]}"
+        )
+        if sample.get("completed"):
+            self._apply_transition_completion(
+                str(sample.get("active_scene_id") or target_scene_id)
+            )
+        else:
+            self._render_timer.start()
+            self._render_frame()
+        self._refresh_scene_controls()
+        return True
+
+    def commit_scene_transition(self) -> None:
+        target_scene_id = self._selected_transition_target()
+        if not target_scene_id:
+            return
+        self._begin_scene_transition(target_scene_id)
+
+    def _score_cue_at(self, seconds: float):
+        candidates = [
+            cue for cue in self.visual_score.cues
+            if float(cue.time) <= float(seconds) + 1e-6
+        ]
+        return candidates[-1] if candidates else None
+
+    def route_current_xm_cue(self) -> None:
+        if not self._tracker_data:
+            self.scene_status_label.setText("IMPORT AN XM SCORE TO AUTHOR CUE ROUTES")
+            return
+        cue = self._score_cue_at(self._last_position)
+        target_scene_id = self._selected_transition_target()
+        if cue is None or not target_scene_id:
+            self.scene_status_label.setText("NO XM CUE AT THE CURRENT PLAYHEAD")
+            return
+        try:
+            route = self.visual_project.set_cue_route(
+                cue.cue_id,
+                target_scene_id,
+                source_scene_id=self.visual_project.active_scene_id,
+                family=self.transition_family.currentText(),
+                duration_seconds=self.transition_duration.value(),
+            )
+        except ValueError as exc:
+            self.scene_status_label.setText(str(exc))
+            return
+        order = cue.payload.get("order", "?")
+        pattern = cue.payload.get("pattern", "?")
+        self.scene_status_label.setText(
+            f"ORDER {order} / PATTERN {pattern} → {self.visual_project.get_scene(target_scene_id).name}"
+        )
+        self._refresh_scene_controls()
+
+    def _process_tracker_cue_routes(self, score_seconds: float) -> None:
+        if not (self.audio.is_playing or self._tracker_playing):
+            return
+        previous = float(self._last_cue_scan_position)
+        current = max(previous, float(score_seconds))
+        crossed = [
+            cue for cue in self.visual_score.cues
+            if previous < float(cue.time) <= current + 1e-6
+        ]
+        self._last_cue_scan_position = current
+        for cue in crossed:
+            route = self.visual_project.route_for_cue(cue.cue_id)
+            if route is not None:
+                self._pending_cue_routes.append({
+                    "cue": cue.to_dict(),
+                    "route": route,
+                })
+
+        if self.scene_transition_controller.transition_active:
+            return
+        while self._pending_cue_routes:
+            pending = self._pending_cue_routes.pop(0)
+            cue = pending["cue"]
+            route = pending["route"]
+            if route.get("source_scene_id") != self.visual_project.active_scene_id:
+                continue
+            trigger = {
+                "type": "tracker_cue",
+                "cue_id": cue.get("cue_id", ""),
+                "order": cue.get("payload", {}).get("order"),
+                "pattern": cue.get("payload", {}).get("pattern"),
+                "cue_time": cue.get("time", 0.0),
+            }
+            if self._begin_scene_transition(
+                str(route.get("target_scene_id", "")),
+                trigger=trigger,
+                route=route,
+            ):
+                break
+
+    def _apply_transition_completion(self, active_scene_id: str) -> None:
+        if not active_scene_id:
+            return
+        self.visual_project.active_scene_id = active_scene_id
+        self.visual_scene = self.visual_project.active_scene
+        self.layer_stack.from_list(
+            self.visual_project.layers_for_scene(active_scene_id)
+        )
+        self.preview_worker.request_reset(reset_generators=True)
+        selected = (
+            self.layer_stack.layers[0].layer_id
+            if self.layer_stack.layers else None
+        )
+        self._refresh_scene_controls()
+        self._refresh_layer_list(selected)
+
+    def _advance_scene_transitions(self, score_seconds: float) -> None:
+        sample = self.scene_transition_controller.sample(
+            float(self._preview_animation_seconds)
+        )
+        if sample is not None:
+            self._last_transition_sample = sample
+            if sample.get("completed"):
+                self._apply_transition_completion(
+                    str(sample.get("active_scene_id") or
+                        self.scene_transition_controller.active_scene_id)
+                )
+        self._process_tracker_cue_routes(score_seconds)
+
+    def _resolved_scene_state(self) -> dict:
+        transition = self._last_transition_sample
+        if self.scene_transition_controller.transition_active:
+            transition = transition or {}
+        return {
+            "project_id": self.visual_project.project_id,
+            "active_scene_id": self.visual_project.active_scene_id,
+            "scene_states": {
+                scene.scene_id: scene.state
+                for scene in self.visual_project.scenes
+            },
+            "transition_active": self.scene_transition_controller.transition_active,
+            "transition": dict(transition or {}),
+            "pending_cue_routes": len(self._pending_cue_routes),
+        }
 
     def _available_generator_names(self) -> list[str]:
         names = self.compositor.generator_names()
@@ -1208,8 +1557,9 @@ class MainWindow(QMainWindow):
         self._sync_visual_graph()
         data = {
             "format": "eli_lab.waveforming",
-            "version": 2,
+            "version": 3,
             "director_mode": self.director.mode,
+            "visual_project": self.visual_project.to_dict(),
             "auto_composed": self._auto_composed,
             "settings": asdict(self._settings),
             "layers": self.layer_stack.to_list(),
@@ -1336,11 +1686,34 @@ class MainWindow(QMainWindow):
             elif layer.source_id:
                 layer.source_id = source_id_map.get(layer.source_id, "")
         saved_scene = data.get("visual_scene")
-        self.visual_scene = (
+        legacy_scene = (
             VisualScene.from_dict(saved_scene)
             if isinstance(saved_scene, dict)
             else VisualScene()
         )
+        saved_visual_project = data.get("visual_project")
+        self.visual_project = (
+            VisualProject.from_dict(saved_visual_project)
+            if isinstance(saved_visual_project, dict)
+            else VisualProject.from_legacy(legacy_scene, self.layer_stack.to_list())
+        )
+        valid_groups = {
+            source.group_id for source in self.sources.values() if source.group_id
+        }
+        for snapshot in self.visual_project.layer_snapshots.values():
+            for saved_layer in snapshot:
+                source_id = str(saved_layer.get("source_id", ""))
+                if source_id.startswith("group:"):
+                    if source_id[len("group:"):] not in valid_groups:
+                        saved_layer["source_id"] = ""
+                elif source_id:
+                    saved_layer["source_id"] = source_id_map.get(source_id, "")
+        self.visual_scene = self.visual_project.active_scene
+        active_snapshot = self.visual_project.layers_for_scene(
+            self.visual_project.active_scene_id
+        )
+        if active_snapshot:
+            self.layer_stack.from_list(active_snapshot)
         saved_visual_score = data.get("visual_score")
         self.visual_score = (
             VisualScore.from_dict(saved_visual_score)
@@ -1377,6 +1750,11 @@ class MainWindow(QMainWindow):
         self._refresh_layer_list(selected)
         self._update_timeline_duration()
         self._sync_visual_graph()
+        self._reset_scene_transition_controller()
+        self._last_transition_sample = None
+        self._last_cue_scan_position = -1e-6
+        self._pending_cue_routes.clear()
+        self._refresh_scene_controls()
         self._update_status()
         self._update_time_label()
         self._loading_project = False
@@ -1502,6 +1880,8 @@ class MainWindow(QMainWindow):
             tracker_data=self._tracker_data,
             render_scale=render_scale,
             visual_scene=self._sync_visual_graph().to_dict(),
+            visual_project=self.visual_project.to_dict(),
+            visual_score=self.visual_score.to_dict(),
         )
         self._export_progress.canceled.connect(self._export_worker.cancel)
         self._export_worker.progress.connect(self._on_export_progress)
@@ -1588,7 +1968,7 @@ class MainWindow(QMainWindow):
         )
 
     def _preview_tick(self) -> None:
-        """Advance render time and, when audio is absent, the XM score transport."""
+        """Advance render time and, when needed, the scene-transition clock."""
         now = monotonic()
         elapsed = max(0.0, min(0.5, now - self._last_preview_tick))
         self._last_preview_tick = now
@@ -1622,9 +2002,17 @@ class MainWindow(QMainWindow):
                 )
                 self.seek.blockSignals(False)
         self._render_frame()
+        if not (
+            self.audio.is_playing
+            or self._tracker_playing
+            or self.scene_transition_controller.transition_active
+        ):
+            self._render_timer.stop()
 
     def _render_frame(self, *_args) -> None:
+        self._advance_scene_transitions(self._last_position)
         visual_scene_data = self._sync_visual_graph().to_dict()
+        visual_scene_data["resolved_state"] = self._resolved_scene_state()
         self._render_sequence += 1
         audio_seconds = self._last_position
         seconds = float(self._preview_animation_seconds)
@@ -1768,11 +2156,13 @@ class MainWindow(QMainWindow):
     def _on_playback_state(self, playing: bool) -> None:
         active = bool(playing or self._tracker_playing)
         self.play_button.setText("Ⅱ  PAUSE" if active else "▶  PLAY")
-        if active:
+        if active or self.scene_transition_controller.transition_active:
             self._last_preview_tick = monotonic()
             self._render_timer.start()
-            if self.auto_variation_check.isChecked():
+            if active and self.auto_variation_check.isChecked():
                 self._variation_timer.start()
+            else:
+                self._variation_timer.stop()
         else:
             self._render_timer.stop()
             self._variation_timer.stop()
@@ -1820,6 +2210,8 @@ class MainWindow(QMainWindow):
         if self._tracker_playing:
             self._tracker_clock_origin = self._last_position
             self._tracker_clock_started = monotonic()
+        self._last_cue_scan_position = self._last_position
+        self._pending_cue_routes.clear()
         self.preview_worker.request_reset()
         self._render_frame()
 
@@ -1909,6 +2301,7 @@ class MainWindow(QMainWindow):
             self._update_status()
             return
 
+        self._last_cue_scan_position = self._last_position - 1e-6
         if self.sources:
             if (
                 self.audio.duration > 0
@@ -1945,6 +2338,8 @@ class MainWindow(QMainWindow):
         self.director.reset()
         self._last_packet = {}
         self._last_position = 0.0
+        self._last_cue_scan_position = -1e-6
+        self._pending_cue_routes.clear()
         self.preview_worker.request_reset()
         self._update_status()
         self._update_time_label()
