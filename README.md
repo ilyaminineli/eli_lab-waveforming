@@ -196,10 +196,23 @@ See [docs/M12_SCENE_STATE_MACHINE_TRANSITIONS.md](docs/M12_SCENE_STATE_MACHINE_T
 - `.wfp` format version 3 persists the scene collection. Existing M11/M12 single-scene projects migrate from their saved `visual_scene` and `layers` records.
 - Live/offline compositor results receive resolved project and lifecycle metadata, including active scene, transition sample and queued cues.
 
-M13 does **not** yet render visual dissolve, morph, assembly, erosion or temporal-echo effects. During a non-zero transition the current renderer keeps the outgoing scene until lifecycle completion, then switches to the incoming scene. The sampled phase and weights are exposed for the next renderer milestone.
+M13 established the project-level scene and cue-routing model. Renderer-side dissolve/crossfade is now implemented in M14; morph, assembly, erosion and temporal echo remain future effects.
 
 See [docs/M13_MULTI_SCENE_PROJECT_SCORE_CUES.md](docs/M13_MULTI_SCENE_PROJECT_SCORE_CUES.md).
 
+## M14 — Renderer-side scene pairs and dissolve
+
+- Adds a serializable `ScenePairRenderContract` with outgoing/incoming scene graphs, their independent layer snapshots, transition phase/progress/weights and resolved project metadata.
+- A single `ScenePairRenderContract` is built from the M12 controller sample and reused by live preview and offline export.
+- `VisualCompositor.render_scene_pair()` renders each scene with the same score packet, show time, generator settings and screen guide, then blends the two RGBA frames using the incoming weight.
+- `dissolve` now performs a real deterministic pixel crossfade; `cut` switches at completion. Other transition families retain lifecycle-only hold behavior until their renderer implementations are ready.
+- Temporal feedback is applied once to the final blended frame. The pair-render profile records both scene render timings and transition weights.
+- Live preview retains generator state for both scene layer sets and sends a completed CPU frame to the canvas while a pair is active. The normal OpenGL single-scene path resumes after transition completion.
+- Offline export uses the same pair contract and blend function, keeping score-cue transition output aligned with the live render path.
+
+M14 currently implements the scene-pair contract and dissolve/cut modes; object-aware morphing, assembly, erosion, mask reveal, displacement and temporal echo are still future effects.
+
+See [docs/M14_RENDERER_SCENE_PAIR_CROSSFADE.md](docs/M14_RENDERER_SCENE_PAIR_CROSSFADE.md).
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
