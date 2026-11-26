@@ -443,6 +443,7 @@ jobs:
               pair_compositor._feedback = None
               pair_compositor._last_time = None
               pair_compositor.last_profile = {}
+              rendered_scene_ids = []
               def fake_scene_render(
                   self, packet, seconds, layers=None, settings=None,
                   screen="No guide", feedback_enabled=False,
@@ -453,6 +454,7 @@ jobs:
                       "scene_ms": 0.5, "layer_count": len(layers or []),
                       "layers": [], "backend": "CI",
                   }
+                  rendered_scene_ids.append(visual_scene["scene_id"])
                   color = (
                       (0, 0, 0, 255)
                       if visual_scene["scene_id"] == "pair-out"
@@ -470,8 +472,10 @@ jobs:
               assert pair_compositor.last_profile["scene_pair"]["transition_id"] == (
                   "transition-smoke"
               )
+              assert rendered_scene_ids == ["pair-out", "pair-in"]
 
-              # Future transition families retain lifecycle-only rendering.
+              # Future transition families retain lifecycle-only rendering and
+              # must not pay to render a hidden incoming scene.
               morph_contract = ScenePairRenderContract.from_dict({
                   **pair_contract.to_dict(), "family": "morph",
               })
@@ -479,6 +483,12 @@ jobs:
               assert blend_scene_pair_frames(
                   black, white, morph_contract
               ).getpixel((0, 0)) == (0, 0, 0, 255)
+              rendered_scene_ids.clear()
+              held_pair = pair_compositor.render_scene_pair(
+                  packet={}, seconds=1.25, scene_pair=morph_contract
+              )
+              assert held_pair.getpixel((0, 0)) == (0, 0, 0, 255)
+              assert rendered_scene_ids == ["pair-out"]
               cut_contract = ScenePairRenderContract.from_dict({
                   **pair_contract.to_dict(),
                   "family": "cut",
