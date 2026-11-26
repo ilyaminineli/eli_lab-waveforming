@@ -363,9 +363,11 @@ jobs:
                           {"source_t": 1.0, "target_t": 1.0},
                       ],
                   }],
+                  metadata={"temporal_echo": {"strength": 0.52}},
               )
               assert route["target_scene_id"] == duplicate.scene_id
               assert route["object_correspondence"][0]["kind"] == "path_map"
+              assert route["metadata"]["temporal_echo"]["strength"] == 0.52
               assert route["path_correspondence"][0]["anchors"][1] == {
                   "source_t": 0.5, "target_t": 0.65,
               }
@@ -387,6 +389,9 @@ jobs:
               assert project_round_trip.route_for_cue(
                   visual_score.cues[0].cue_id
               )["path_correspondence"] == route["path_correspondence"]
+              assert project_round_trip.route_for_cue(
+                  visual_score.cues[0].cue_id
+              )["metadata"] == route["metadata"]
 
               selected = project_round_trip.select_scene(duplicate.scene_id)
               assert selected.state == "ACTIVE"
@@ -1048,6 +1053,9 @@ jobs:
                   json.loads(json.dumps(temporal_contract.to_dict()))
               )
               assert temporal_round_trip.render_mode == "temporal_echo"
+              assert blend_scene_pair_frames(
+                  black, white, temporal_round_trip
+              ).getpixel((0, 0)) == (127, 127, 127, 255)
               assert temporal_round_trip.metadata["transition_metadata"][
                   "temporal_echo"
               ]["strength"] == 0.48
