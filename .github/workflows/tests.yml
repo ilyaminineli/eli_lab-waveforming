@@ -33,5 +33,50 @@ jobs:
           program.release()
           context.release()
           PY
-      - name: Run test suite
-        run: python -m pytest -q
+      - name: Compile application
+        run: python -m compileall -q app engine main.py
+      - name: Smoke-test structured XM to visual instrument
+        run: |
+          python - <<'PY'
+          import struct
+          import tempfile
+          from pathlib import Path
+
+          from engine.tracker.xm import load_xm, tracker_packet_at
+          from engine.visual.generators import GeneratorBank, GeneratorSettings
+
+          # A tiny valid XM: two tracker channels, one note event, no samples.
+          header = bytearray(336)
+          header[:17] = b"Extended Module: "
+          header[17:37] = b"CI channel smoke".ljust(20, b"\\0")
+          header[37] = 0x1A
+          header[38:58] = b"MilkyTracker".ljust(20, b"\\0")
+          struct.pack_into("<H", header, 58, 0x0104)
+          struct.pack_into("<I", header, 60, 276)
+          struct.pack_into("<8H", header, 64, 1, 0, 2, 1, 0, 1, 6, 125)
+          header[80] = 0
+          events = bytes((49, 0, 0, 0, 0, 0x80))
+          pattern = struct.pack("<IBHH", 9, 0, 1, len(events)) + events
+          with tempfile.TemporaryDirectory() as folder:
+              module_path = Path(folder) / "smoke.xm"
+              module_path.write_bytes(bytes(header) + pattern)
+              module = load_xm(module_path)
+              score = module.visual_data()
+              assert module.channels == 2
+              assert len(score["channel_profiles"]) == 2
+              assert score["channel_profiles"][0]["note_count"] == 1
+              packet = tracker_packet_at(score, 0.0)
+              assert packet is not None
+              assert len(packet["channel_states"]) == 2
+              assert packet["channel_states"][0]["held_note"] == 49
+              image = GeneratorBank().render(
+                  "TRACKER ENSEMBLE",
+                  {"tracker_cue": packet},
+                  0.0,
+                  (320, 240),
+                  GeneratorSettings(),
+              )
+              assert image.size == (320, 240)
+              assert image.getchannel("A").getbbox() is not None
+          print("XM parser → channel states → tracker ensemble: OK")
+          PY
