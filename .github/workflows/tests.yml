@@ -479,5 +479,36 @@ jobs:
               assert blend_scene_pair_frames(
                   black, white, morph_contract
               ).getpixel((0, 0)) == (0, 0, 0, 255)
+              cut_contract = ScenePairRenderContract.from_dict({
+                  **pair_contract.to_dict(),
+                  "family": "cut",
+                  "incoming_weight": 0.0,
+                  "outgoing_weight": 1.0,
+                  "completed": False,
+              })
+              assert cut_contract.render_mode == "cut"
+              assert blend_scene_pair_frames(
+                  black, white, cut_contract
+              ).getpixel((0, 0)) == (0, 0, 0, 255)
+              cut_complete = ScenePairRenderContract.from_dict({
+                  **cut_contract.to_dict(),
+                  "incoming_weight": 1.0,
+                  "outgoing_weight": 0.0,
+                  "completed": True,
+              })
+              assert blend_scene_pair_frames(
+                  black, white, cut_complete
+              ).getpixel((0, 0)) == (255, 255, 255, 255)
+              try:
+                  ScenePairRenderContract.from_dict({
+                      **pair_contract.to_dict(),
+                      "incoming": {
+                          **pair_contract.incoming,
+                          "layers": [layers[0].to_dict()],
+                      },
+                  })
+                  raise AssertionError("Shared scene-pair layer IDs were accepted.")
+              except ValueError:
+                  pass
           print("XM → score cues → multi-scene project → M14 scene-pair rendering: OK")
           PY
