@@ -96,7 +96,11 @@ class ProjectSession:
 
 
 def scan_audio_tree(root: Path) -> dict[str, list[Path]]:
-    """Return supported audio files grouped by their immediate subdirectory."""
+    """Return supported audio files grouped by their immediate subdirectory.
+
+    Tracker modules are deliberately excluded: an XM file is a visual score,
+    not an audio source that can be passed to libsndfile.
+    """
     root = Path(root)
     groups: dict[str, list[Path]] = {}
     for path in sorted(root.rglob("*")):
@@ -105,3 +109,14 @@ def scan_audio_tree(root: Path) -> dict[str, list[Path]]:
             group = root.name if str(relative_parent) == "." else f"{root.name}/{relative_parent.as_posix()}"
             groups.setdefault(group, []).append(path)
     return groups
+
+
+def scan_tracker_tree(root: Path) -> list[Path]:
+    """Return XM score files found in a folder tree, in stable path order."""
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    return sorted(
+        (path for path in root.rglob("*") if path.is_file() and path.suffix.lower() == ".xm"),
+        key=lambda path: path.as_posix().casefold(),
+    )
