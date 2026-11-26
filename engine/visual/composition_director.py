@@ -31,6 +31,11 @@ class DirectorOutput:
     glitch_amount: float = 0.0
     accent_amount: float = 0.0
     request_variation: bool = False
+    tracker_transition: float = 0.0
+    tracker_activity: float = 0.0
+    tracker_reprise: bool = False
+    tracker_order: int = -1
+    tracker_pattern: int = -1
 
 
 class CompositionDirector:
@@ -71,7 +76,34 @@ class CompositionDirector:
         novelty = float(features.get("novelty", 0.0))
         onset = float(features.get("onset", 0.0))
 
-        if energy < 0.025 and density < 0.04:
+        tracker = packet.get("tracker_cue") or {}
+        tracker_progress = max(0.0, min(1.0, float(tracker.get("progress", 0.0))))
+        tracker_density = max(0.0, min(1.0, float(tracker.get("density", 0.0))))
+        tracker_activity = max(0.0, min(1.0, float(tracker.get("row_activity", 0.0))))
+        tracker_strength = max(
+            0.0, min(1.0, float(tracker.get("transition_strength", 0.0)))
+        )
+        tracker_transition = tracker_strength * max(0.0, 1.0 - tracker_progress * 5.0)
+        tracker_reprise = bool(tracker.get("pattern_reprise", False))
+        tracker_order = int(tracker.get("order", -1))
+        tracker_pattern = int(tracker.get("pattern", -1))
+
+        # Keep the audio feature bus authoritative where it has signal, while
+        # allowing tracker-only preview to produce structural scene decisions.
+        energy = max(energy, tracker_density * 0.18 + tracker_activity * 0.28)
+        density = max(density, tracker_density)
+        novelty = max(
+            novelty,
+            tracker_transition * (0.90 if tracker_reprise else 0.78),
+        )
+        onset = max(onset, tracker_activity * 0.55 + tracker_transition * 0.30)
+
+        if (
+            tracker_transition >= 0.72
+            and (tracker_activity >= 0.12 or tracker_density >= 0.08)
+        ):
+            candidate = "INSTABILITY" if tracker_reprise else "EMERGENCE"
+        elif energy < 0.025 and density < 0.04:
             candidate = "DORMANT"
         elif novelty > 0.72 and (density > 0.20 or onset > 0.62):
             candidate = "INSTABILITY"
@@ -90,10 +122,20 @@ class CompositionDirector:
 
         self._last_energy = energy
         self._last_position = now
-        motion_scale = 0.82 + 0.48 * density + 0.16 * novelty
-        complexity_scale = 0.88 + 0.32 * energy + 0.18 * density
+        motion_scale = (
+            0.82 + 0.48 * density + 0.16 * novelty
+            + 0.12 * tracker_activity + 0.12 * tracker_transition
+        )
+        complexity_scale = (
+            0.88 + 0.32 * energy + 0.18 * density
+            + 0.10 * tracker_transition
+        )
         glitch = max(onset * 0.65, novelty * 0.72) if self.state == "INSTABILITY" else novelty * 0.18
-        accent = max(0.0, onset - 0.55) if self.state in ("EMERGENCE", "INSTABILITY") else 0.0
+        accent = max(
+            max(0.0, onset - 0.55)
+            if self.state in ("EMERGENCE", "INSTABILITY") else 0.0,
+            tracker_transition * (0.12 + tracker_activity * 0.42),
+        )
 
         request_variation = False
         if (
@@ -122,6 +164,11 @@ class CompositionDirector:
             glitch_amount=max(0.0, min(1.0, glitch)),
             accent_amount=max(0.0, min(1.0, accent)),
             request_variation=request_variation,
+            tracker_transition=tracker_transition,
+            tracker_activity=tracker_activity,
+            tracker_reprise=tracker_reprise,
+            tracker_order=tracker_order,
+            tracker_pattern=tracker_pattern,
         )
 
 
