@@ -831,6 +831,9 @@ class MainWindow(QMainWindow):
             self.select_scene(str(scene_id))
 
     def add_scene(self) -> None:
+        if self.scene_transition_controller.transition_active:
+            self.scene_status_label.setText("FINISH OR CANCEL THE ACTIVE TRANSITION FIRST")
+            return
         self._sync_visual_graph()
         scene = VisualScene(
             name=f"SCENE {len(self.visual_project.scenes) + 1:02d}",
@@ -842,6 +845,9 @@ class MainWindow(QMainWindow):
         self.scene_status_label.setText(f"CREATED {scene.name}")
 
     def duplicate_scene(self) -> None:
+        if self.scene_transition_controller.transition_active:
+            self.scene_status_label.setText("FINISH OR CANCEL THE ACTIVE TRANSITION FIRST")
+            return
         self._sync_visual_graph()
         scene = self.visual_project.duplicate_scene(
             self.visual_project.active_scene_id
