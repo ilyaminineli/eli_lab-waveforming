@@ -59,8 +59,8 @@ class TemporalEchoSettings:
             raise ValueError(
                 "temporal_echo.blend_mode must be Screen, Add, Lighten, Overlay or Normal."
             )
-        direction_x = finite("direction_x", defaults.direction_x, -1.0, 1.0)
-        direction_y = finite("direction_y", defaults.direction_y, -1.0, 1.0)
+        direction_x = finite("direction_x", defaults.direction_x, -100.0, 100.0)
+        direction_y = finite("direction_y", defaults.direction_y, -100.0, 100.0)
         direction_length = math.hypot(direction_x, direction_y)
         if direction_length > 1e-9:
             direction_x /= direction_length
