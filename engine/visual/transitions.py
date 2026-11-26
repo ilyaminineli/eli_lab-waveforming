@@ -291,6 +291,11 @@ class SceneTransitionController:
             "target_scene_id": target.scene_id,
             "committed": True,
         })
+        if sample["completed"]:
+            self._complete_transition()
+            sample["source_state"] = source.state
+            sample["target_state"] = target.state
+            sample["active_scene_id"] = self.active_scene_id
         return sample
 
     def _complete_transition(self) -> None:
