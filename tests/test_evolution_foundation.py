@@ -2,7 +2,7 @@ import numpy as np
 
 from engine.audio.analyzer import AudioAnalyzer
 from engine.audio.feature_bus import FeatureBus
-from engine.project.session import ProjectSession, SessionTrack, scan_audio_tree
+from engine.project.session import ProjectSession, SessionTrack, scan_audio_tree, scan_tracker_tree
 from engine.visual.composition_director import CompositionDirector
 
 
@@ -186,3 +186,21 @@ def test_auto_director_can_request_tracker_boundary_variation():
 
     assert output.state == "EMERGENCE"
     assert output.request_variation is True
+
+
+
+def test_folder_scan_separates_xm_scores_from_audio_stems(tmp_path):
+    root = tmp_path / "WAVEFORMING_MEDIA"
+    (root / "drums").mkdir(parents=True)
+    (root / "tracker").mkdir()
+    (root / "drums" / "kick.wav").write_bytes(b"audio")
+    (root / "drums" / "snare.flac").write_bytes(b"audio")
+    (root / "tracker" / "total fvckery.xm").write_bytes(b"XM")
+    (root / "tracker" / "notes.txt").write_text("not media")
+
+    audio = scan_audio_tree(root)
+    tracker = scan_tracker_tree(root)
+
+    assert len(audio) == 1
+    assert {path.suffix for members in audio.values() for path in members} == {".wav", ".flac"}
+    assert [path.name for path in tracker] == ["total fvckery.xm"]
