@@ -1,6 +1,6 @@
 # M14 — Renderer-side scene-pair transitions
 
-**Status:** Scene-pair dissolve/cut and first object-aware morph increment implemented  
+**Status:** Scene-pair dissolve/cut, object/path morphing, assembly, erosion and temporal echo implemented  
 **Depends on:** M11 VisualScene/VisualScore, M12 transition controller, M13 VisualProject
 
 ## 1. Goal
@@ -131,10 +131,10 @@ The CI smoke path checks:
 This M14 increment implements the pair-rendering architecture, dissolve, object/path morphing, and deterministic assembly/erosion, but not all transition families.
 
 - Scene-pair rendering is CPU-side; a future GPU-native pair compositor can optimize it.
-- `assembly` and `erosion` use deterministic seeded tile-fragment lifecycle rendering. `mask_reveal`, `displacement` and `temporal_echo` remain explicit hold modes; temporal echo is the next M14 slice. Assembly/erosion details and validation are documented in [M14_ASSEMBLY_EROSION_LIFECYCLE.md](M14_ASSEMBLY_EROSION_LIFECYCLE.md).
+- `assembly` and `erosion` use deterministic seeded tile-fragment lifecycle rendering. `temporal_echo` uses a separate bounded timestamped history buffer. `mask_reveal` and `displacement` remain explicit hold modes. See [M14 Assembly and Erosion Lifecycle](M14_ASSEMBLY_EROSION_LIFECYCLE.md) and [M14 Temporal Echo History](M14_TEMPORAL_ECHO_HISTORY.md).
 - Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction and closed-path direction reversal remain future work. Automatic matches use nearest-centroid pairing within compatible path groups; authored pair/split/merge maps and normalized path anchors override that fallback.
 - Correspondence is one-to-one. Split/merge mapping and explicit object transfer/merge policies remain future work.
 - There is no independent preparation or establishment image treatment yet; the M12 phase sample is exposed to the compositor.
 - Runtime transition checkpoints and replay of manually authored transitions in offline export are not implemented.
 
-**Next M14 slice:** introduce temporal echo as a transition-local, time-addressable history buffer. Keep it behind the same scene-pair contract so live and offline rendering stay aligned. See [M14 Assembly and Erosion Lifecycle](M14_ASSEMBLY_EROSION_LIFECYCLE.md).
+**Next M14 slice:** implement mask reveal and displacement with explicit deterministic masks/fields, without changing the established scene-pair and temporal-history contracts.
