@@ -270,7 +270,7 @@ class VisualCompositor:
     ) -> Image.Image:
         # TRACKER MATRIX encodes instrument identity in its own ink colours;
         # replacing those colours with a layer-wide tint would erase that data.
-        if layer.generator == "TRACKER MATRIX":
+        if layer.generator in ("TRACKER MATRIX", "TRACKER ENSEMBLE"):
             return image
         rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
         visible = rgba[..., 3] > 0
