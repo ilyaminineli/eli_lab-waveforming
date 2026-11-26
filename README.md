@@ -151,6 +151,15 @@ See [docs/M7_RENDER_PROFILE.md](docs/M7_RENDER_PROFILE.md).
 
 See [docs/M8_TRACKER_EVENT_MODULATION.md](docs/M8_TRACKER_EVENT_MODULATION.md).
 
+## M9 — Perceptual scene director
+
+- The existing audio-informed composition director now consumes tracker transition, row activity, pattern density and reprise signals.
+- New pattern boundaries can nominate EMERGENCE; returns to earlier patterns can nominate INSTABILITY, with existing hysteresis preserved.
+- Tracker cues briefly modulate motion, complexity, accent and glitch response; AUTO mode can request bounded seeded variations subject to the existing cooldown.
+- Live preview and offline export now attach tracker cues before director evaluation, keeping the decision path aligned.
+
+See [docs/M9_PERCEPTUAL_SCENE_DIRECTOR.md](docs/M9_PERCEPTUAL_SCENE_DIRECTOR.md).
+
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
