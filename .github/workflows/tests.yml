@@ -978,6 +978,10 @@ jobs:
               assert echo_samples_a == echo_samples_b
               assert [len(item[0]) for item in echo_samples_a] == [0, 1, 2]
               assert echo_samples_a[-1][1]["buffer_size"] == 3
+              assert abs(
+                  echo_samples_a[1][0][0][2]
+                  - echo_settings.strength * echo_settings.decay
+              ) < 1e-6
               directional_overlay = echo_history_a
               first_overlay = echo_samples_a[-1][0][0]
               assert first_overlay[1] == (0, 0)
