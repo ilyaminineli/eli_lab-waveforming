@@ -750,7 +750,6 @@ class VisualCompositor:
             feedback_shift: float = 0.0,
     ) -> Image.Image:
         """Compose every generator and effect into a complete CPU RGBA frame."""
-        compose_started = perf_counter()
         scene = self.render_scene(
             packet=packet,
             seconds=seconds,
@@ -760,6 +759,7 @@ class VisualCompositor:
             gpu_native=False,
             include_guide=False,
         )
+        compose_started = perf_counter()
         frame = scene["background"].copy()
         for layer in scene["layers"]:
             self._blend_at(
