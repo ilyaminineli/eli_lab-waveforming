@@ -31,6 +31,14 @@ class XMEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class XMInstrument:
+    index: int
+    name: str
+    sample_names: tuple[str, ...] = ()
+    sample_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class XMOrderCue:
     order: int
     pattern: int
@@ -58,6 +66,7 @@ class XMModule:
     tracker: str
     channels: int
     instrument_count: int
+    instruments: tuple[XMInstrument, ...]
     bpm: int
     speed: int
     orders: tuple[int, ...]
@@ -77,8 +86,61 @@ class XMModule:
         index = bisect.bisect_right(starts, max(0.0, float(seconds))) - 1
         return self.cues[max(0, min(index, len(self.cues) - 1))]
 
+    def channel_profiles(self) -> list[dict[str, Any]]:
+        """Describe each real XM channel and its predominant instrument/sample identity."""
+        profiles: list[dict[str, Any]] = []
+        instrument_map = {item.index: item for item in self.instruments}
+        for channel_index in range(self.channels):
+            note_values: list[int] = []
+            instrument_counts: dict[int, int] = {}
+            pattern_ids: list[int] = []
+            for pattern_index, pattern in enumerate(self.patterns):
+                pattern_notes = 0
+                for row in pattern:
+                    event = row[channel_index]
+                    if event.instrument:
+                        instrument_counts[event.instrument] = (
+                            instrument_counts.get(event.instrument, 0) + 1
+                        )
+                    if event.has_note:
+                        note_values.append(event.note)
+                        pattern_notes += 1
+                if pattern_notes:
+                    pattern_ids.append(pattern_index)
+
+            dominant_instrument = (
+                max(instrument_counts, key=instrument_counts.get)
+                if instrument_counts else 0
+            )
+            instrument = instrument_map.get(dominant_instrument)
+            sample_name = (
+                instrument.sample_names[0]
+                if instrument and instrument.sample_names else ""
+            )
+            display_name = sample_name or (
+                instrument.name if instrument and instrument.name else ""
+            )
+            profiles.append({
+                "channel": channel_index + 1,
+                "label": f"CH {channel_index + 1:02d}",
+                "instrument_id": dominant_instrument,
+                "instrument_name": instrument.name if instrument else "",
+                "sample_name": display_name,
+                "sample_names": list(instrument.sample_names) if instrument else [],
+                "note_count": len(note_values),
+                "pitch_min": min(note_values) if note_values else 0,
+                "pitch_max": max(note_values) if note_values else 0,
+                "pitch_mean": (
+                    float(sum(note_values) / len(note_values)) if note_values else 0.0
+                ),
+                "active_patterns": pattern_ids,
+                "instrument_ids": sorted(instrument_counts),
+                "silent": not note_values,
+            })
+        return profiles
+
     def visual_data(self) -> dict[str, Any]:
-        """Return a compact, JSON-serialisable score for projects and render workers."""
+        """Return a structured, JSON-serialisable tracker score for visual composition."""
         cue_data = []
         seen_patterns: set[int] = set()
         previous: XMOrderCue | None = None
@@ -91,8 +153,20 @@ class XMModule:
                 )
             )
             item["instruments"] = [
-                [event.instrument if event.has_note else 0 for event in row]
-                for row in rows
+                [event.instrument for event in row] for row in rows
+            ]
+            item["volumes"] = [
+                [event.volume for event in row] for row in rows
+            ]
+            item["effects"] = [
+                [event.effect for event in row] for row in rows
+            ]
+            item["parameters"] = [
+                [event.parameter for event in row] for row in rows
+            ]
+            item["channel_note_counts"] = [
+                sum(1 for row in rows if row[channel].has_note)
+                for channel in range(self.channels)
             ]
             if previous is None:
                 transition = 0.55 if cue.note_count else 0.15
@@ -114,11 +188,23 @@ class XMModule:
             cue_data.append(item)
             seen_patterns.add(cue.pattern)
             previous = cue
+
+        instruments = [
+            {
+                "index": item.index,
+                "name": item.name,
+                "sample_names": list(item.sample_names),
+                "sample_count": item.sample_count,
+            }
+            for item in self.instruments
+        ]
         return {
             "title": self.title,
             "tracker": self.tracker,
             "channels": self.channels,
+            "channel_profiles": self.channel_profiles(),
             "instrument_count": self.instrument_count,
+            "instruments": instruments,
             "bpm": self.bpm,
             "speed": self.speed,
             "duration": self.duration,
@@ -134,7 +220,7 @@ class XMModule:
 def tracker_packet_at(
     data: dict[str, Any] | None, seconds: float
 ) -> dict[str, Any] | None:
-    """Find the active order cue in a serialised tracker score."""
+    """Resolve an XM order and its 14/64 channel event states at an exact time."""
     if not data:
         return None
     cues = data.get("cues") or []
@@ -144,13 +230,10 @@ def tracker_packet_at(
     position = max(0.0, float(seconds))
     index = bisect.bisect_right(starts, position) - 1
     cue = dict(cues[max(0, min(index, len(cues) - 1))])
-    span = max(
-        1e-9, float(cue.get("end_seconds", 0.0)) - float(cue.get("start_seconds", 0.0))
-    )
-    progress = max(
-        0.0,
-        min(1.0, (position - float(cue.get("start_seconds", 0.0))) / span),
-    )
+    start = float(cue.get("start_seconds", 0.0))
+    end = float(cue.get("end_seconds", start))
+    span = max(1e-9, end - start)
+    progress = max(0.0, min(1.0, (position - start) / span))
     cue["progress"] = progress
 
     note_rows = cue.get("notes") or []
@@ -173,6 +256,150 @@ def tracker_packet_at(
         max(0.0, min(1.0, cue.get("transition_strength", 0.0)))
     )
     cue["pattern_reprise"] = bool(cue.get("pattern_reprise", False))
+
+    profiles = data.get("channel_profiles") or []
+    instrument_rows = cue.get("instruments") or []
+    volume_rows = cue.get("volumes") or []
+    effect_rows = cue.get("effects") or []
+    parameter_rows = cue.get("parameters") or []
+    channel_note_counts = cue.get("channel_note_counts") or []
+    channel_states: list[dict[str, Any]] = []
+    for channel_index in range(channel_count):
+        profile = (
+            profiles[channel_index]
+            if channel_index < len(profiles)
+            else {"channel": channel_index + 1, "label": f"CH {channel_index + 1:02d}"}
+        )
+        current_note = (
+            int(row_notes[channel_index])
+            if channel_index < len(row_notes) else 0
+        )
+        current_instrument = (
+            int(instrument_rows[row_index][channel_index])
+            if row_index < len(instrument_rows)
+            and channel_index < len(instrument_rows[row_index])
+            else 0
+        )
+        current_volume = (
+            int(volume_rows[row_index][channel_index])
+            if row_index < len(volume_rows)
+            and channel_index < len(volume_rows[row_index])
+            else 0
+        )
+        current_effect = (
+            int(effect_rows[row_index][channel_index])
+            if row_index < len(effect_rows)
+            and channel_index < len(effect_rows[row_index])
+            else 0
+        )
+        current_parameter = (
+            int(parameter_rows[row_index][channel_index])
+            if row_index < len(parameter_rows)
+            and channel_index < len(parameter_rows[row_index])
+            else 0
+        )
+
+        # Tracker instrument selection and note pitch persist until replaced.
+        held_note = 0
+        held_instrument = int(profile.get("instrument_id", 0))
+        note_age = row_total + 1
+        recent_hits = 0
+        recent_effect = current_effect
+        recent_parameter = current_parameter
+        volume = 0.82
+        for scan_row in range(row_index, -1, -1):
+            if scan_row < len(note_rows) and channel_index < len(note_rows[scan_row]):
+                note_value = int(note_rows[scan_row][channel_index])
+                if note_value and held_note == 0:
+                    held_note = note_value
+                    note_age = row_index - scan_row
+            if scan_row < len(instrument_rows) and channel_index < len(instrument_rows[scan_row]):
+                instrument_value = int(instrument_rows[scan_row][channel_index])
+                if instrument_value and held_instrument == 0:
+                    held_instrument = instrument_value
+            if scan_row < len(volume_rows) and channel_index < len(volume_rows[scan_row]):
+                volume_command = int(volume_rows[scan_row][channel_index])
+                if 0x10 <= volume_command <= 0x50:
+                    volume = (volume_command - 0x10) / 64.0
+                    break
+        recent_start = max(0, row_index - 15)
+        for scan_row in range(recent_start, row_index + 1):
+            if scan_row < len(note_rows) and channel_index < len(note_rows[scan_row]):
+                if 1 <= int(note_rows[scan_row][channel_index]) <= 96:
+                    recent_hits += 1
+
+        note_density = (
+            float(channel_note_counts[channel_index]) / max(1, row_total)
+            if channel_index < len(channel_note_counts) else 0.0
+        )
+        envelope = math.exp(-max(0, note_age) / 5.0) if held_note else 0.0
+        trigger = 1.0 if 1 <= current_note <= 96 else 0.0
+        activity = max(trigger, envelope * 0.78) * max(0.12, volume)
+        pan = 0.5
+        if current_effect == 0x08:
+            pan = current_parameter / 255.0
+        elif current_effect == 0x0E and (current_parameter >> 4) == 0x08:
+            pan = (current_parameter & 0x0F) / 15.0
+
+        effect_names = {
+            0x00: "ARPEGGIO",
+            0x01: "SLIDE_UP",
+            0x02: "SLIDE_DOWN",
+            0x03: "PORTAMENTO",
+            0x04: "VIBRATO",
+            0x05: "PORTA_VOLUME",
+            0x06: "VIBRATO_VOLUME",
+            0x07: "TREMOLO",
+            0x08: "PAN",
+            0x09: "SAMPLE_OFFSET",
+            0x0A: "VOLUME_SLIDE",
+            0x0B: "ORDER_JUMP",
+            0x0D: "PATTERN_BREAK",
+            0x0F: "TEMPO_SPEED",
+        }
+        effect_name = effect_names.get(current_effect, "")
+        if current_effect == 0x0E:
+            effect_name = {
+                0x1: "FINE_SLIDE_UP",
+                0x2: "FINE_SLIDE_DOWN",
+                0x4: "VIBRATO_WAVE",
+                0x6: "PATTERN_LOOP",
+                0x7: "TREMolo_WAVE",
+                0x8: "PAN",
+                0x9: "RETRIGGER",
+                0xC: "NOTE_CUT",
+                0xD: "NOTE_DELAY",
+                0xE: "PATTERN_DELAY",
+            }.get(current_parameter >> 4, "EXTENDED")
+        channel_states.append({
+            **profile,
+            "channel": channel_index + 1,
+            "current_note": current_note,
+            "held_note": held_note,
+            "pitch": (held_note - 1) / 95.0 if held_note else 0.0,
+            "note_age_rows": note_age if held_note else -1,
+            "trigger": trigger,
+            "envelope": float(max(0.0, min(1.0, envelope))),
+            "activity": float(max(0.0, min(1.0, activity))),
+            "note_density": float(max(0.0, min(1.0, note_density))),
+            "recent_hits": recent_hits,
+            "instrument_id": current_instrument or held_instrument,
+            "volume_command": current_volume,
+            "volume": float(max(0.0, min(1.0, volume))),
+            "effect": current_effect,
+            "parameter": current_parameter,
+            "effect_name": effect_name,
+            "effect_amount": current_parameter / 255.0,
+            "pan": float(max(0.0, min(1.0, pan))),
+            "silent": bool(profile.get("silent", False)),
+        })
+    cue["channel_states"] = channel_states
+    cue["active_channel_count"] = sum(
+        1 for state in channel_states if state["activity"] > 0.05
+    )
+    cue["mean_channel_activity"] = (
+        sum(state["activity"] for state in channel_states) / max(1, channel_count)
+    )
     return cue
 
 
@@ -245,17 +472,73 @@ def _read_pattern(stream, channels: int) -> tuple[tuple[tuple[XMEvent, ...], ...
     return tuple(decoded), packed_size
 
 
+def _read_instrument_table(stream, instrument_count: int, file_size: int) -> tuple[XMInstrument, ...]:
+    """Read XM instrument/sample headers, then seek over raw sample payloads."""
+    instruments: list[XMInstrument] = []
+    for index in range(instrument_count):
+        size_bytes = _read_exact(stream, 4, "XM instrument header size")
+        header_size = _u32(size_bytes, 0)
+        if header_size < 29 or header_size > 65536:
+            raise XMParseError("Invalid XM instrument header size.")
+        header = _read_exact(stream, header_size - 4, "XM instrument header")
+        name = header[:22].split(b"\\0", 1)[0].decode("latin-1", "replace").strip()
+        sample_count = _u16(header, 23)
+        if sample_count > 256:
+            raise XMParseError("XM instrument contains an unreasonable sample count.")
+        sample_names: list[str] = []
+        sample_lengths: list[int] = []
+        if sample_count:
+            if len(header) < 29:
+                raise XMParseError("Truncated XM instrument sample header size.")
+            sample_header_size = _u32(header, 25)
+            if not 40 <= sample_header_size <= 4096:
+                raise XMParseError("Unsupported XM sample header size.")
+            for _sample_index in range(sample_count):
+                sample_header = _read_exact(
+                    stream, sample_header_size, "XM sample header"
+                )
+                sample_length = _u32(sample_header, 0)
+                sample_name = (
+                    sample_header[18:40]
+                    .split(b"\\0", 1)[0]
+                    .decode("latin-1", "replace")
+                    .strip()
+                )
+                sample_lengths.append(sample_length)
+                if sample_name:
+                    sample_names.append(sample_name)
+            skip_bytes = sum(sample_lengths)
+            current = stream.tell()
+            if current + skip_bytes > file_size:
+                raise XMParseError("Truncated XM instrument sample payload.")
+            # Seek rather than read/decode sample data. Visual import only needs
+            # instrument/sample identity, not tracker audio playback.
+            stream.seek(skip_bytes, 1)
+        instruments.append(
+            XMInstrument(
+                index=index + 1,
+                name=name,
+                sample_names=tuple(sample_names),
+                sample_count=sample_count,
+            )
+        )
+    return tuple(instruments)
+
+
 def load_xm(path: str | Path) -> XMModule:
-    """Read XM headers/patterns and stop before instrument sample payloads."""
-    with Path(path).open("rb") as stream:
+    """Read XM structure, instrument/sample metadata and skip sample audio payloads."""
+    path = Path(path)
+    file_size = path.stat().st_size
+    with path.open("rb") as stream:
         header = _read_exact(stream, 80, "XM module header")
         if header[:17] != b"Extended Module: " or header[37] != 0x1A:
             raise XMParseError("Not a valid XM module.")
         title = (
-            header[17:37].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
-            or Path(path).stem
+            header[17:37].split(b"\\0", 1)[0]
+            .decode("latin-1", "replace").strip()
+            or path.stem
         )
-        tracker = header[38:58].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
+        tracker = header[38:58].split(b"\\0", 1)[0].decode("latin-1", "replace").strip()
         version = _u16(header, 58)
         if version < 0x0104:
             raise XMParseError(f"Unsupported XM version 0x{version:04x}.")
@@ -284,8 +567,6 @@ def load_xm(path: str | Path) -> XMModule:
         if not 1 <= speed <= 31 or not 32 <= bpm <= 255:
             raise XMParseError("XM module has invalid initial tempo settings.")
 
-        # The order list starts at byte 80. Consume only the declared order entries,
-        # then skip the remaining header extension/padding without retaining it.
         header_end = 60 + header_size
         orders_end = 80 + song_length
         if header_end < orders_end:
@@ -297,12 +578,12 @@ def load_xm(path: str | Path) -> XMModule:
         if any(index >= pattern_count for index in orders):
             raise XMParseError("XM order list references a missing pattern.")
 
-        # Decode pattern cells one pattern at a time. Instrument headers and all
-        # sample bytes follow the pattern table and are intentionally never read.
         patterns: list[tuple[tuple[XMEvent, ...], ...]] = []
         for _ in range(pattern_count):
             pattern, _packed_size = _read_pattern(stream, channels)
             patterns.append(pattern)
+
+        instruments = _read_instrument_table(stream, instrument_count, file_size)
 
     effect_count = 0
     flow_control_effect_count = 0
@@ -315,9 +596,8 @@ def load_xm(path: str | Path) -> XMModule:
         row_counts: list[int] = []
         order_note_count = 0
         active_channels: set[int] = set()
-        instruments: set[int] = set()
+        used_instruments: set[int] = set()
         for row in rows:
-            # Fxx changes speed (1..31) or tempo (32..255) for this row and onward.
             for channel_index, event in enumerate(row):
                 if event.effect or event.parameter:
                     effect_count += 1
@@ -330,11 +610,11 @@ def load_xm(path: str | Path) -> XMModule:
                             current_speed = max(1, event.parameter)
                         else:
                             current_bpm = max(32, event.parameter)
+                if event.instrument:
+                    used_instruments.add(event.instrument)
                 if event.has_note:
                     order_note_count += 1
                     active_channels.add(channel_index + 1)
-                    if event.instrument:
-                        instruments.add(event.instrument)
             row_counts.append(sum(1 for event in row if event.has_note))
             elapsed += current_speed * 2.5 / current_bpm
 
@@ -346,7 +626,7 @@ def load_xm(path: str | Path) -> XMModule:
                 end_seconds=elapsed,
                 note_count=order_note_count,
                 active_channels=tuple(sorted(active_channels)),
-                instrument_ids=tuple(sorted(instruments)),
+                instrument_ids=tuple(sorted(used_instruments)),
                 density=order_note_count / max(1, len(rows) * channels),
                 row_note_counts=tuple(row_counts),
                 is_silent=order_note_count == 0,
@@ -358,6 +638,7 @@ def load_xm(path: str | Path) -> XMModule:
         tracker=tracker,
         channels=channels,
         instrument_count=instrument_count,
+        instruments=instruments,
         bpm=bpm,
         speed=speed,
         orders=orders,
