@@ -51,9 +51,14 @@ jobs:
               crossed_score_cues,
           )
           from engine.visual.project import VisualProject
+          from engine.visual.scene_pair import (
+              ScenePairRenderContract, blend_scene_pair_frames,
+          )
           from engine.visual.transitions import (
               SceneTransition, SceneTransitionController,
           )
+          from PIL import Image
+          from types import MethodType
           import json
 
           # A tiny valid XM: two tracker channels, one note, one named sample.
@@ -361,5 +366,118 @@ jobs:
               assert project_round_trip.get_scene(
                   restored_scene.scene_id
               ).state == "HELD"
-          print("XM → score cues → multi-scene project → transition lifecycle: OK")
+
+              # M14: the scene-pair contract snapshots independent scene/layer data.
+              pair_out = VisualScene(
+                  scene_id="pair-out", name="PAIR OUT", state="EXITING"
+              )
+              pair_in = VisualScene(
+                  scene_id="pair-in", name="PAIR IN", state="ENTERING"
+              )
+              pair_project = VisualProject(
+                  scenes=[pair_out, pair_in],
+                  active_scene_id=pair_out.scene_id,
+                  layer_snapshots={
+                      pair_out.scene_id: [layers[0].to_dict()],
+                      pair_in.scene_id: [layers[1].to_dict()],
+                  },
+              )
+              pair_sample = {
+                  "transition_id": "transition-smoke",
+                  "source_scene_id": pair_out.scene_id,
+                  "target_scene_id": pair_in.scene_id,
+                  "family": "dissolve",
+                  "phase": "TRANSFORMATION",
+                  "progress": 0.5,
+                  "eased_progress": 0.5,
+                  "outgoing_weight": 0.5,
+                  "incoming_weight": 0.5,
+                  "duration_seconds": 2.0,
+                  "completed": False,
+              }
+              pair_contract = ScenePairRenderContract.from_project(
+                  pair_project, pair_sample
+              )
+              pair_round_trip = ScenePairRenderContract.from_dict(
+                  json.loads(json.dumps(pair_contract.to_dict()))
+              )
+              assert pair_round_trip.outgoing["scene"]["scene_id"] == "pair-out"
+              assert pair_round_trip.incoming["scene"]["scene_id"] == "pair-in"
+              assert pair_round_trip.outgoing["layers"][0]["layer_id"] == layers[0].layer_id
+              assert pair_round_trip.incoming["layers"][0]["layer_id"] == layers[1].layer_id
+              assert pair_round_trip.render_mode == "crossfade"
+
+              black = Image.new("RGBA", (4, 4), (0, 0, 0, 255))
+              white = Image.new("RGBA", (4, 4), (255, 255, 255, 255))
+              start_contract = ScenePairRenderContract.from_dict({
+                  **pair_contract.to_dict(),
+                  "incoming_weight": 0.0,
+                  "outgoing_weight": 1.0,
+                  "progress": 0.0,
+                  "eased_progress": 0.0,
+              })
+              middle_frame = blend_scene_pair_frames(
+                  black, white, pair_round_trip
+              )
+              start_frame = blend_scene_pair_frames(
+                  black, white, start_contract
+              )
+              assert start_frame.getpixel((0, 0)) == (0, 0, 0, 255)
+              assert middle_frame.getpixel((0, 0)) == (128, 128, 128, 255)
+              end_contract = ScenePairRenderContract.from_dict({
+                  **pair_contract.to_dict(),
+                  "incoming_weight": 1.0,
+                  "outgoing_weight": 0.0,
+                  "progress": 1.0,
+                  "eased_progress": 1.0,
+                  "completed": True,
+              })
+              end_frame = blend_scene_pair_frames(
+                  black, white, end_contract
+              )
+              assert end_frame.getpixel((0, 0)) == (255, 255, 255, 255)
+
+              # Exercise the compositor's two-render orchestration and final blend.
+              pair_compositor = VisualCompositor.__new__(VisualCompositor)
+              pair_compositor.size = (4, 4)
+              pair_compositor._feedback = None
+              pair_compositor._last_time = None
+              pair_compositor.last_profile = {}
+              def fake_scene_render(
+                  self, packet, seconds, layers=None, settings=None,
+                  screen="No guide", feedback_enabled=False,
+                  feedback_amount=0.35, feedback_decay=0.90,
+                  feedback_shift=0.0, visual_scene=None,
+              ):
+                  self.last_profile = {
+                      "scene_ms": 0.5, "layer_count": len(layers or []),
+                      "layers": [], "backend": "CI",
+                  }
+                  color = (
+                      (0, 0, 0, 255)
+                      if visual_scene["scene_id"] == "pair-out"
+                      else (255, 255, 255, 255)
+                  )
+                  return Image.new("RGBA", self.size, color)
+              pair_compositor.render = MethodType(
+                  fake_scene_render, pair_compositor
+              )
+              rendered_pair = pair_compositor.render_scene_pair(
+                  packet={}, seconds=1.0, scene_pair=pair_round_trip
+              )
+              assert rendered_pair.getpixel((0, 0)) == (128, 128, 128, 255)
+              assert pair_compositor.last_profile["backend"] == "CPU_SCENE_PAIR"
+              assert pair_compositor.last_profile["scene_pair"]["transition_id"] == (
+                  "transition-smoke"
+              )
+
+              # Future transition families retain lifecycle-only rendering.
+              morph_contract = ScenePairRenderContract.from_dict({
+                  **pair_contract.to_dict(), "family": "morph",
+              })
+              assert morph_contract.render_mode == "hold"
+              assert blend_scene_pair_frames(
+                  black, white, morph_contract
+              ).getpixel((0, 0)) == (0, 0, 0, 255)
+          print("XM → score cues → multi-scene project → M14 scene-pair rendering: OK")
           PY
