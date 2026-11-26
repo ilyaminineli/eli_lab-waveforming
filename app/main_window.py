@@ -925,10 +925,14 @@ class MainWindow(QMainWindow):
         else:
             self._render_frame()
 
+        active_channels = sum(
+            1 for profile in tracker_data.get("channel_profiles", [])
+            if not profile.get("silent", False)
+        )
         message = (
             f"XM SCORE LOADED · {module.channels} CH · "
-            f"{module.instrument_count} INST · {len(module.orders)} ORDERS · "
-            f"{module.bpm} BPM"
+            f"{active_channels} ACTIVE · {module.instrument_count} INST · "
+            f"{len(module.orders)} ORDERS · {module.bpm} BPM"
         )
         if module.flow_control_effect_count:
             message += " · FLOW EFFECTS: TIMING APPROXIMATED"
@@ -1805,10 +1809,14 @@ class MainWindow(QMainWindow):
             if self.audio.is_playing or self._tracker_playing
             else "PAUSED" if self._last_position > 0 else "READY"
         )
+        active_channels = sum(
+            1 for profile in self._tracker_data.get("channel_profiles", [])
+            if not profile.get("silent", False)
+        )
         if count and self._tracker_data:
             self.status.setText(
                 f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
-                f"  ·  XM {int(self._tracker_data.get('channels', 0)):02d} CH"
+                f"  ·  XM {active_channels:02d}/{int(self._tracker_data.get('channels', 0)):02d} CH"
             )
         elif count:
             self.status.setText(
@@ -1816,7 +1824,8 @@ class MainWindow(QMainWindow):
             )
         elif self._tracker_data:
             self.status.setText(
-                f"{state}  ·  XM TRACKER  ·  {int(self._tracker_data.get('channels', 0)):02d} CHANNELS"
+                f"{state}  ·  XM TRACKER  ·  {active_channels:02d}/"
+                f"{int(self._tracker_data.get('channels', 0)):02d} ACTIVE CHANNELS"
             )
         else:
             self.status.setText("NO AUDIO LOADED")
