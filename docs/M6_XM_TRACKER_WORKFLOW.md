@@ -12,8 +12,9 @@ response. This avoids trying to infer a song's structure from amplitude peaks al
 
 ## Supported input
 
-The importer reads XM song headers and packed pattern events without decoding or
-loading instrument sample payloads. It extracts:
+The importer reads XM song headers and packed pattern events sequentially. It
+stops immediately after the pattern table and never reads the instrument headers
+or sample payload section. It does not decode or retain sample audio. It extracts:
 
 - module title, tracker name, channel count, initial tempo and speed;
 - order list and referenced pattern index;
@@ -41,6 +42,9 @@ The uploaded module reports:
 - 10 instruments;
 - initial tempo 173 BPM and speed 6;
 - 64 rows in each of the 17 patterns;
+- the 1,165,933-byte uploaded file needs only 19,051 bytes read through its
+  song header and pattern table; the remaining 1,146,882 bytes are not read by
+  the metadata importer;
 - order list:
   `0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 7, 7, 5, 5, 14, 15, 16`;
 - zero effect-column commands;
