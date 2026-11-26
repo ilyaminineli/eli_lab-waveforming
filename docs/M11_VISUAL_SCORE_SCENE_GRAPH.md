@@ -131,9 +131,9 @@ Do not interpret the M11 schema containers as completed runtime features. The fo
 - MappingRule execution, curve/smoothing/priority/conflict semantics and manual override;
 - visual motifs, patterns, phrases and higher-level visual-form editor;
 - deterministic scene snapshots, recovery/fallback execution and runtime transition checkpointing;
-- transition-family rendering: dissolve/crossfade, morph, assembly, erosion, mask reveal, displacement and temporal echo;
+- transition-family rendering beyond M14: object-aware morph, assembly, erosion, mask reveal, displacement and temporal echo;
 - multi-scene rehearsal tools, performer overrides and show-control integration.
 
 **M12 — Scene State Machine and Transition Contracts** is implemented as the deterministic model/controller foundation. **M13 — Multi-scene Project State and Score-Cue Integration** adds project-level scenes, scene duplication, cue routes, the authoring panel, project persistence and compositor state handoff. See [M12_SCENE_STATE_MACHINE_TRANSITIONS.md](M12_SCENE_STATE_MACHINE_TRANSITIONS.md) and [M13_MULTI_SCENE_PROJECT_SCORE_CUES.md](M13_MULTI_SCENE_PROJECT_SCORE_CUES.md).
 
-The next step is **M14 — Renderer-side transition effects**. The compositor should continue receiving resolved scene state rather than owning transition policy itself.
+M14 now provides the outgoing/incoming scene-pair contract and crossfade renderer. The compositor continues receiving resolved scene state rather than owning transition policy itself. See [M14_RENDERER_SCENE_PAIR_CROSSFADE.md](M14_RENDERER_SCENE_PAIR_CROSSFADE.md).
