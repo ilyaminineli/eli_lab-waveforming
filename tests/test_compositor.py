@@ -390,3 +390,34 @@ def test_gpu_interference_scene_keeps_cpu_fallback_layer_snapshot():
     assert "image" in cpu_scene["layers"][0]
     assert np.count_nonzero(np.asarray(cpu_frame)[..., :3]) > 100
     assert "gpu_instrument" in gpu["layers"][0]
+
+
+
+def test_cpu_frame_exposes_scene_and_per_layer_profile():
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(160, 120)
+    )
+    layer = VisualLayer(
+        name="Profiled orbit",
+        generator="PHASE ORBIT",
+        mask_mode="FULL",
+        pass_map="None",
+        pass_mode="NONE",
+    )
+
+    output = compositor.render_cpu_frame(
+        packet=None,
+        seconds=0.5,
+        layers=[layer],
+        settings=GeneratorSettings(),
+        screen="No guide",
+    )
+    profile = compositor.last_profile
+
+    assert output.size == (160, 120)
+    assert profile["scene_ms"] >= 0.0
+    assert profile["compose_ms"] >= 0.0
+    assert profile["frame_ms"] >= profile["scene_ms"]
+    assert profile["layer_count"] == 1
+    assert profile["layers"][0]["generator"] == "PHASE ORBIT"
+    assert profile["layers"][0]["render_ms"] >= 0.0
