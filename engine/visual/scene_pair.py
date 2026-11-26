@@ -308,6 +308,7 @@ class ScenePairRenderContract:
             path_correspondence=_records(requested_path_correspondence),
             metadata={
                 "trigger": deepcopy(transition_record.get("trigger", {})),
+                "seed": int(transition_record.get("seed", sample_data.get("seed", 0))),
             },
         )
 
