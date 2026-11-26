@@ -56,7 +56,7 @@ from engine.visual.preview_worker import (
     PreviewRenderWorker,
     is_newer_preview_frame,
 )
-from engine.visual.scene import VisualScene, VisualScore
+from engine.visual.scene import VisualScene, VisualScore, crossed_score_cues
 from engine.visual.project import VisualProject
 from engine.visual.transitions import (
     SceneTransition,
@@ -1001,10 +1001,9 @@ class MainWindow(QMainWindow):
             return
         previous = float(self._last_cue_scan_position)
         current = max(previous, float(score_seconds))
-        crossed = [
-            cue for cue in self.visual_score.cues
-            if previous < float(cue.time) <= current + 1e-6
-        ]
+        crossed = crossed_score_cues(
+            self.visual_score.cues, previous, current
+        )
         self._last_cue_scan_position = current
         for cue in crossed:
             route = self.visual_project.route_for_cue(cue.cue_id)
@@ -1991,6 +1990,7 @@ class MainWindow(QMainWindow):
                     target = target % duration
                     self._tracker_clock_origin = target
                     self._tracker_clock_started = now
+                    self._last_cue_scan_position = target - 1e-6
                     self.preview_worker.request_reset()
                 else:
                     target = duration
@@ -2179,6 +2179,9 @@ class MainWindow(QMainWindow):
         previous = self._last_position
         self._last_position = seconds
         if seconds < previous:
+            # Audio loop playback wraps the score clock; let cue scanning begin
+            # again from the start of the new pass.
+            self._last_cue_scan_position = seconds - 1e-6
             self.preview_worker.request_reset()
             self.feature_bus.reset()
             self.director.reset()
@@ -2327,6 +2330,7 @@ class MainWindow(QMainWindow):
                 return
             if self._last_position >= duration - 0.03:
                 self._last_position = 0.0
+                self._last_cue_scan_position = -1e-6
                 self.preview_worker.request_reset()
             self._tracker_clock_origin = self._last_position
             self._tracker_clock_started = monotonic()
