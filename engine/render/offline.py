@@ -23,6 +23,7 @@ from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
 from engine.visual.project import VisualProject
 from engine.visual.scene import VisualScore, crossed_score_cues
+from engine.visual.scene_pair import ScenePairRenderContract
 from engine.visual.transitions import SceneTransition, SceneTransitionController
 
 
@@ -471,6 +472,15 @@ class OfflineRenderWorker(QThread):
                             project_model.active_scene_id
                             if project_model is not None else ""
                         )
+                        scene_pair_contract = None
+                        if (
+                            project_model is not None
+                            and transition_controller.transition_active
+                            and active_transition_sample is not None
+                        ):
+                            scene_pair_contract = ScenePairRenderContract.from_project(
+                                project_model, active_transition_sample
+                            )
                         frame_layers = (
                             scene_layers.get(active_scene_id, [])
                             if project_model is not None else self.layers
@@ -534,18 +544,39 @@ class OfflineRenderWorker(QThread):
                             sensitivity=frame_settings.sensitivity,
                             seed=frame_settings.seed,
                         )
-                        image = compositor.render(
-                            packet=packet,
-                            seconds=seconds,
-                            layers=frame_layers,
-                            settings=frame_settings,
-                            screen=self.screen,
-                            feedback_enabled=bool(self.feedback.get("enabled", False)),
-                            feedback_amount=float(self.feedback.get("amount", 0.28)),
-                            feedback_decay=float(self.feedback.get("decay", 0.88)),
-                            feedback_shift=float(self.feedback.get("shift", 0.0)),
-                            visual_scene=frame_scene,
-                        )
+                        if scene_pair_contract is not None:
+                            image = compositor.render_scene_pair(
+                                packet=packet,
+                                seconds=seconds,
+                                scene_pair=scene_pair_contract,
+                                settings=frame_settings,
+                                screen=self.screen,
+                                feedback_enabled=bool(
+                                    self.feedback.get("enabled", False)
+                                ),
+                                feedback_amount=float(
+                                    self.feedback.get("amount", 0.28)
+                                ),
+                                feedback_decay=float(
+                                    self.feedback.get("decay", 0.88)
+                                ),
+                                feedback_shift=float(
+                                    self.feedback.get("shift", 0.0)
+                                ),
+                            )
+                        else:
+                            image = compositor.render(
+                                packet=packet,
+                                seconds=seconds,
+                                layers=frame_layers,
+                                settings=frame_settings,
+                                screen=self.screen,
+                                feedback_enabled=bool(self.feedback.get("enabled", False)),
+                                feedback_amount=float(self.feedback.get("amount", 0.28)),
+                                feedback_decay=float(self.feedback.get("decay", 0.88)),
+                                feedback_shift=float(self.feedback.get("shift", 0.0)),
+                                visual_scene=frame_scene,
+                            )
                         if process.stdin is None:
                             raise RuntimeError(
                                 "FFmpeg video input pipe was not created."
