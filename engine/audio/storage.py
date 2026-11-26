@@ -16,14 +16,14 @@ class StreamedAudioBuffer:
     """
 
     def __init__(
-            self,
-            path: Path,
-            frame_count: int,
-            sample_rate: int,
-            *,
-            chunk_frames: int = 8192,
-            ring_chunks: int = 8,
-            lookbehind_frames: int = 16384,
+        self,
+        path: Path,
+        frame_count: int,
+        sample_rate: int,
+        *,
+        chunk_frames: int = 8192,
+        ring_chunks: int = 8,
+        lookbehind_frames: int = 16384,
     ) -> None:
         self.path = Path(path)
         self.frame_count = int(frame_count)
@@ -39,14 +39,17 @@ class StreamedAudioBuffer:
         self._head = np.zeros((self._head_frames, 2), dtype=np.float32)
         if self._head_frames:
             head, _ = sf.read(
-                str(self.path), start=0, frames=self._head_frames,
-                dtype="float32", always_2d=True,
+                str(self.path),
+                start=0,
+                frames=self._head_frames,
+                dtype="float32",
+                always_2d=True,
             )
             if head.shape[1] == 1:
                 head = np.repeat(head, 2, axis=1)
             elif head.shape[1] > 2:
                 head = head[:, :2]
-            self._head[:len(head)] = head
+            self._head[: len(head)] = head
             self._head_frames = len(head)
         self._ring_start = 0
         self._write_pos = 0
@@ -78,7 +81,10 @@ class StreamedAudioBuffer:
                             self._ring_start = min(keep_from, self._write_pos)
                         buffered_ahead = self._write_pos - requested
                         free = self.capacity - (self._write_pos - self._ring_start)
-                        if free < self.chunk_frames or buffered_ahead >= self.capacity - self.chunk_frames:
+                        if (
+                            free < self.chunk_frames
+                            or buffered_ahead >= self.capacity - self.chunk_frames
+                        ):
                             self._condition.wait(timeout=0.02)
                             continue
                         position = self._write_pos
@@ -105,11 +111,13 @@ class StreamedAudioBuffer:
                             continue
                         offset = position % self.capacity
                         first = min(len(data), self.capacity - offset)
-                        self._ring[offset:offset + first] = data[:first]
+                        self._ring[offset : offset + first] = data[:first]
                         if first < len(data):
-                            self._ring[:len(data) - first] = data[first:]
+                            self._ring[: len(data) - first] = data[first:]
                         self._write_pos = position + len(data)
-                        self._ring_start = max(self._ring_start, self._write_pos - self.capacity)
+                        self._ring_start = max(
+                            self._ring_start, self._write_pos - self.capacity
+                        )
                         self._condition.notify_all()
         except Exception:
             # The callback stays real-time safe. A failed reader behaves like
@@ -119,7 +127,7 @@ class StreamedAudioBuffer:
                 self._condition.notify_all()
 
     def read_into(
-            self, position: int, destination: np.ndarray, *, update_request: bool = True
+        self, position: int, destination: np.ndarray, *, update_request: bool = True
     ) -> int:
         """Copy buffered samples without waiting; optionally leave prefetch state untouched."""
         if destination.ndim != 2 or destination.shape[1] != 2:
@@ -146,9 +154,9 @@ class StreamedAudioBuffer:
                 return 0
             offset = position % self.capacity
             first = min(length, self.capacity - offset)
-            destination[:first] = self._ring[offset:offset + first]
+            destination[:first] = self._ring[offset : offset + first]
             if first < length:
-                destination[first:] = self._ring[:length - first]
+                destination[first:] = self._ring[: length - first]
             if update_request:
                 self._requested_pos = end
                 self._condition.notify()

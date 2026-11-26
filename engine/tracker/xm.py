@@ -43,7 +43,9 @@ class XMOrderCue:
     row_note_counts: tuple[int, ...]
     is_silent: bool = False
 
-    def to_dict(self, note_map: tuple[tuple[int, ...], ...] | None = None) -> dict[str, Any]:
+    def to_dict(
+        self, note_map: tuple[tuple[int, ...], ...] | None = None
+    ) -> dict[str, Any]:
         result = asdict(self)
         if note_map is not None:
             result["notes"] = [list(row) for row in note_map]
@@ -82,10 +84,12 @@ class XMModule:
         previous: XMOrderCue | None = None
         for cue in self.cues:
             rows = self.patterns[cue.pattern]
-            item = cue.to_dict(tuple(
-                tuple(event.note if event.has_note else 0 for event in row)
-                for row in rows
-            ))
+            item = cue.to_dict(
+                tuple(
+                    tuple(event.note if event.has_note else 0 for event in row)
+                    for row in rows
+                )
+            )
             item["instruments"] = [
                 [event.instrument if event.has_note else 0 for event in row]
                 for row in rows
@@ -100,8 +104,10 @@ class XMModule:
                 ) / max(1, self.channels)
                 transition = min(
                     1.0,
-                    0.12 + pattern_change * 0.35
-                    + density_change * 0.8 + channel_change * 0.5,
+                    0.12
+                    + pattern_change * 0.35
+                    + density_change * 0.8
+                    + channel_change * 0.5,
                 )
             item["transition_strength"] = float(transition)
             item["pattern_reprise"] = cue.pattern in seen_patterns
@@ -125,7 +131,9 @@ class XMModule:
         return tracker_packet_at(self.visual_data(), seconds)
 
 
-def tracker_packet_at(data: dict[str, Any] | None, seconds: float) -> dict[str, Any] | None:
+def tracker_packet_at(
+    data: dict[str, Any] | None, seconds: float
+) -> dict[str, Any] | None:
     """Find the active order cue in a serialised tracker score."""
     if not data:
         return None
@@ -136,7 +144,9 @@ def tracker_packet_at(data: dict[str, Any] | None, seconds: float) -> dict[str, 
     position = max(0.0, float(seconds))
     index = bisect.bisect_right(starts, position) - 1
     cue = dict(cues[max(0, min(index, len(cues) - 1))])
-    span = max(1e-9, float(cue.get("end_seconds", 0.0)) - float(cue.get("start_seconds", 0.0)))
+    span = max(
+        1e-9, float(cue.get("end_seconds", 0.0)) - float(cue.get("start_seconds", 0.0))
+    )
     progress = max(
         0.0,
         min(1.0, (position - float(cue.get("start_seconds", 0.0))) / span),
@@ -187,9 +197,7 @@ def _read_exact(stream, size: int, description: str) -> bytes:
     return data
 
 
-def _read_pattern(
-    stream, channels: int
-) -> tuple[tuple[tuple[XMEvent, ...], ...], int]:
+def _read_pattern(stream, channels: int) -> tuple[tuple[tuple[XMEvent, ...], ...], int]:
     header = _read_exact(stream, 9, "XM pattern header")
     header_size = _u32(header, 0)
     if header_size < 9 or header_size > 4096:
@@ -228,13 +236,14 @@ def _read_pattern(
             else:
                 if cursor + 4 > len(payload):
                     raise XMParseError("Truncated unpacked XM event.")
-                values[:] = [lead, *payload[cursor:cursor + 4]]
+                values[:] = [lead, *payload[cursor : cursor + 4]]
                 cursor += 4
             row.append(XMEvent(*values))
         decoded.append(tuple(row))
     if cursor != len(payload):
         raise XMParseError("XM pattern contains unconsumed packed event data.")
     return tuple(decoded), packed_size
+
 
 def load_xm(path: str | Path) -> XMModule:
     """Read XM headers/patterns and stop before instrument sample payloads."""
@@ -243,8 +252,7 @@ def load_xm(path: str | Path) -> XMModule:
         if header[:17] != b"Extended Module: " or header[37] != 0x1A:
             raise XMParseError("Not a valid XM module.")
         title = (
-            header[17:37].split(b"\0", 1)[0]
-            .decode("latin-1", "replace").strip()
+            header[17:37].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
             or Path(path).stem
         )
         tracker = header[38:58].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
@@ -255,8 +263,14 @@ def load_xm(path: str | Path) -> XMModule:
         if header_size < 20:
             raise XMParseError("Invalid XM song header size.")
         (
-            song_length, _restart, channels, pattern_count, instrument_count,
-            _flags, speed, bpm,
+            song_length,
+            _restart,
+            channels,
+            pattern_count,
+            instrument_count,
+            _flags,
+            speed,
+            bpm,
         ) = struct.unpack_from("<8H", header, 64)
         if (
             not 1 <= channels <= 64
@@ -264,7 +278,9 @@ def load_xm(path: str | Path) -> XMModule:
             or not 1 <= pattern_count <= 256
             or not 0 <= instrument_count <= 128
         ):
-            raise XMParseError("XM header contains unreasonable channel, order, pattern or instrument counts.")
+            raise XMParseError(
+                "XM header contains unreasonable channel, order, pattern or instrument counts."
+            )
         if not 1 <= speed <= 31 or not 32 <= bpm <= 255:
             raise XMParseError("XM module has invalid initial tempo settings.")
 
@@ -305,9 +321,8 @@ def load_xm(path: str | Path) -> XMModule:
             for channel_index, event in enumerate(row):
                 if event.effect or event.parameter:
                     effect_count += 1
-                    if (
-                        event.effect in (0x0B, 0x0D)
-                        or (event.effect == 0x0E and (event.parameter >> 4) == 0x06)
+                    if event.effect in (0x0B, 0x0D) or (
+                        event.effect == 0x0E and (event.parameter >> 4) == 0x06
                     ):
                         flow_control_effect_count += 1
                     if event.effect == 0x0F and event.parameter:
@@ -323,18 +338,20 @@ def load_xm(path: str | Path) -> XMModule:
             row_counts.append(sum(1 for event in row if event.has_note))
             elapsed += current_speed * 2.5 / current_bpm
 
-        cues.append(XMOrderCue(
-            order=order_index,
-            pattern=pattern_index,
-            start_seconds=order_start,
-            end_seconds=elapsed,
-            note_count=order_note_count,
-            active_channels=tuple(sorted(active_channels)),
-            instrument_ids=tuple(sorted(instruments)),
-            density=order_note_count / max(1, len(rows) * channels),
-            row_note_counts=tuple(row_counts),
-            is_silent=order_note_count == 0,
-        ))
+        cues.append(
+            XMOrderCue(
+                order=order_index,
+                pattern=pattern_index,
+                start_seconds=order_start,
+                end_seconds=elapsed,
+                note_count=order_note_count,
+                active_channels=tuple(sorted(active_channels)),
+                instrument_ids=tuple(sorted(instruments)),
+                density=order_note_count / max(1, len(rows) * channels),
+                row_note_counts=tuple(row_counts),
+                is_silent=order_note_count == 0,
+            )
+        )
 
     return XMModule(
         title=title,

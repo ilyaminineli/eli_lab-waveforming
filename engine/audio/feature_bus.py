@@ -8,8 +8,18 @@ import numpy as np
 from .analyzer import FeatureFrame
 
 SCALAR_FIELDS = (
-    "rms", "peak", "centroid", "centroid_norm", "rolloff", "bandwidth",
-    "flatness", "entropy", "flux", "zcr", "stereo_width", "crest",
+    "rms",
+    "peak",
+    "centroid",
+    "centroid_norm",
+    "rolloff",
+    "bandwidth",
+    "flatness",
+    "entropy",
+    "flux",
+    "zcr",
+    "stereo_width",
+    "crest",
 )
 
 
@@ -17,14 +27,30 @@ def _aggregate_frames(frames: list[FeatureFrame]) -> FeatureFrame:
     if not frames:
         zeros = np.zeros(64, dtype=np.float32)
         return FeatureFrame(
-            rms=0.0, peak=0.0, centroid=0.0, centroid_norm=0.0, rolloff=0.0,
-            bandwidth=0.0, flatness=0.0, entropy=0.0, flux=0.0, zcr=0.0,
-            stereo_width=0.0, crest=0.0, bands=zeros, spectrum=zeros.copy(),
+            rms=0.0,
+            peak=0.0,
+            centroid=0.0,
+            centroid_norm=0.0,
+            rolloff=0.0,
+            bandwidth=0.0,
+            flatness=0.0,
+            entropy=0.0,
+            flux=0.0,
+            zcr=0.0,
+            stereo_width=0.0,
+            crest=0.0,
+            bands=zeros,
+            spectrum=zeros.copy(),
         )
-    values = {name: float(np.mean([getattr(frame, name) for frame in frames])) for name in SCALAR_FIELDS}
+    values = {
+        name: float(np.mean([getattr(frame, name) for frame in frames]))
+        for name in SCALAR_FIELDS
+    }
     band_size = min(len(frame.bands) for frame in frames)
     spectrum_size = min(len(frame.spectrum) for frame in frames)
-    bands = np.mean(np.stack([frame.bands[:band_size] for frame in frames]), axis=0).astype(np.float32)
+    bands = np.mean(
+        np.stack([frame.bands[:band_size] for frame in frames]), axis=0
+    ).astype(np.float32)
     spectrum = np.mean(
         np.stack([frame.spectrum[:spectrum_size] for frame in frames]), axis=0
     ).astype(np.float32)
@@ -45,11 +71,11 @@ class FeatureBus:
     def _raw(frame: FeatureFrame) -> dict[str, float | bool]:
         bands = np.asarray(frame.bands, dtype=np.float32)
         count = len(bands)
-        low = float(np.mean(bands[:max(1, count // 4)])) if count else 0.0
+        low = float(np.mean(bands[: max(1, count // 4)])) if count else 0.0
         mid_start = max(1, count // 4)
         mid_end = max(mid_start + 1, (3 * count) // 4)
         mid = float(np.mean(bands[mid_start:mid_end])) if count else 0.0
-        high = float(np.mean(bands[(3 * count) // 4:])) if count else 0.0
+        high = float(np.mean(bands[(3 * count) // 4 :])) if count else 0.0
         energy = float(np.tanh(max(0.0, frame.rms) * 4.5))
         transient = float(np.clip(frame.flux * 32.0, 0.0, 1.0))
         return {
@@ -66,7 +92,9 @@ class FeatureBus:
             "active": bool(frame.rms > 1e-4),
         }
 
-    def _smooth(self, key: str, raw: dict[str, float | bool], position: float) -> dict[str, Any]:
+    def _smooth(
+        self, key: str, raw: dict[str, float | bool], position: float
+    ) -> dict[str, Any]:
         state = self._envelopes.setdefault(key, {})
         alpha = 0.34
         result: dict[str, Any] = {}
@@ -85,7 +113,10 @@ class FeatureBus:
         result["density"] = float(sum(history) / max(1, len(history)))
 
         previous_rms = self._previous_rms.get(key, float(raw["rms"]))
-        novelty = abs(float(raw["rms"]) - previous_rms) * 4.0 + float(raw["spectral_flux"]) * 20.0
+        novelty = (
+            abs(float(raw["rms"]) - previous_rms) * 4.0
+            + float(raw["spectral_flux"]) * 20.0
+        )
         result["novelty"] = float(np.clip(novelty, 0.0, 1.0))
         self._previous_rms[key] = float(raw["rms"])
         result["position"] = float(position)
@@ -98,9 +129,9 @@ class FeatureBus:
         self._last_event.clear()
 
     def update(
-            self,
-            packet: dict | None,
-            source_groups: dict[str, str] | None = None,
+        self,
+        packet: dict | None,
+        source_groups: dict[str, str] | None = None,
     ) -> dict:
         """Return the analyzer packet enriched with track, group, master and event data."""
         packet = dict(packet or {})
@@ -120,25 +151,42 @@ class FeatureBus:
             onset = float(values["onset"])
             previous_event = self._last_event.get(source_id, -1e9)
             if onset >= 0.60 and position - previous_event >= 0.075:
-                events.append({
-                    "kind": "transient",
-                    "source_id": source_id,
-                    "strength": onset,
-                    "position": position,
-                })
+                events.append(
+                    {
+                        "kind": "transient",
+                        "source_id": source_id,
+                        "strength": onset,
+                        "position": position,
+                    }
+                )
                 self._last_event[source_id] = position
 
         group_frames: dict[str, FeatureFrame] = {}
         group_features: dict[str, dict[str, Any]] = {}
         for group_id, members in group_members.items():
             group_frames[group_id] = _aggregate_frames(members)
-            member_values = [track_features[source_id] for source_id in frames
-                             if group_map.get(source_id) == group_id]
-            keys = ("rms", "energy", "low", "mid", "high", "onset",
-                    "spectral_flux", "centroid", "flatness", "stereo_width",
-                    "density", "novelty")
+            member_values = [
+                track_features[source_id]
+                for source_id in frames
+                if group_map.get(source_id) == group_id
+            ]
+            keys = (
+                "rms",
+                "energy",
+                "low",
+                "mid",
+                "high",
+                "onset",
+                "spectral_flux",
+                "centroid",
+                "flatness",
+                "stereo_width",
+                "density",
+                "novelty",
+            )
             group_features[group_id] = {
-                key: float(np.mean([item[key] for item in member_values])) for key in keys
+                key: float(np.mean([item[key] for item in member_values]))
+                for key in keys
             }
             group_features[group_id]["active_tracks"] = sum(
                 1 for item in member_values if item["active"]
@@ -148,28 +196,56 @@ class FeatureBus:
 
         master_frame = _aggregate_frames(list(frames.values()))
         if track_features:
-            names = ("rms", "energy", "low", "mid", "high", "onset",
-                     "spectral_flux", "centroid", "flatness", "stereo_width",
-                     "density", "novelty")
+            names = (
+                "rms",
+                "energy",
+                "low",
+                "mid",
+                "high",
+                "onset",
+                "spectral_flux",
+                "centroid",
+                "flatness",
+                "stereo_width",
+                "density",
+                "novelty",
+            )
             master = {
                 key: float(np.mean([item[key] for item in track_features.values()]))
                 for key in names
             }
-            master["active_tracks"] = sum(1 for item in track_features.values() if item["active"])
+            master["active_tracks"] = sum(
+                1 for item in track_features.values() if item["active"]
+            )
             master["track_count"] = len(track_features)
         else:
-            master = {key: 0.0 for key in (
-                "rms", "energy", "low", "mid", "high", "onset", "spectral_flux",
-                "centroid", "flatness", "stereo_width", "density", "novelty",
-            )}
+            master = {
+                key: 0.0
+                for key in (
+                    "rms",
+                    "energy",
+                    "low",
+                    "mid",
+                    "high",
+                    "onset",
+                    "spectral_flux",
+                    "centroid",
+                    "flatness",
+                    "stereo_width",
+                    "density",
+                    "novelty",
+                )
+            }
             master.update(active_tracks=0, track_count=0)
         master["position"] = position
-        packet.update({
-            "track_features": track_features,
-            "group_frames": group_frames,
-            "group_features": group_features,
-            "master_frame": master_frame,
-            "master_features": master,
-            "events": events,
-        })
+        packet.update(
+            {
+                "track_features": track_features,
+                "group_frames": group_frames,
+                "group_features": group_features,
+                "master_frame": master_frame,
+                "master_features": master,
+                "events": events,
+            }
+        )
         return packet

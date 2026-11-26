@@ -124,11 +124,18 @@ class Timeline:
     def set_duration(self, seconds: float) -> None:
         self.duration = max(0.0, float(seconds))
 
-    def add_marker(self, seconds: float, label: str | None = None,
-                   kind: str = "MARKER") -> TimelineMarker:
-        next_number = 1 + sum(1 for marker in self.markers if marker.kind == kind.upper())
+    def add_marker(
+        self, seconds: float, label: str | None = None, kind: str = "MARKER"
+    ) -> TimelineMarker:
+        next_number = 1 + sum(
+            1 for marker in self.markers if marker.kind == kind.upper()
+        )
         marker = TimelineMarker(
-            time=min(self.duration, max(0.0, float(seconds))) if self.duration else max(0.0, float(seconds)),
+            time=(
+                min(self.duration, max(0.0, float(seconds)))
+                if self.duration
+                else max(0.0, float(seconds))
+            ),
             label=label or f"{kind.title()} {next_number:02d}",
             kind=kind.upper(),
         )
@@ -138,13 +145,19 @@ class Timeline:
 
     def remove_marker(self, marker_id: str) -> bool:
         before = len(self.markers)
-        self.markers = [marker for marker in self.markers if marker.marker_id != marker_id]
+        self.markers = [
+            marker for marker in self.markers if marker.marker_id != marker_id
+        ]
         return len(self.markers) != before
 
-    def remove_nearest_marker(self, seconds: float, maximum_distance: float = 2.0) -> bool:
+    def remove_nearest_marker(
+        self, seconds: float, maximum_distance: float = 2.0
+    ) -> bool:
         if not self.markers:
             return False
-        nearest = min(self.markers, key=lambda marker: abs(marker.time - float(seconds)))
+        nearest = min(
+            self.markers, key=lambda marker: abs(marker.time - float(seconds))
+        )
         if abs(nearest.time - float(seconds)) > max(0.0, float(maximum_distance)):
             return False
         return self.remove_marker(nearest.marker_id)

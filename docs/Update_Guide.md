@@ -931,6 +931,7 @@ This section supersedes earlier provisional choices where they conflict with the
 ### Layout and PSD-to-HTML exports
 
 The repository contains two large PSD-to-HTML reference exports:
+
 - `resources/layout/layout.html`
 - `resources/layout/layout_simple.html`
 

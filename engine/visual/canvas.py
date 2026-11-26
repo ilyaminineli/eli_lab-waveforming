@@ -12,8 +12,11 @@ def _pixmap_from_image(image: Image.Image) -> QPixmap:
     rgba = image.convert("RGBA")
     width, height = rgba.size
     qimage = QImage(
-        rgba.tobytes("raw", "RGBA"), width, height,
-        width * 4, QImage.Format.Format_RGBA8888,
+        rgba.tobytes("raw", "RGBA"),
+        width,
+        height,
+        width * 4,
+        QImage.Format.Format_RGBA8888,
     ).copy()
     return QPixmap.fromImage(qimage)
 
@@ -190,14 +193,21 @@ void main() {
 """
 
 if GL is not None:
+
     class GpuCompositionCanvas(QOpenGLWidget):
         """OpenGL 3.3 layer compositor; generators can migrate to native GLSL incrementally."""
 
         gpu_failed = Signal(str)
 
         BLEND_CODES = {
-            "Normal": 0, "Add": 1, "Screen": 2, "Multiply": 3,
-            "Difference": 4, "Overlay": 5, "Lighten": 6, "Darken": 7,
+            "Normal": 0,
+            "Add": 1,
+            "Screen": 2,
+            "Multiply": 3,
+            "Difference": 4,
+            "Overlay": 5,
+            "Lighten": 6,
+            "Darken": 7,
         }
 
         def __init__(self, assets=None, parent=None):
@@ -217,7 +227,9 @@ if GL is not None:
             self._gl_failed = False
             self._gl_renderer = "Unknown"
             self.setMinimumSize(320, 240)
-            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
 
         def set_frame(self, image: Image.Image) -> None:
             self._scene = None
@@ -250,8 +262,11 @@ if GL is not None:
                 if layer.get("image") is None:
                     continue
                 VisualCompositor._blend_at(
-                    image, layer["image"], layer["position"],
-                    layer.get("blend_mode", "Normal"), layer.get("opacity", 1.0),
+                    image,
+                    layer["image"],
+                    layer["position"],
+                    layer.get("blend_mode", "Normal"),
+                    layer.get("opacity", 1.0),
                 )
             return image
 
@@ -291,8 +306,11 @@ if GL is not None:
                 if layer.get("gpu_instrument") is not None:
                     continue
                 VisualCompositor._blend_at(
-                    preview, layer["image"], layer["position"],
-                    layer.get("blend_mode", "Normal"), layer.get("opacity", 1.0),
+                    preview,
+                    layer["image"],
+                    layer["position"],
+                    layer.get("blend_mode", "Normal"),
+                    layer.get("opacity", 1.0),
                 )
             return preview
 
@@ -300,27 +318,52 @@ if GL is not None:
             try:
                 self._gl_drain_errors()
                 version = GL.glGetString(GL.GL_VERSION)
-                self.gl_version = version.decode("ascii", "replace") if version else "Unknown"
+                self.gl_version = (
+                    version.decode("ascii", "replace") if version else "Unknown"
+                )
                 renderer = GL.glGetString(GL.GL_RENDERER)
-                self._gl_renderer = renderer.decode("ascii", "replace") if renderer else "Unknown"
+                self._gl_renderer = (
+                    renderer.decode("ascii", "replace") if renderer else "Unknown"
+                )
                 self._gl_check("initialize/context-info")
                 self._program = self._build_program(VERTEX_SHADER, FRAGMENT_SHADER)
                 self._gl_check("initialize/shader-program")
-                vertices = np.asarray([
-                    -1.0, -1.0, 0.0, 1.0,
-                    1.0, -1.0, 1.0, 1.0,
-                    -1.0, 1.0, 0.0, 0.0,
-                    1.0, 1.0, 1.0, 0.0,
-                ], dtype=np.float32)
+                vertices = np.asarray(
+                    [
+                        -1.0,
+                        -1.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        0.0,
+                    ],
+                    dtype=np.float32,
+                )
                 self._vao = int(GL.glGenVertexArrays(1))
                 self._vbo = int(GL.glGenBuffers(1))
                 GL.glBindVertexArray(self._vao)
                 GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self._vbo)
-                GL.glBufferData(GL.GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL.GL_STATIC_DRAW)
+                GL.glBufferData(
+                    GL.GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL.GL_STATIC_DRAW
+                )
                 GL.glEnableVertexAttribArray(0)
-                GL.glVertexAttribPointer(0, 2, GL.GL_FLOAT, GL.GL_FALSE, 16, ctypes.c_void_p(0))
+                GL.glVertexAttribPointer(
+                    0, 2, GL.GL_FLOAT, GL.GL_FALSE, 16, ctypes.c_void_p(0)
+                )
                 GL.glEnableVertexAttribArray(1)
-                GL.glVertexAttribPointer(1, 2, GL.GL_FLOAT, GL.GL_FALSE, 16, ctypes.c_void_p(8))
+                GL.glVertexAttribPointer(
+                    1, 2, GL.GL_FLOAT, GL.GL_FALSE, 16, ctypes.c_void_p(8)
+                )
                 GL.glBindVertexArray(0)
                 GL.glDisable(GL.GL_DEPTH_TEST)
                 self._gl_check("initialize/vertex-array")
@@ -373,11 +416,21 @@ if GL is not None:
                 texture = int(GL.glGenTextures(1))
                 self._textures[key] = (texture, (width, height))
                 GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
-                GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
-                GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-                GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
-                GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
-                pixels = np.frombuffer(rgba.tobytes(), dtype=np.uint8).reshape(height, width, 4)
+                GL.glTexParameteri(
+                    GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR
+                )
+                GL.glTexParameteri(
+                    GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR
+                )
+                GL.glTexParameteri(
+                    GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE
+                )
+                GL.glTexParameteri(
+                    GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE
+                )
+                pixels = np.frombuffer(rgba.tobytes(), dtype=np.uint8).reshape(
+                    height, width, 4
+                )
                 # Qt and other GL users share this context; restore neutral
                 # unpack state and ensure client memory, not a PBO offset.
                 GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
@@ -386,15 +439,24 @@ if GL is not None:
                 GL.glPixelStorei(GL.GL_UNPACK_SKIP_PIXELS, 0)
                 GL.glPixelStorei(GL.GL_UNPACK_SKIP_ROWS, 0)
                 GL.glTexImage2D(
-                    GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
-                    GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels,
+                    GL.GL_TEXTURE_2D,
+                    0,
+                    GL.GL_RGBA8,
+                    width,
+                    height,
+                    0,
+                    GL.GL_RGBA,
+                    GL.GL_UNSIGNED_BYTE,
+                    pixels,
                 )
                 self._gl_check(f"texture/{key}/allocate-upload")
                 return texture
 
             texture, old_size = cached
             GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
-            pixels = np.frombuffer(rgba.tobytes(), dtype=np.uint8).reshape(height, width, 4)
+            pixels = np.frombuffer(rgba.tobytes(), dtype=np.uint8).reshape(
+                height, width, 4
+            )
             GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
             GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
             GL.glPixelStorei(GL.GL_UNPACK_ROW_LENGTH, 0)
@@ -403,13 +465,27 @@ if GL is not None:
             if old_size != (width, height):
                 self._textures[key] = (texture, (width, height))
                 GL.glTexImage2D(
-                    GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
-                    GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels,
+                    GL.GL_TEXTURE_2D,
+                    0,
+                    GL.GL_RGBA8,
+                    width,
+                    height,
+                    0,
+                    GL.GL_RGBA,
+                    GL.GL_UNSIGNED_BYTE,
+                    pixels,
                 )
             else:
                 GL.glTexSubImage2D(
-                    GL.GL_TEXTURE_2D, 0, 0, 0, width, height,
-                    GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels,
+                    GL.GL_TEXTURE_2D,
+                    0,
+                    0,
+                    0,
+                    width,
+                    height,
+                    GL.GL_RGBA,
+                    GL.GL_UNSIGNED_BYTE,
+                    pixels,
                 )
             self._gl_check(f"texture/{key}/update")
             return texture
@@ -427,17 +503,31 @@ if GL is not None:
             for _ in range(2):
                 texture = int(GL.glGenTextures(1))
                 GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
-                GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
-                GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+                GL.glTexParameteri(
+                    GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR
+                )
+                GL.glTexParameteri(
+                    GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR
+                )
                 GL.glTexImage2D(
-                    GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
-                    GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None,
+                    GL.GL_TEXTURE_2D,
+                    0,
+                    GL.GL_RGBA8,
+                    width,
+                    height,
+                    0,
+                    GL.GL_RGBA,
+                    GL.GL_UNSIGNED_BYTE,
+                    None,
                 )
                 framebuffer = int(GL.glGenFramebuffers(1))
                 GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, framebuffer)
                 GL.glFramebufferTexture2D(
-                    GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0,
-                    GL.GL_TEXTURE_2D, texture, 0,
+                    GL.GL_FRAMEBUFFER,
+                    GL.GL_COLOR_ATTACHMENT0,
+                    GL.GL_TEXTURE_2D,
+                    texture,
+                    0,
                 )
                 framebuffer_status = GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER)
                 if framebuffer_status != GL.GL_FRAMEBUFFER_COMPLETE:
@@ -448,19 +538,24 @@ if GL is not None:
                 self._gl_check("framebuffer/attach-color-texture")
                 self._target_textures.append(texture)
                 self._framebuffers.append(framebuffer)
-            GL.glBindFramebuffer(
-                GL.GL_FRAMEBUFFER, self.defaultFramebufferObject()
-            )
+            GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.defaultFramebufferObject())
             self._gl_check("framebuffer/complete")
             self._target_size = size
 
         def _uniform_location(self, name: str) -> int:
             return GL.glGetUniformLocation(self._program, name)
 
-        def _draw_pass(self, base_texture: int, layer_texture: int = 0,
-                       rect=(0.0, 0.0, 1.0, 1.0), blend=0, opacity=1.0,
-                       use_layer=False, base_is_fbo=False,
-                       gpu_instrument: dict | None = None) -> None:
+        def _draw_pass(
+            self,
+            base_texture: int,
+            layer_texture: int = 0,
+            rect=(0.0, 0.0, 1.0, 1.0),
+            blend=0,
+            opacity=1.0,
+            use_layer=False,
+            base_is_fbo=False,
+            gpu_instrument: dict | None = None,
+        ) -> None:
             self._gl_drain_errors()
             GL.glUseProgram(self._program)
             GL.glActiveTexture(GL.GL_TEXTURE0)
@@ -485,16 +580,23 @@ if GL is not None:
                 GL.glUniform1i(self._uniform_location("uProcKind"), proc_kind)
                 GL.glUniform4f(
                     self._uniform_location("uProcA"),
-                    settings["density"], settings["speed"], settings["response"],
+                    settings["density"],
+                    settings["speed"],
+                    settings["response"],
                     params["seconds"],
                 )
                 GL.glUniform4f(
                     self._uniform_location("uProcB"),
-                    metrics["low"], metrics["mid"], metrics["high"], metrics["energy"],
+                    metrics["low"],
+                    metrics["mid"],
+                    metrics["high"],
+                    metrics["energy"],
                 )
                 GL.glUniform4f(
                     self._uniform_location("uProcC"),
-                    metrics["centroid"], metrics["cross"], metrics["coherence"],
+                    metrics["centroid"],
+                    metrics["cross"],
+                    metrics["coherence"],
                     metrics["transient"],
                 )
                 GL.glUniform1f(
@@ -506,7 +608,9 @@ if GL is not None:
                 ink = params["ink"]
                 GL.glUniform3f(
                     self._uniform_location("uProcInk"),
-                    ink[0] / 255.0, ink[1] / 255.0, ink[2] / 255.0,
+                    ink[0] / 255.0,
+                    ink[1] / 255.0,
+                    ink[2] / 255.0,
                 )
                 GL.glUniform1i(
                     self._uniform_location("uProcMonochrome"),
@@ -530,7 +634,9 @@ if GL is not None:
                     target.scale(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
                     x = (self.width() - target.width()) // 2
                     y = (self.height() - target.height()) // 2
-                    painter.drawPixmap(x, y, target.width(), target.height(), self._fallback)
+                    painter.drawPixmap(
+                        x, y, target.width(), target.height(), self._fallback
+                    )
                 painter.end()
                 return
             try:
@@ -563,7 +669,9 @@ if GL is not None:
                         texture = self._texture(f"layer-{index}", image)
 
                     next_target = 1 - current
-                    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self._framebuffers[next_target])
+                    GL.glBindFramebuffer(
+                        GL.GL_FRAMEBUFFER, self._framebuffers[next_target]
+                    )
                     rect = (
                         float(x) / width,
                         float(y) / height,
@@ -573,9 +681,13 @@ if GL is not None:
                     # OpenGL UV origin is lower-left; convert the top-origin
                     # image-space rectangle into the framebuffer's UV space.
                     self._draw_pass(
-                        self._target_textures[current], texture, rect,
+                        self._target_textures[current],
+                        texture,
+                        rect,
                         self.BLEND_CODES.get(layer["blend_mode"], 0),
-                        float(layer["opacity"]), True, True,
+                        float(layer["opacity"]),
+                        True,
+                        True,
                         gpu_instrument=gpu_instrument,
                     )
                     current = next_target
@@ -591,7 +703,9 @@ if GL is not None:
                 widget_h = max(1, int(round(self.height() * dpr)))
                 scale = min(widget_w / width, widget_h / height)
                 view_w, view_h = int(width * scale), int(height * scale)
-                GL.glViewport((widget_w - view_w) // 2, (widget_h - view_h) // 2, view_w, view_h)
+                GL.glViewport(
+                    (widget_w - view_w) // 2, (widget_h - view_h) // 2, view_w, view_h
+                )
                 self._draw_pass(self._target_textures[current], base_is_fbo=True)
             except Exception as exc:
                 # Disable only the failed GL path; the pre-rendered CPU frame
@@ -606,6 +720,7 @@ if GL is not None:
                 self.update()
 
 else:
+
     class GpuCompositionCanvas(CompositionCanvas):
         """CPU-only canvas when PyOpenGL is not installed."""
 
@@ -615,7 +730,9 @@ else:
         def __init__(self, assets=None, parent=None):
             super().__init__(assets, parent)
             self.setMinimumSize(320, 240)
-            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
             self.gl_version = "CPU fallback · PyOpenGL unavailable"
             self.gpu_ready = False
 
@@ -627,8 +744,11 @@ else:
             for layer in scene["layers"]:
                 if layer.get("image") is not None:
                     VisualCompositor._blend_at(
-                        image, layer["image"], layer["position"],
-                        layer.get("blend_mode", "Normal"), layer.get("opacity", 1.0),
+                        image,
+                        layer["image"],
+                        layer["position"],
+                        layer.get("blend_mode", "Normal"),
+                        layer.get("opacity", 1.0),
                     )
             return image
 

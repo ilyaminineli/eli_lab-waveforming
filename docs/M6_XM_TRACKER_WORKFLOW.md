@@ -58,7 +58,7 @@ in this file.
 Pattern note counts:
 
 | Pattern | Note events | Active channels |
-|---|---:|---|
+| --- | ---: | --- |
 | P00 | 17 | 1 |
 | P01 | 21 | 1, 4 |
 | P02 | 15 | 3, 4 |
@@ -82,11 +82,11 @@ Pattern note counts:
 1. Use the visible **+ XM** button, PROJECT → Import XM tracker score… (Ctrl+Shift+M), or select an .xm file in the audio import dialog.
 2. For mixed media folders, use **+ FOLDER**. The folder scan discovers audio stems and XM score files separately; XM files are never passed to the audio decoder.
 3. WAVEFORMING extracts the order cues and displays TRACKER markers on the timeline.
-3. The timeline tempo is set to the module's initial BPM.
-4. Add a TRACKER MATRIX layer from the generator selector.
-5. Import the corresponding WAV/FLAC mix or stems for playback and continuous
+4. The timeline tempo is set to the module's initial BPM.
+5. Add a TRACKER MATRIX layer from the generator selector.
+6. Import the corresponding WAV/FLAC mix or stems for playback and continuous
    audio-reactive response.
-6. Save the .wfp project. The compact tracker score (note/instrument maps and cue
+7. Save the .wfp project. The compact tracker score (note/instrument maps and cue
    timing) is embedded in the project, so offline export does not need to reopen
    the original XM file.
 

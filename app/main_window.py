@@ -8,10 +8,27 @@ from time import monotonic, time_ns
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
-    QFileDialog, QFrame, QSlider, QComboBox, QCheckBox, QSplitter,
-    QMessageBox, QGroupBox, QFormLayout, QScrollArea, QListWidget,
-    QListWidgetItem, QAbstractItemView, QDoubleSpinBox, QProgressDialog,
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QFileDialog,
+    QFrame,
+    QSlider,
+    QComboBox,
+    QCheckBox,
+    QSplitter,
+    QMessageBox,
+    QGroupBox,
+    QFormLayout,
+    QScrollArea,
+    QListWidget,
+    QListWidgetItem,
+    QAbstractItemView,
+    QDoubleSpinBox,
+    QProgressDialog,
 )
 
 from app.timeline_widget import TimelineWidget
@@ -26,14 +43,17 @@ from engine.tracker.xm import load_xm, tracker_packet_at
 from engine.visual.assets import AssetCatalog
 from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.composition_director import (
-    CompositionDirector, create_auto_composition, is_default_placeholder_composition,
+    CompositionDirector,
+    create_auto_composition,
+    is_default_placeholder_composition,
     vary_composition,
 )
 from engine.visual.compositor import PREVIEW_SIZE, PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import LayerStack, VisualLayer
 from engine.visual.preview_worker import (
-    PreviewRenderWorker, is_newer_preview_frame,
+    PreviewRenderWorker,
+    is_newer_preview_frame,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,7 +78,9 @@ def clamp(value: float, low: float, high: float) -> float:
 
 
 class SourceRow(QWidget):
-    def __init__(self, source: AudioSource, track_id: str, remove_callback, parent=None):
+    def __init__(
+        self, source: AudioSource, track_id: str, remove_callback, parent=None
+    ):
         super().__init__(parent)
         self.source = source
         self.track_id = track_id
@@ -90,12 +112,24 @@ class SourceRow(QWidget):
         remove.setFixedWidth(23)
         remove.setToolTip("Remove source")
 
-        for widget in (name, mute, solo, analysis, QLabel("G"), gain, QLabel("P"), pan, remove):
+        for widget in (
+            name,
+            mute,
+            solo,
+            analysis,
+            QLabel("G"),
+            gain,
+            QLabel("P"),
+            pan,
+            remove,
+        ):
             row.addWidget(widget)
         row.addStretch(1)
         mute.toggled.connect(lambda value: setattr(source, "muted", value))
         solo.toggled.connect(lambda value: setattr(source, "solo", value))
-        analysis.toggled.connect(lambda value: setattr(source, "analysis_enabled", value))
+        analysis.toggled.connect(
+            lambda value: setattr(source, "analysis_enabled", value)
+        )
         gain.valueChanged.connect(lambda value: setattr(source, "gain", value / 100.0))
         pan.valueChanged.connect(lambda value: setattr(source, "pan", value / 100.0))
         remove.clicked.connect(lambda: remove_callback(self.track_id, self))
@@ -220,10 +254,14 @@ class MainWindow(QMainWindow):
         logo_path = ROOT / "resources" / "widgets" / "eli_lab_waveformer_logo.png"
         if logo_path.is_file():
             pixmap = QPixmap(str(logo_path))
-            self.logo.setPixmap(pixmap.scaled(
-                116, 48, Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            ))
+            self.logo.setPixmap(
+                pixmap.scaled(
+                    116,
+                    48,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
             self.logo.setStyleSheet("background:#101010; padding:2px; border:0;")
             self.logo.setToolTip("eli_lab / WAVEFORMING")
             self.logo.setFixedSize(120, 50)
@@ -254,7 +292,9 @@ class MainWindow(QMainWindow):
         add_source.setToolTip("Import audio files / stems")
         add_source.clicked.connect(self.import_audio)
         add_folder = QPushButton("+ FOLDER")
-        add_folder.setToolTip("Import audio stems and any XM tracker score from a folder")
+        add_folder.setToolTip(
+            "Import audio stems and any XM tracker score from a folder"
+        )
         add_folder.clicked.connect(self.import_audio_folder)
         add_tracker = QPushButton("+ XM")
         add_tracker.setToolTip("Import an XM tracker score (not an audio source)")
@@ -329,7 +369,9 @@ class MainWindow(QMainWindow):
         layers_box = QGroupBox("LAYER STACK  ·  BOTTOM TO TOP")
         layers_layout = QVBoxLayout(layers_box)
         self.layer_list = QListWidget()
-        self.layer_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.layer_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
         self.layer_list.setMinimumHeight(100)
         self.layer_list.setMaximumHeight(142)
         self.layer_list.itemSelectionChanged.connect(self._select_layer)
@@ -341,8 +383,13 @@ class MainWindow(QMainWindow):
         self.layer_up_button = QPushButton("↑")
         self.layer_down_button = QPushButton("↓")
         self.remove_layer_button = QPushButton("REMOVE")
-        for button in (self.add_layer_button, self.duplicate_layer_button,
-                       self.layer_up_button, self.layer_down_button, self.remove_layer_button):
+        for button in (
+            self.add_layer_button,
+            self.duplicate_layer_button,
+            self.layer_up_button,
+            self.layer_down_button,
+            self.remove_layer_button,
+        ):
             layer_buttons.addWidget(button)
         layers_layout.addLayout(layer_buttons)
         left.addWidget(layers_box)
@@ -361,7 +408,18 @@ class MainWindow(QMainWindow):
         self.layer_palette = QComboBox()
         self.layer_palette.addItems(["EDITORIAL TRICOLOR", "MONOCHROME"])
         self.layer_blend = QComboBox()
-        self.layer_blend.addItems(["Normal", "Add", "Screen", "Multiply", "Difference", "Overlay", "Lighten", "Darken"])
+        self.layer_blend.addItems(
+            [
+                "Normal",
+                "Add",
+                "Screen",
+                "Multiply",
+                "Difference",
+                "Overlay",
+                "Lighten",
+                "Darken",
+            ]
+        )
         self.layer_opacity = self._make_slider(0, 100, 100)
         self.layer_x = self._make_slider(-50, 50, 0)
         self.layer_y = self._make_slider(-50, 50, 0)
@@ -374,7 +432,9 @@ class MainWindow(QMainWindow):
         self.layer_pass_map = QComboBox()
         self.layer_pass_map.addItems(self.compositor.pass_names())
         self.layer_pass_mode = QComboBox()
-        self.layer_pass_mode.addItems(["PAPER RELIEF", "DISPLACE", "NORMAL LIGHT", "TEXTURE", "NONE"])
+        self.layer_pass_mode.addItems(
+            ["PAPER RELIEF", "DISPLACE", "NORMAL LIGHT", "TEXTURE", "NONE"]
+        )
         self.layer_pass_strength = self._make_slider(0, 100, 55)
 
         layer_form.addRow("GENERATOR", self.layer_generator)
@@ -443,7 +503,9 @@ class MainWindow(QMainWindow):
         preview_header.addWidget(self.preview_quality)
         self.preview_perf_label = QLabel("RENDER  —")
         self.preview_perf_label.setObjectName("muted")
-        self.preview_perf_label.setToolTip("Live renderer timing appears after the first completed frame.")
+        self.preview_perf_label.setToolTip(
+            "Live renderer timing appears after the first completed frame."
+        )
         preview_header.addWidget(self.preview_perf_label)
         preview_header.addWidget(canvas_label)
         preview_header.addWidget(self.zoom)
@@ -510,8 +572,12 @@ class MainWindow(QMainWindow):
         self.timeline_widget.seek_requested.connect(self._seek_to_time)
         timeline_layout.addWidget(self.timeline_widget)
         self.bpm.valueChanged.connect(self._bpm_changed)
-        self.add_marker_button.clicked.connect(lambda: self._add_timeline_marker("MARKER"))
-        self.add_section_button.clicked.connect(lambda: self._add_timeline_marker("SECTION"))
+        self.add_marker_button.clicked.connect(
+            lambda: self._add_timeline_marker("MARKER")
+        )
+        self.add_section_button.clicked.connect(
+            lambda: self._add_timeline_marker("SECTION")
+        )
         self.delete_marker_button.clicked.connect(self._delete_timeline_marker)
         self.export_button.clicked.connect(self.export_video)
         right_layout.addWidget(timeline_box)
@@ -532,14 +598,22 @@ class MainWindow(QMainWindow):
 
         # All layer property edits update the selected layer, never the audio callback.
         for control in (
-                self.layer_generator, self.layer_source, self.layer_palette,
-                self.layer_blend, self.layer_rotation, self.layer_mask,
-                self.layer_pass_map, self.layer_pass_mode,
+            self.layer_generator,
+            self.layer_source,
+            self.layer_palette,
+            self.layer_blend,
+            self.layer_rotation,
+            self.layer_mask,
+            self.layer_pass_map,
+            self.layer_pass_mode,
         ):
             control.currentTextChanged.connect(self._layer_property_changed)
         for control in (
-                self.layer_opacity, self.layer_x, self.layer_y, self.layer_scale,
-                self.layer_pass_strength,
+            self.layer_opacity,
+            self.layer_x,
+            self.layer_y,
+            self.layer_scale,
+            self.layer_pass_strength,
         ):
             control.valueChanged.connect(self._layer_property_changed)
         for control in (self.feedback_enabled,):
@@ -559,7 +633,10 @@ class MainWindow(QMainWindow):
         if item is None:
             return None
         layer_id = item.data(Qt.ItemDataRole.UserRole)
-        return next((layer for layer in self.layer_stack.layers if layer.layer_id == layer_id), None)
+        return next(
+            (layer for layer in self.layer_stack.layers if layer.layer_id == layer_id),
+            None,
+        )
 
     def _refresh_layer_list(self, select_id: str | None = None) -> None:
         self.layer_list.blockSignals(True)
@@ -571,8 +648,14 @@ class MainWindow(QMainWindow):
                 channel = f"  ·  CH {list(self.sources).index(layer.source_id) + 1:02d}"
             item = QListWidgetItem(layer.name + channel)
             item.setData(Qt.ItemDataRole.UserRole, layer.layer_id)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
-            item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
+            item.setFlags(
+                item.flags()
+                | Qt.ItemFlag.ItemIsUserCheckable
+                | Qt.ItemFlag.ItemIsSelectable
+            )
+            item.setCheckState(
+                Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked
+            )
             self.layer_list.addItem(item)
             self._item_ids[layer.layer_id] = item
             if layer.layer_id == select_id:
@@ -604,7 +687,9 @@ class MainWindow(QMainWindow):
         )
         self._settings.seed = seed
         self.preview_worker.request_reset()
-        selected = self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+        selected = (
+            self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+        )
         self._refresh_layer_list(selected)
         self._render_frame()
 
@@ -614,7 +699,9 @@ class MainWindow(QMainWindow):
             return
         seed = int(time_ns() & 0x7FFFFFFF)
         selected = self._current_layer()
-        selected_id = selected.layer_id if selected else self.layer_stack.layers[0].layer_id
+        selected_id = (
+            selected.layer_id if selected else self.layer_stack.layers[0].layer_id
+        )
         self.layer_stack.layers = vary_composition(
             self.layer_stack.layers, self._available_generator_names(), seed
         )
@@ -656,14 +743,19 @@ class MainWindow(QMainWindow):
         layer_id = layer.layer_id
         self.layer_stack.remove(layer_id)
         self.preview_worker.request_reset()
-        selected = self.layer_stack.layers[-1].layer_id if self.layer_stack.layers else None
+        selected = (
+            self.layer_stack.layers[-1].layer_id if self.layer_stack.layers else None
+        )
         self._refresh_layer_list(selected)
         self._render_frame()
 
     def _layer_visibility_changed(self, item: QListWidgetItem) -> None:
         self._auto_composed = False
         layer_id = item.data(Qt.ItemDataRole.UserRole)
-        layer = next((entry for entry in self.layer_stack.layers if entry.layer_id == layer_id), None)
+        layer = next(
+            (entry for entry in self.layer_stack.layers if entry.layer_id == layer_id),
+            None,
+        )
         if layer is not None:
             layer.visible = item.checkState() == Qt.CheckState.Checked
             self._render_frame()
@@ -672,10 +764,19 @@ class MainWindow(QMainWindow):
         layer = self._current_layer()
         self._updating_layer_controls = True
         controls = (
-            self.layer_generator, self.layer_source, self.layer_palette,
-            self.layer_blend, self.layer_opacity, self.layer_x, self.layer_y,
-            self.layer_scale, self.layer_rotation, self.layer_mask,
-            self.layer_pass_map, self.layer_pass_mode, self.layer_pass_strength,
+            self.layer_generator,
+            self.layer_source,
+            self.layer_palette,
+            self.layer_blend,
+            self.layer_opacity,
+            self.layer_x,
+            self.layer_y,
+            self.layer_scale,
+            self.layer_rotation,
+            self.layer_mask,
+            self.layer_pass_map,
+            self.layer_pass_mode,
+            self.layer_pass_strength,
         )
         for control in controls:
             control.setEnabled(layer is not None)
@@ -725,7 +826,9 @@ class MainWindow(QMainWindow):
             channel = ""
             if layer.source_id and layer.source_id in self.sources:
                 channel = f"  ·  CH {list(self.sources).index(layer.source_id) + 1:02d}"
-            label = layer.name + ("  ·  " + layer.generator if layer.name != layer.generator else "")
+            label = layer.name + (
+                "  ·  " + layer.generator if layer.name != layer.generator else ""
+            )
             self.layer_list.blockSignals(True)
             item.setText(label + channel)
             self.layer_list.blockSignals(False)
@@ -742,7 +845,9 @@ class MainWindow(QMainWindow):
 
     def import_tracker(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
-            self, "Import XM tracker score", "",
+            self,
+            "Import XM tracker score",
+            "",
             "FastTracker / MilkyTracker module (*.xm);;All files (*)",
         )
         if not filename:
@@ -763,7 +868,8 @@ class MainWindow(QMainWindow):
         self._tracker_data = tracker_data
         self._tracker_duration = module.duration
         self.timeline.markers = [
-            marker for marker in self.timeline.markers
+            marker
+            for marker in self.timeline.markers
             if marker.kind.upper() != "TRACKER"
         ]
         self.timeline.set_duration(max(self.audio.duration, self._tracker_duration))
@@ -799,7 +905,9 @@ class MainWindow(QMainWindow):
 
     def import_audio(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Import audio sources or XM score", "",
+            self,
+            "Import audio sources or XM score",
+            "",
             "Audio / tracker files (*.wav *.flac *.aiff *.aif *.ogg *.mp3 *.xm);;All files (*)",
         )
         self._import_audio_paths([Path(path) for path in paths])
@@ -815,7 +923,8 @@ class MainWindow(QMainWindow):
         paths = [*audio_paths, *tracker_paths]
         if not paths:
             QMessageBox.information(
-                self, "Import folder",
+                self,
+                "Import folder",
                 "No supported audio files or XM tracker scores were found.",
             )
             return
@@ -828,15 +937,19 @@ class MainWindow(QMainWindow):
 
     def _import_audio_paths(self, paths: list[Path]) -> None:
         rebuild_auto_composition = (
-                self._auto_composed
-                or is_default_placeholder_composition(self.layer_stack.layers)
+            self._auto_composed
+            or is_default_placeholder_composition(self.layer_stack.layers)
         )
         imported = 0
         tracker_loaded = False
         errors: list[str] = []
         limit_reached = False
-        tracker_paths = [Path(path) for path in paths if Path(path).suffix.lower() == ".xm"]
-        audio_paths = [Path(path) for path in paths if Path(path).suffix.lower() != ".xm"]
+        tracker_paths = [
+            Path(path) for path in paths if Path(path).suffix.lower() == ".xm"
+        ]
+        audio_paths = [
+            Path(path) for path in paths if Path(path).suffix.lower() != ".xm"
+        ]
 
         # An XM is a tracker score, never an audio file. When users select it
         # from the audio dialog or a mixed folder, route it to the score parser.
@@ -870,16 +983,17 @@ class MainWindow(QMainWindow):
 
         if limit_reached:
             QMessageBox.information(
-                self, "Source limit",
+                self,
+                "Source limit",
                 f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources. "
                 "The remaining files were not imported.",
             )
         if errors:
             QMessageBox.warning(
-                self, "Some audio files could not be imported",
-                "\n".join(errors[:10]) + (
-                    f"\n…and {len(errors) - 10} more." if len(errors) > 10 else ""
-                ),
+                self,
+                "Some audio files could not be imported",
+                "\n".join(errors[:10])
+                + (f"\n…and {len(errors) - 10} more." if len(errors) > 10 else ""),
             )
         if imported:
             self._replace_feature_bus()
@@ -915,7 +1029,9 @@ class MainWindow(QMainWindow):
         for source in self.sources.values():
             if source.group_id:
                 groups[source.group_id] = source.group_name or source.group_id
-        for group_id, group_name in sorted(groups.items(), key=lambda item: item[1].casefold()):
+        for group_id, group_name in sorted(
+            groups.items(), key=lambda item: item[1].casefold()
+        ):
             parent_name = Path(group_id).parent.name
             label = f"{parent_name} / {group_name}" if parent_name else group_name
             self.layer_source.addItem(f"GROUP / {label}", f"group:{group_id}")
@@ -943,15 +1059,21 @@ class MainWindow(QMainWindow):
             if rebuild_auto_composition and not self.sources:
                 self._auto_composed = False
                 default = VisualLayer(
-                    name="PHASE LATTICE 01", generator="PHASE LATTICE",
-                    pass_mode="NONE", pass_map="DISPLACEMENT",
+                    name="PHASE LATTICE 01",
+                    generator="PHASE LATTICE",
+                    pass_mode="NONE",
+                    pass_map="DISPLACEMENT",
                     pass_strength=0.0,
                 )
                 self.layer_stack.layers = [default]
             selected = (
                 self._current_layer().layer_id
-                if self._current_layer() else
-                self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+                if self._current_layer()
+                else (
+                    self.layer_stack.layers[0].layer_id
+                    if self.layer_stack.layers
+                    else None
+                )
             )
             self._refresh_layer_list(selected)
             self._render_frame()
@@ -962,7 +1084,8 @@ class MainWindow(QMainWindow):
 
     def save_project(self) -> None:
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Save WAVEFORMING project",
+            self,
+            "Save WAVEFORMING project",
             str(self._project_path or (ROOT / "untitled.wfp")),
             "WAVEFORMING project (*.wfp);;JSON project (*.json)",
         )
@@ -1010,7 +1133,9 @@ class MainWindow(QMainWindow):
 
     def load_project(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
-            self, "Open WAVEFORMING project", "",
+            self,
+            "Open WAVEFORMING project",
+            "",
             "WAVEFORMING project (*.wfp *.json);;All files (*)",
         )
         if not filename:
@@ -1048,7 +1173,10 @@ class MainWindow(QMainWindow):
                 saved_group_id = str(saved.get("group_id", ""))
                 # Early project versions stored only the leaf folder name. Keep
                 # the newer absolute directory identity in that legacy case.
-                if saved_group_id and saved_group_id.casefold() != path.parent.name.casefold():
+                if (
+                    saved_group_id
+                    and saved_group_id.casefold() != path.parent.name.casefold()
+                ):
                     source.group_id = saved_group_id
                 source.group_name = str(saved.get("group_name") or source.group_name)
                 source.gain = float(saved.get("gain", 1.0))
@@ -1067,17 +1195,21 @@ class MainWindow(QMainWindow):
         self._tracker_data = data.get("tracker_data") or {}
         if not isinstance(self._tracker_data, dict):
             self._tracker_data = {}
-        self._tracker_duration = max(0.0, float(self._tracker_data.get("duration", 0.0)))
+        self._tracker_duration = max(
+            0.0, float(self._tracker_data.get("duration", 0.0))
+        )
         self._settings = GeneratorSettings(**data.get("settings", {}))
         self.complexity.setValue(int(self._settings.complexity))
         self.motion.setValue(int(self._settings.motion))
         self.sensitivity.setValue(int(self._settings.sensitivity))
         self.layer_stack.from_list(data.get("layers", []))
         self._auto_composed = bool(data.get("auto_composed", False))
-        valid_groups = {source.group_id for source in self.sources.values() if source.group_id}
+        valid_groups = {
+            source.group_id for source in self.sources.values() if source.group_id
+        }
         for layer in self.layer_stack.layers:
             if layer.source_id.startswith("group:"):
-                group_id = layer.source_id[len("group:"):]
+                group_id = layer.source_id[len("group:") :]
                 if group_id not in valid_groups:
                     layer.source_id = ""
             elif layer.source_id:
@@ -1104,7 +1236,9 @@ class MainWindow(QMainWindow):
         self._last_position = 0.0
         self.audio.seek(0.0)
         self._refresh_source_options()
-        selected = self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+        selected = (
+            self.layer_stack.layers[0].layer_id if self.layer_stack.layers else None
+        )
         self._refresh_layer_list(selected)
         self._update_timeline_duration()
         self._update_status()
@@ -1116,16 +1250,21 @@ class MainWindow(QMainWindow):
         self.audio.request_preview_analysis()
         if missing_sources:
             QMessageBox.warning(
-                self, "Some audio sources were not loaded",
+                self,
+                "Some audio sources were not loaded",
                 "The project was opened, but these sources are unavailable:\n\n"
                 + "\n".join(missing_sources[:12]),
             )
 
     @staticmethod
     def _export_source_samples(source: AudioSource):
-        samples = source.samples if source.samples is not None else source.load_into_memory()
+        samples = (
+            source.samples if source.samples is not None else source.load_into_memory()
+        )
         if getattr(samples, "ndim", 0) != 2 or samples.shape[1] < 1:
-            raise ValueError(f"Audio source {source.name!r} has an invalid channel layout.")
+            raise ValueError(
+                f"Audio source {source.name!r} has an invalid channel layout."
+            )
         if samples.shape[1] == 1:
             samples = samples.repeat(2, axis=1)
         elif samples.shape[1] > 2:
@@ -1135,20 +1274,27 @@ class MainWindow(QMainWindow):
     def export_video(self) -> None:
         if resolve_ffmpeg() is None:
             QMessageBox.warning(
-                self, "FFmpeg is unavailable",
+                self,
+                "FFmpeg is unavailable",
                 "MP4 export needs FFmpeg. Reinstall the project requirements "
                 "(pip install -r requirements.txt), or set FFMPEG_BINARY to ffmpeg.exe. "
                 "A system-wide PATH change is no longer required when imageio-ffmpeg is installed.",
             )
             return
         if not self.sources:
-            QMessageBox.information(self, "Export video", "Import audio sources before exporting.")
+            QMessageBox.information(
+                self, "Export video", "Import audio sources before exporting."
+            )
             return
         if self._export_worker is not None and self._export_worker.isRunning():
-            QMessageBox.information(self, "Export video", "An export is already running.")
+            QMessageBox.information(
+                self, "Export video", "An export is already running."
+            )
             return
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Export deterministic video", "",
+            self,
+            "Export deterministic video",
+            "",
             "MP4 video (*.mp4)",
         )
         if not filename:
@@ -1253,7 +1399,9 @@ class MainWindow(QMainWindow):
         for target in Timeline.TARGETS:
             lane = self.timeline.lanes[target]
             if not lane.points:
-                self.timeline.record(target, 0.0, float(getattr(self._settings, target)))
+                self.timeline.record(
+                    target, 0.0, float(getattr(self._settings, target))
+                )
         self.timeline_widget.set_timeline(self.timeline)
         self._render_frame()
 
@@ -1261,14 +1409,20 @@ class MainWindow(QMainWindow):
         self._settings.complexity = float(self.complexity.value())
         self._settings.motion = float(self.motion.value())
         self._settings.sensitivity = float(self.sensitivity.value())
-        if self.record_automation.isChecked() and self.audio.is_playing and not self._loading_project:
+        if (
+            self.record_automation.isChecked()
+            and self.audio.is_playing
+            and not self._loading_project
+        ):
             target = {
                 self.complexity: "complexity",
                 self.motion: "motion",
                 self.sensitivity: "sensitivity",
             }.get(self.sender())
             if target:
-                self.timeline.record(target, self._last_position, float(getattr(self._settings, target)))
+                self.timeline.record(
+                    target, self._last_position, float(getattr(self._settings, target))
+                )
                 self.timeline_widget.set_timeline(self.timeline)
         self._render_frame()
 
@@ -1299,10 +1453,18 @@ class MainWindow(QMainWindow):
             frame_packet["tracker_cue"] = tracker_cue
         director_output = self.director.update(frame_packet, audio_seconds)
 
-        if director_output.request_variation and self.audio.is_playing and self.layer_stack.layers:
+        if (
+            director_output.request_variation
+            and self.audio.is_playing
+            and self.layer_stack.layers
+        ):
             selected = self._current_layer()
-            selected_id = selected.layer_id if selected else self.layer_stack.layers[0].layer_id
-            seed = (int(self._settings.seed) + int(seconds * 10000.0) * 104729) & 0x7FFFFFFF
+            selected_id = (
+                selected.layer_id if selected else self.layer_stack.layers[0].layer_id
+            )
+            seed = (
+                int(self._settings.seed) + int(seconds * 10000.0) * 104729
+            ) & 0x7FFFFFFF
             self.layer_stack.layers = vary_composition(
                 self.layer_stack.layers, self._available_generator_names(), seed
             )
@@ -1312,8 +1474,12 @@ class MainWindow(QMainWindow):
 
         base_settings = self.timeline.settings_at(seconds, self._settings)
         effective_settings = GeneratorSettings(
-            complexity=clamp(base_settings.complexity * director_output.complexity_scale, 5.0, 100.0),
-            motion=clamp(base_settings.motion * director_output.motion_scale, 0.0, 100.0),
+            complexity=clamp(
+                base_settings.complexity * director_output.complexity_scale, 5.0, 100.0
+            ),
+            motion=clamp(
+                base_settings.motion * director_output.motion_scale, 0.0, 100.0
+            ),
             sensitivity=base_settings.sensitivity,
             seed=base_settings.seed,
         )
@@ -1335,16 +1501,14 @@ class MainWindow(QMainWindow):
             feedback_shift=self.feedback_shift.value() / 100.0,
             sequence=self._render_sequence,
             gpu_composite=(
-                    not force_cpu_preview
-                    and bool(getattr(self.canvas, "gpu_ready", False))
-                    and not self._gpu_preview_disabled
-                    and not self.feedback_enabled.isChecked()
+                not force_cpu_preview
+                and bool(getattr(self.canvas, "gpu_ready", False))
+                and not self._gpu_preview_disabled
+                and not self.feedback_enabled.isChecked()
             ),
         )
         if force_cpu_preview:
-            self._force_cpu_preview_frames = max(
-                0, self._force_cpu_preview_frames - 1
-            )
+            self._force_cpu_preview_frames = max(0, self._force_cpu_preview_frames - 1)
 
     def _on_preview_frame(self, image, seconds: float, sequence: int) -> None:
         # A render may finish after several newer requests have been queued.
@@ -1399,9 +1563,7 @@ class MainWindow(QMainWindow):
         self.status.setText("CPU PREVIEW ACTIVE · GPU DISABLED")
         self.status.setToolTip(str(message))
         self.preview_worker.request_reset()
-        self._force_cpu_preview_frames = max(
-            self._force_cpu_preview_frames, 2
-        )
+        self._force_cpu_preview_frames = max(self._force_cpu_preview_frames, 2)
         self._render_frame()
 
     def _on_features(self, packet: dict) -> None:
@@ -1457,7 +1619,9 @@ class MainWindow(QMainWindow):
     def _seek_to_time(self, seconds: float) -> None:
         duration = self.audio.duration
         seek_duration = duration if duration > 0 else self._tracker_duration
-        target = min(max(0.0, float(seconds)), seek_duration) if seek_duration > 0 else 0.0
+        target = (
+            min(max(0.0, float(seconds)), seek_duration) if seek_duration > 0 else 0.0
+        )
         if target < self._last_position:
             self.feature_bus.reset()
             self.director.reset()
@@ -1487,12 +1651,15 @@ class MainWindow(QMainWindow):
         # Tracker markers describe the imported score; manual deletion should
         # target only user-authored markers/sections.
         candidates = [
-            marker for marker in self.timeline.markers
+            marker
+            for marker in self.timeline.markers
             if marker.kind.upper() != "TRACKER"
         ]
         if not candidates:
             return
-        nearest = min(candidates, key=lambda marker: abs(marker.time - self._last_position))
+        nearest = min(
+            candidates, key=lambda marker: abs(marker.time - self._last_position)
+        )
         if abs(nearest.time - self._last_position) <= 2.0:
             self.timeline.remove_marker(nearest.marker_id)
             self.timeline_widget.set_timeline(self.timeline)
@@ -1504,7 +1671,9 @@ class MainWindow(QMainWindow):
             self.timeline_widget.set_duration(duration)
 
     def _update_time_label(self) -> None:
-        display_duration = max(float(self.audio.duration), float(self._tracker_duration))
+        display_duration = max(
+            float(self.audio.duration), float(self._tracker_duration)
+        )
         self.time_label.setText(
             f"{format_time(self._last_position)} / {format_time(display_duration)}"
         )
@@ -1512,7 +1681,11 @@ class MainWindow(QMainWindow):
 
     def _update_status(self) -> None:
         count = len(self.sources)
-        state = "PLAYING" if self.audio.is_playing else "PAUSED" if self._last_position > 0 else "READY"
+        state = (
+            "PLAYING"
+            if self.audio.is_playing
+            else "PAUSED" if self._last_position > 0 else "READY"
+        )
         if count:
             self.status.setText(
                 f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
@@ -1526,7 +1699,10 @@ class MainWindow(QMainWindow):
         if self.audio.is_playing:
             self.audio.pause()
         else:
-            if self.audio.duration > 0 and self.audio.position >= self.audio.duration - 0.03:
+            if (
+                self.audio.duration > 0
+                and self.audio.position >= self.audio.duration - 0.03
+            ):
                 self.audio.seek(0.0)
                 self._last_position = 0.0
                 self.preview_worker.request_reset()

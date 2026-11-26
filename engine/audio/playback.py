@@ -71,6 +71,7 @@ class PlaybackEngine(QObject):
         # does not require an active PulseAudio/WASAPI/CoreAudio output device.
         try:
             import sounddevice as sd
+
             device = sd.query_devices(kind="output")
             return int(round(float(device["default_samplerate"])))
         except Exception:
@@ -101,12 +102,20 @@ class PlaybackEngine(QObject):
         """Add a prepared source, streaming long matching-rate files from disk."""
         with self._lock:
             if len(self._tracks) >= MAX_AUDIO_SOURCES:
-                raise ValueError(f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources.")
+                raise ValueError(
+                    f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources."
+                )
 
         stream = None
         data: np.ndarray | None = source.samples
-        if data is None and source.storage_mode == "stream" and source.sample_rate == self.sample_rate:
-            stream = StreamedAudioBuffer(source.path, source.frame_count, source.sample_rate)
+        if (
+            data is None
+            and source.storage_mode == "stream"
+            and source.sample_rate == self.sample_rate
+        ):
+            stream = StreamedAudioBuffer(
+                source.path, source.frame_count, source.sample_rate
+            )
             frame_count = int(source.frame_count)
         else:
             if data is None:
@@ -122,7 +131,9 @@ class PlaybackEngine(QObject):
                 divisor = gcd(int(source.sample_rate), int(self.sample_rate))
                 up = self.sample_rate // divisor
                 down = int(source.sample_rate) // divisor
-                data = resample_poly(data, up, down, axis=0).astype(np.float32, copy=False)
+                data = resample_poly(data, up, down, axis=0).astype(
+                    np.float32, copy=False
+                )
             data = np.ascontiguousarray(data, dtype=np.float32)
             source.samples = data
             source.sample_rate = self.sample_rate
@@ -134,17 +145,23 @@ class PlaybackEngine(QObject):
         try:
             with self._lock:
                 if len(self._tracks) >= MAX_AUDIO_SOURCES:
-                    raise ValueError(f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources.")
+                    raise ValueError(
+                        f"WAVEFORMING supports up to {MAX_AUDIO_SOURCES} audio sources."
+                    )
                 cursor = min(self._master_frame, frame_count)
-                self._tracks.append(_Track(
-                    track_id=track_id,
-                    source=source,
-                    pcm=data,
-                    cursor=cursor,
-                    stream=stream,
-                    frame_count=frame_count,
-                    scratch=np.empty((max(self.block_size, 2048), 2), dtype=np.float32),
-                ))
+                self._tracks.append(
+                    _Track(
+                        track_id=track_id,
+                        source=source,
+                        pcm=data,
+                        cursor=cursor,
+                        stream=stream,
+                        frame_count=frame_count,
+                        scratch=np.empty(
+                            (max(self.block_size, 2048), 2), dtype=np.float32
+                        ),
+                    )
+                )
                 self._refresh_analysis_interval_locked()
                 self._invalidate_analysis_locked()
         except Exception:
@@ -156,7 +173,9 @@ class PlaybackEngine(QObject):
     def remove_source(self, track_id: str) -> None:
         with self._lock:
             removed = [track for track in self._tracks if track.track_id == track_id]
-            self._tracks = [track for track in self._tracks if track.track_id != track_id]
+            self._tracks = [
+                track for track in self._tracks if track.track_id != track_id
+            ]
             self._master_frame = min(self._master_frame, max(0, self._max_frames() - 1))
             self._refresh_analysis_interval_locked()
             self._invalidate_analysis_locked()
@@ -222,7 +241,7 @@ class PlaybackEngine(QObject):
             if not available:
                 continue
             block = np.zeros((fft_size, 2), dtype=np.float32)
-            destination = block[target_start:target_start + available]
+            destination = block[target_start : target_start + available]
 
             if track.stream is not None:
                 copied = track.stream.read_into(
@@ -246,7 +265,12 @@ class PlaybackEngine(QObject):
             return 0
 
         payload = (
-            snapshots, packet_end, revision, fft_size, band_count, window,
+            snapshots,
+            packet_end,
+            revision,
+            fft_size,
+            band_count,
+            window,
         )
         with self._lock:
             if revision != self._analysis_revision:
@@ -285,6 +309,7 @@ class PlaybackEngine(QObject):
                 # gives the UI a recoverable error on machines without an output
                 # device instead of failing during module import.
                 import sounddevice as sd
+
                 if self._stream is None:
                     self._stream = sd.OutputStream(
                         samplerate=self.sample_rate,
@@ -331,8 +356,11 @@ class PlaybackEngine(QObject):
 
     @staticmethod
     def _read_stream_window(
-            stream: StreamedAudioBuffer, frame_count: int, end: int,
-            fft_size: int, loop: bool,
+        stream: StreamedAudioBuffer,
+        frame_count: int,
+        end: int,
+        fft_size: int,
+        loop: bool,
     ) -> np.ndarray | None:
         """Copy a full trailing FFT window from bounded ring history."""
         if frame_count <= 0 or fft_size <= 0:
@@ -343,13 +371,19 @@ class PlaybackEngine(QObject):
             start = (end - fft_size) % frame_count
             if start + fft_size > frame_count:
                 return None
-            return result if stream.read_into(start, result, update_request=False) == fft_size else None
+            return (
+                result
+                if stream.read_into(start, result, update_request=False) == fft_size
+                else None
+            )
         available = min(fft_size, max(0, end))
         if not available:
             return result
         source_start = end - available
         target_start = fft_size - available
-        copied = stream.read_into(source_start, result[target_start:], update_request=False)
+        copied = stream.read_into(
+            source_start, result[target_start:], update_request=False
+        )
         return result if copied == available else None
 
     def _audio_callback(self, outdata, frames, time_info, status) -> None:
@@ -362,7 +396,9 @@ class PlaybackEngine(QObject):
             has_solo = any(t.source.solo and not t.source.muted for t in tracks)
             snapshots: dict[str, tuple[np.ndarray, int]] = {}
             self._analysis_frames_elapsed += frames
-            analysis_due = self._analysis_frames_elapsed >= self._analysis_interval_frames
+            analysis_due = (
+                self._analysis_frames_elapsed >= self._analysis_interval_frames
+            )
             if analysis_due:
                 self._analysis_frames_elapsed %= self._analysis_interval_frames
             analysis_revision = self._analysis_revision
@@ -395,7 +431,9 @@ class PlaybackEngine(QObject):
                         remaining = frames
                         while remaining:
                             count = min(remaining, frame_count - position)
-                            track.stream.read_into(position, block[offset:offset + count])
+                            track.stream.read_into(
+                                position, block[offset : offset + count]
+                            )
                             offset += count
                             remaining -= count
                             position = 0
@@ -432,9 +470,11 @@ class PlaybackEngine(QObject):
                     while remaining:
                         count = min(remaining, frame_count - position)
                         if audible:
-                            segment = pcm[position:position + count]
-                            mix[offset:offset + count, 0] += segment[:, 0] * gain_left
-                            mix[offset:offset + count, 1] += segment[:, 1] * gain_right
+                            segment = pcm[position : position + count]
+                            mix[offset : offset + count, 0] += segment[:, 0] * gain_left
+                            mix[offset : offset + count, 1] += (
+                                segment[:, 1] * gain_right
+                            )
                         offset += count
                         remaining -= count
                         position = 0
@@ -443,7 +483,7 @@ class PlaybackEngine(QObject):
                 else:
                     take = min(frames, max(0, frame_count - start))
                     if audible and take:
-                        segment = pcm[start:start + take]
+                        segment = pcm[start : start + take]
                         mix[:take, 0] += segment[:, 0] * gain_left
                         mix[:take, 1] += segment[:, 1] * gain_right
                     track.cursor = min(start + frames, frame_count)
@@ -457,7 +497,7 @@ class PlaybackEngine(QObject):
                         window_start = (end - window_size) % frame_count
                         if window_start + window_size <= frame_count:
                             snapshots[track.track_id] = (
-                                pcm[window_start:window_start + window_size].copy(),
+                                pcm[window_start : window_start + window_size].copy(),
                                 self.sample_rate,
                             )
                     else:
@@ -466,22 +506,28 @@ class PlaybackEngine(QObject):
                         analysis_block = np.zeros((window_size, 2), dtype=np.float32)
                         if end > source_start:
                             target_start = source_start - window_start
-                            analysis_block[target_start:target_start + end - source_start] = (
-                                pcm[source_start:end]
-                            )
+                            analysis_block[
+                                target_start : target_start + end - source_start
+                            ] = pcm[source_start:end]
                         snapshots[track.track_id] = (analysis_block, self.sample_rate)
 
             if loop and self._max_frames() > 0:
                 self._master_frame = (self._master_frame + frames) % self._max_frames()
             else:
-                self._master_frame = min(self._master_frame + frames, self._max_frames())
+                self._master_frame = min(
+                    self._master_frame + frames, self._max_frames()
+                )
             if all_finished and not loop:
                 self._playing = False
 
             if snapshots:
                 item = (
-                    snapshots, self._master_frame, analysis_revision,
-                    analysis_fft, analysis_bands, analysis_window,
+                    snapshots,
+                    self._master_frame,
+                    analysis_revision,
+                    analysis_fft,
+                    analysis_bands,
+                    analysis_window,
                 )
                 try:
                     self._analysis_queue.put_nowait(item)
@@ -500,7 +546,7 @@ class PlaybackEngine(QObject):
                 magnitude = np.abs(mix)
                 over = magnitude > 0.98
                 mix[over] = np.sign(mix[over]) * (
-                        0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
+                    0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
                 )
             np.copyto(outdata, mix)
             finished_now = not self._playing
@@ -521,6 +567,7 @@ class PlaybackEngine(QObject):
         try:
             if os.name == "nt":
                 import ctypes
+
                 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
                 kernel32.GetCurrentThread.restype = ctypes.c_void_p
                 kernel32.SetThreadPriority.argtypes = (ctypes.c_void_p, ctypes.c_int)
@@ -538,7 +585,9 @@ class PlaybackEngine(QObject):
                 continue
             if payload is None:
                 break
-            snapshots, frame_position, packet_revision, fft_size, band_count, window = payload
+            snapshots, frame_position, packet_revision, fft_size, band_count, window = (
+                payload
+            )
             with self._lock:
                 if packet_revision != self._analysis_revision:
                     continue
@@ -562,11 +611,21 @@ class PlaybackEngine(QObject):
             ids = list(frames)
             matrix = np.eye(len(ids), dtype=np.float32)
             if len(ids) <= 12:
-                common_length = min((len(correlation_blocks[key]) for key in ids), default=0)
+                common_length = min(
+                    (len(correlation_blocks[key]) for key in ids), default=0
+                )
                 for i in range(len(ids)):
-                    a = correlation_blocks[ids[i]][-common_length:] if common_length else np.zeros(0, np.float32)
+                    a = (
+                        correlation_blocks[ids[i]][-common_length:]
+                        if common_length
+                        else np.zeros(0, np.float32)
+                    )
                     for j in range(i + 1, len(ids)):
-                        b = correlation_blocks[ids[j]][-common_length:] if common_length else np.zeros(0, np.float32)
+                        b = (
+                            correlation_blocks[ids[j]][-common_length:]
+                            if common_length
+                            else np.zeros(0, np.float32)
+                        )
                         denom = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
                         corr = float(np.dot(a, b) / denom) if common_length else 0.0
                         matrix[i, j] = matrix[j, i] = np.clip(corr, -1.0, 1.0)
@@ -575,12 +634,14 @@ class PlaybackEngine(QObject):
                 if packet_revision != self._analysis_revision:
                     continue
             if frames:
-                self.features_ready.emit({
-                    "frames": frames,
-                    "correlation": matrix,
-                    "source_ids": ids,
-                    "position": frame_position / self.sample_rate,
-                })
+                self.features_ready.emit(
+                    {
+                        "frames": frames,
+                        "correlation": matrix,
+                        "source_ids": ids,
+                        "position": frame_position / self.sample_rate,
+                    }
+                )
 
     def close(self) -> None:
         self._analysis_stop.set()

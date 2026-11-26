@@ -67,7 +67,9 @@ class CompositionDirector:
         self._last_variation = -1e9
         self._last_position = 0.0
 
-    def update(self, packet: dict | None, position: float | None = None) -> DirectorOutput:
+    def update(
+        self, packet: dict | None, position: float | None = None
+    ) -> DirectorOutput:
         packet = packet or {}
         features = packet.get("master_features") or {}
         now = float(packet.get("position", 0.0) if position is None else position)
@@ -98,9 +100,8 @@ class CompositionDirector:
         )
         onset = max(onset, tracker_activity * 0.55 + tracker_transition * 0.30)
 
-        if (
-            tracker_transition >= 0.72
-            and (tracker_activity >= 0.12 or tracker_density >= 0.08)
+        if tracker_transition >= 0.72 and (
+            tracker_activity >= 0.12 or tracker_density >= 0.08
         ):
             candidate = "INSTABILITY" if tracker_reprise else "EMERGENCE"
         elif energy < 0.025 and density < 0.04:
@@ -117,32 +118,43 @@ class CompositionDirector:
         if candidate != self._candidate:
             self._candidate = candidate
             self._candidate_since = now
-        elif candidate != self.state and (now - self._candidate_since >= 0.18 or onset >= 0.9):
+        elif candidate != self.state and (
+            now - self._candidate_since >= 0.18 or onset >= 0.9
+        ):
             self.state = candidate
 
         self._last_energy = energy
         self._last_position = now
         motion_scale = (
-            0.82 + 0.48 * density + 0.16 * novelty
-            + 0.12 * tracker_activity + 0.12 * tracker_transition
+            0.82
+            + 0.48 * density
+            + 0.16 * novelty
+            + 0.12 * tracker_activity
+            + 0.12 * tracker_transition
         )
         complexity_scale = (
-            0.88 + 0.32 * energy + 0.18 * density
-            + 0.10 * tracker_transition
+            0.88 + 0.32 * energy + 0.18 * density + 0.10 * tracker_transition
         )
-        glitch = max(onset * 0.65, novelty * 0.72) if self.state == "INSTABILITY" else novelty * 0.18
+        glitch = (
+            max(onset * 0.65, novelty * 0.72)
+            if self.state == "INSTABILITY"
+            else novelty * 0.18
+        )
         accent = max(
-            max(0.0, onset - 0.55)
-            if self.state in ("EMERGENCE", "INSTABILITY") else 0.0,
+            (
+                max(0.0, onset - 0.55)
+                if self.state in ("EMERGENCE", "INSTABILITY")
+                else 0.0
+            ),
             tracker_transition * (0.12 + tracker_activity * 0.42),
         )
 
         request_variation = False
         if (
-                self.mode == "AUTO"
-                and self.state in ("EMERGENCE", "INSTABILITY")
-                and novelty >= 0.58
-                and now - self._last_variation >= self.variation_cooldown
+            self.mode == "AUTO"
+            and self.state in ("EMERGENCE", "INSTABILITY")
+            and novelty >= 0.58
+            and now - self._last_variation >= self.variation_cooldown
         ):
             request_variation = True
             self._last_variation = now
@@ -178,22 +190,22 @@ def is_default_placeholder_composition(layers: list[VisualLayer]) -> bool:
         return False
     layer = layers[0]
     return (
-            layer.name == "PHASE LATTICE 01"
-            and layer.generator == "PHASE LATTICE"
-            and not layer.source_id
-            and layer.pass_mode in ("PAPER RELIEF", "NONE")
-            and layer.pass_map == "DISPLACEMENT"
-            and abs(layer.x_offset) < 1e-9
-            and abs(layer.y_offset) < 1e-9
-            and abs(layer.scale - 1.0) < 1e-9
-            and abs(layer.rotation) < 1e-9
+        layer.name == "PHASE LATTICE 01"
+        and layer.generator == "PHASE LATTICE"
+        and not layer.source_id
+        and layer.pass_mode in ("PAPER RELIEF", "NONE")
+        and layer.pass_map == "DISPLACEMENT"
+        and abs(layer.x_offset) < 1e-9
+        and abs(layer.y_offset) < 1e-9
+        and abs(layer.scale - 1.0) < 1e-9
+        and abs(layer.rotation) < 1e-9
     )
 
 
 def create_auto_composition(
-        generator_names: list[str],
-        source_ids: list[str],
-        seed: int,
+    generator_names: list[str],
+    source_ids: list[str],
+    seed: int,
 ) -> list[VisualLayer]:
     """Build a bounded composition with a distinct visual cell for each source."""
     rng = random.Random(seed)
@@ -204,20 +216,24 @@ def create_auto_composition(
         return []
 
     layers: list[VisualLayer] = []
-    base_name = "GEOMETRIC PLATE" if "GEOMETRIC PLATE" in generator_names else available[0]
-    layers.append(VisualLayer(
-        name="PLATE / STRUCTURE",
-        generator=base_name,
-        blend_mode="Screen",
-        opacity=0.13,
-        mask_mode="FRAME",
-        pass_mode="NONE",
-        pass_map="DISPLACEMENT",
-        pass_strength=0.0,
-        palette_mode="MONOCHROME",
-        palette_index=0,
-        role="STRUCTURE",
-    ))
+    base_name = (
+        "GEOMETRIC PLATE" if "GEOMETRIC PLATE" in generator_names else available[0]
+    )
+    layers.append(
+        VisualLayer(
+            name="PLATE / STRUCTURE",
+            generator=base_name,
+            blend_mode="Screen",
+            opacity=0.13,
+            mask_mode="FRAME",
+            pass_mode="NONE",
+            pass_map="DISPLACEMENT",
+            pass_strength=0.0,
+            palette_mode="MONOCHROME",
+            palette_index=0,
+            role="STRUCTURE",
+        )
+    )
 
     # Audio can contain up to 64 stems, but the auto-generated visual stack is
     # intentionally bounded to eight channels to protect preview frame time.
@@ -233,11 +249,24 @@ def create_auto_composition(
         columns, rows, tile_scale = 3, 3, 0.30
 
     preferred = [
-        "AXONOMETRIC FIELD", "GEOMETRIC FIELD", "POLYHEDRAL FIELD",
-        "PHASE ORBIT", "MOBIUS FIELD", "SPECTRAL TOPOGRAPHY", "PHYLLOTAXIS",
+        "AXONOMETRIC FIELD",
+        "GEOMETRIC FIELD",
+        "POLYHEDRAL FIELD",
+        "PHASE ORBIT",
+        "MOBIUS FIELD",
+        "SPECTRAL TOPOGRAPHY",
+        "PHYLLOTAXIS",
     ]
-    roles = ("ANCHOR", "MOTION", "TEXTURE", "ACCENT",
-             "ATMOSPHERE", "MOTION", "TEXTURE", "ACCENT")
+    roles = (
+        "ANCHOR",
+        "MOTION",
+        "TEXTURE",
+        "ACCENT",
+        "ATMOSPHERE",
+        "MOTION",
+        "TEXTURE",
+        "ACCENT",
+    )
 
     for index, source_id in enumerate(channel_ids):
         candidates = [name for name in preferred if name in generator_names]
@@ -251,41 +280,39 @@ def create_auto_composition(
         # The source cell centres follow the default printable frame, not
         # the full canvas edges, so no channel is clipped by the FRAME mask.
         x_offset = (
-            ((column + 0.5) / columns - 0.5) * (1322.0 / 1920.0)
-            if columns > 1 else 0.0
+            ((column + 0.5) / columns - 0.5) * (1322.0 / 1920.0) if columns > 1 else 0.0
         )
-        y_offset = (
-            ((row + 0.5) / rows - 0.5) * (1058.0 / 1440.0)
-            if rows > 1 else 0.0
-        )
+        y_offset = ((row + 0.5) / rows - 0.5) * (1058.0 / 1440.0) if rows > 1 else 0.0
 
-        layers.append(VisualLayer(
-            name=f"CHANNEL {index + 1:02d} / {generator}",
-            generator=generator,
-            blend_mode=("Screen", "Normal", "Difference", "Add")[index % 4],
-            opacity=round(rng.uniform(0.76, 0.90), 2),
-            x_offset=round(x_offset, 3),
-            y_offset=round(y_offset, 3),
-            scale=tile_scale,
-            rotation=0,
-            mask_mode="FRAME",
-            # Relief is reserved for the background plate. Avoid running the
-            # same full-layer paper pass seven times per preview frame.
-            pass_mode="NONE",
-            pass_map="DISPLACEMENT",
-            pass_strength=0.0,
-            source_id=source_id,
-            palette_mode="EDITORIAL TRICOLOR",
-            palette_index=index,
-            role=roles[index % len(roles)],
-        ))
+        layers.append(
+            VisualLayer(
+                name=f"CHANNEL {index + 1:02d} / {generator}",
+                generator=generator,
+                blend_mode=("Screen", "Normal", "Difference", "Add")[index % 4],
+                opacity=round(rng.uniform(0.76, 0.90), 2),
+                x_offset=round(x_offset, 3),
+                y_offset=round(y_offset, 3),
+                scale=tile_scale,
+                rotation=0,
+                mask_mode="FRAME",
+                # Relief is reserved for the background plate. Avoid running the
+                # same full-layer paper pass seven times per preview frame.
+                pass_mode="NONE",
+                pass_map="DISPLACEMENT",
+                pass_strength=0.0,
+                source_id=source_id,
+                palette_mode="EDITORIAL TRICOLOR",
+                palette_index=index,
+                role=roles[index % len(roles)],
+            )
+        )
     return layers
 
 
 def vary_composition(
-        layers: list[VisualLayer],
-        generator_names: list[str],
-        seed: int,
+    layers: list[VisualLayer],
+    generator_names: list[str],
+    seed: int,
 ) -> list[VisualLayer]:
     """Mutate a small subset of visual decisions rather than replacing the entire plate."""
     rng = random.Random(seed)
@@ -297,14 +324,16 @@ def vary_composition(
 
     candidates = list(range(1, len(layers)))
     rng.shuffle(candidates)
-    selected = set(candidates[:max(1, min(2, len(candidates)))])
+    selected = set(candidates[: max(1, min(2, len(candidates)))])
     for index, layer in enumerate(layers):
         if index == 0 and layer.generator == "GEOMETRIC PLATE":
             layer.rotation = rng.choice((0, 0, 0, 90, 180, 270))
             layer.scale = round(rng.uniform(0.96, 1.04), 2)
             continue
         if index not in selected:
-            layer.opacity = round(max(0.2, min(0.95, layer.opacity + rng.uniform(-0.06, 0.06))), 2)
+            layer.opacity = round(
+                max(0.2, min(0.95, layer.opacity + rng.uniform(-0.06, 0.06))), 2
+            )
             continue
         if available:
             alternatives = [name for name in available if name != layer.generator]

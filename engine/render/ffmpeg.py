@@ -39,6 +39,7 @@ def resolve_ffmpeg() -> str | None:
 
     try:
         import imageio_ffmpeg
+
         bundled = Path(imageio_ffmpeg.get_ffmpeg_exe())
         if bundled.is_file():
             return str(bundled.resolve())

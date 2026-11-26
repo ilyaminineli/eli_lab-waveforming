@@ -99,7 +99,9 @@ class TimelineWidget(QWidget):
             points = []
             for point in lane.points:
                 x = x_for(point.time)
-                fraction = max(0.0, min(1.0, (point.value - low) / max(1e-6, high - low)))
+                fraction = max(
+                    0.0, min(1.0, (point.value - low) / max(1e-6, high - low))
+                )
                 y = y1 - 3 - fraction * max(1.0, y1 - y0 - 8)
                 points.append((int(x), int(y)))
             painter.setPen(QPen(QColor(colour), 1))
@@ -117,9 +119,9 @@ class TimelineWidget(QWidget):
             is_section = kind == "SECTION"
             is_tracker = kind == "TRACKER"
             tone = (
-                QColor("#83b9be") if is_tracker else
-                QColor("#d3c078") if is_section else
-                QColor("#d5d5d5")
+                QColor("#83b9be")
+                if is_tracker
+                else QColor("#d3c078") if is_section else QColor("#d5d5d5")
             )
             painter.setPen(QPen(tone, 1 if is_tracker else 1))
             painter.drawLine(x, 25, x, self.height() - 5)

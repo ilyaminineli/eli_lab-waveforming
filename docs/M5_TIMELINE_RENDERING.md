@@ -102,13 +102,11 @@ These limits are conservative starting points for the supplied low-power CPU, no
 - Optional GPU backend only if profiling proves it helps the supported hardware.
 - Render benchmarks and per-layer profiler on the target laptop.
 
-
 ## M5 stability corrections
 
 - Printable-area masks now use the compositor instance's canvas dimensions. The previous preview constant caused an incompatible 480×360 mask during 1920×1440 export.
 - Offline analysis now takes the same trailing FFT-sized window ending at each frame timestamp as live analysis; it no longer uses a centred window that shifts audio-reactive content by half an FFT window.
 - FFmpeg writes to a temporary MP4 and atomically replaces the destination only after a successful encode. Cancelled or failed exports do not leave a partial file at the requested destination.
-
 
 ## Integration corrections — multichannel application wiring
 
@@ -117,7 +115,6 @@ The current application exposes the engine's 64-source limit in both import and 
 The screen catalogue resolves resources/screens first and supports the former screens directory as a fallback. The composition director is initialized in the window, its MANUAL / SEMI-AUTO / AUTO selector is saved with the project, and its motion, complexity, glitch and accent values are applied to both preview and offline render.
 
 AUTO COMPOSE uses distinct 2-column or 3-column channel cells (up to eight visually routed sources). Channel variation preserves those cell positions. Export feature analysis is sampled at up to 8 Hz and held between analysis updates, rather than recalculating every track FFT on every video frame.
-
 
 ## Incremental GPU-native generator path
 

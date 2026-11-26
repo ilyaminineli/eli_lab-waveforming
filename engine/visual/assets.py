@@ -111,8 +111,10 @@ class AssetCatalog:
         if screen in self._frame_boxes:
             x0, y0, x1, y1 = self._frame_boxes[screen]
             return (
-                round(x0 * CANVAS_SIZE[0]), round(y0 * CANVAS_SIZE[1]),
-                round(x1 * CANVAS_SIZE[0]), round(y1 * CANVAS_SIZE[1]),
+                round(x0 * CANVAS_SIZE[0]),
+                round(y0 * CANVAS_SIZE[1]),
+                round(x1 * CANVAS_SIZE[0]),
+                round(y1 * CANVAS_SIZE[1]),
             )
         return DEFAULT_FRAME_RECT
 
@@ -127,7 +129,10 @@ class AssetCatalog:
             "default_frame_size": DEFAULT_FRAME_SIZE,
             "default_frame_rect": DEFAULT_FRAME_RECT,
             "screens": {
-                name: {"size": self._size(path), "frame_rect_px": self.frame_rect_px(name)}
+                name: {
+                    "size": self._size(path),
+                    "frame_rect_px": self.frame_rect_px(name),
+                }
                 for name, path in self._screens.items()
             },
             "passes": {name: self._size(path) for name, path in self._passes.items()},

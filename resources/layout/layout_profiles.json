@@ -1,52 +1,118 @@
 {
-  "canvas_size": [1920, 1440],
-  "default_frame_size": [1322, 1058],
+  "canvas_size": [
+    1920,
+    1440
+  ],
+  "default_frame_size": [
+    1322,
+    1058
+  ],
   "default_frame_anchor": "center",
-  "default_frame_rect_px": [299, 191, 1621, 1249],
+  "default_frame_rect_px": [
+    299,
+    191,
+    1621,
+    1249
+  ],
   "profiles": [
     {
       "name": "SCREEN 1 / BLACK",
-      "frame_box": [0.075, 0.085, 0.925, 0.835]
+      "frame_box": [
+        0.075,
+        0.085,
+        0.925,
+        0.835
+      ]
     },
     {
       "name": "SCREEN 1 / WHITE",
-      "frame_box": [0.075, 0.085, 0.925, 0.835]
+      "frame_box": [
+        0.075,
+        0.085,
+        0.925,
+        0.835
+      ]
     },
     {
       "name": "SCREEN 2 / BLACK",
-      "frame_box": [0.172, 0.133, 0.755, 0.855]
+      "frame_box": [
+        0.172,
+        0.133,
+        0.755,
+        0.855
+      ]
     },
     {
       "name": "SCREEN 2 / WHITE",
-      "frame_box": [0.172, 0.133, 0.755, 0.855]
+      "frame_box": [
+        0.172,
+        0.133,
+        0.755,
+        0.855
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR1",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR2",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR3",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR4",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR5",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR6",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     },
     {
       "name": "PRE-DESIGNED / SCR7",
-      "frame_rect_px": [299, 191, 1621, 1249]
+      "frame_rect_px": [
+        299,
+        191,
+        1621,
+        1249
+      ]
     }
   ]
 }

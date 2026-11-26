@@ -67,7 +67,9 @@ class ProjectSession:
     def save(self, path: Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     @classmethod
     def load(cls, path: Path) -> "ProjectSession":
@@ -77,7 +79,9 @@ class ProjectSession:
             raise ValueError("This project was created by a newer WAVEFORMING version.")
         canvas = tuple(data.get("canvas_size", CANVAS_SIZE))
         if canvas != CANVAS_SIZE:
-            raise ValueError(f"Unsupported canvas size {canvas}; expected {CANVAS_SIZE}.")
+            raise ValueError(
+                f"Unsupported canvas size {canvas}; expected {CANVAS_SIZE}."
+            )
         tracks = [SessionTrack(**item) for item in data.get("tracks", [])]
         groups = [SessionGroup(**item) for item in data.get("groups", [])]
         return cls(
@@ -106,7 +110,11 @@ def scan_audio_tree(root: Path) -> dict[str, list[Path]]:
     for path in sorted(root.rglob("*")):
         if path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
             relative_parent = path.parent.relative_to(root)
-            group = root.name if str(relative_parent) == "." else f"{root.name}/{relative_parent.as_posix()}"
+            group = (
+                root.name
+                if str(relative_parent) == "."
+                else f"{root.name}/{relative_parent.as_posix()}"
+            )
             groups.setdefault(group, []).append(path)
     return groups
 
@@ -117,6 +125,10 @@ def scan_tracker_tree(root: Path) -> list[Path]:
     if not root.is_dir():
         return []
     return sorted(
-        (path for path in root.rglob("*") if path.is_file() and path.suffix.lower() == ".xm"),
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() == ".xm"
+        ),
         key=lambda path: path.as_posix().casefold(),
     )

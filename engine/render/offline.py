@@ -32,24 +32,24 @@ class OfflineRenderWorker(QThread):
     render_cancelled = Signal()
 
     def __init__(
-            self,
-            output_path: Path,
-            assets_root: Path,
-            sources: list[dict],
-            layers: list[dict],
-            settings: dict,
-            timeline: dict,
-            screen: str,
-            sample_rate: int,
-            fft_size: int = 4096,
-            band_count: int = 64,
-            window: str = "hann",
-            fps: int = 24,
-            resolution: tuple[int, int] = PROJECT_SIZE,
-            feedback: dict | None = None,
-            director_mode: str = "SEMI-AUTO",
-            tracker_data: dict | None = None,
-            parent=None,
+        self,
+        output_path: Path,
+        assets_root: Path,
+        sources: list[dict],
+        layers: list[dict],
+        settings: dict,
+        timeline: dict,
+        screen: str,
+        sample_rate: int,
+        fft_size: int = 4096,
+        band_count: int = 64,
+        window: str = "hann",
+        fps: int = 24,
+        resolution: tuple[int, int] = PROJECT_SIZE,
+        feedback: dict | None = None,
+        director_mode: str = "SEMI-AUTO",
+        tracker_data: dict | None = None,
+        parent=None,
     ):
         super().__init__(parent)
         self.output_path = Path(output_path)
@@ -85,7 +85,9 @@ class OfflineRenderWorker(QThread):
         )
         self.feedback = dict(feedback or {})
         self.tracker_data = dict(tracker_data or {})
-        self.director_mode = director_mode if director_mode in CompositionDirector.MODES else "SEMI-AUTO"
+        self.director_mode = (
+            director_mode if director_mode in CompositionDirector.MODES else "SEMI-AUTO"
+        )
         self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -97,17 +99,26 @@ class OfflineRenderWorker(QThread):
 
     def _duration(self) -> float:
         return max(
-            (len(source["samples"]) / max(1, self.sample_rate) for source in self.sources),
+            (
+                len(source["samples"]) / max(1, self.sample_rate)
+                for source in self.sources
+            ),
             default=0.0,
         )
 
     def _write_audio_mix(self, path: Path, duration: float) -> None:
         total_frames = max(0, int(math.ceil(duration * self.sample_rate)))
         block_size = 32768
-        active_solo = any(source["solo"] and not source["muted"] for source in self.sources)
+        active_solo = any(
+            source["solo"] and not source["muted"] for source in self.sources
+        )
         with sf.SoundFile(
-                str(path), mode="w", samplerate=self.sample_rate,
-                channels=2, subtype="PCM_16", format="WAV",
+            str(path),
+            mode="w",
+            samplerate=self.sample_rate,
+            channels=2,
+            subtype="PCM_16",
+            format="WAV",
         ) as output:
             for start in range(0, total_frames, block_size):
                 if self.cancelled:
@@ -133,13 +144,14 @@ class OfflineRenderWorker(QThread):
                     magnitude = np.abs(mix)
                     over = magnitude > 0.98
                     mix[over] = np.sign(mix[over]) * (
-                            0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
+                        0.98 + 0.02 * np.tanh((magnitude[over] - 0.98) / 0.02)
                     )
                 output.write(np.clip(mix, -1.0, 1.0))
 
     @staticmethod
-    def _window_ending_at(samples: np.ndarray, end_frame: int,
-                          fft_size: int) -> np.ndarray:
+    def _window_ending_at(
+        samples: np.ndarray, end_frame: int, fft_size: int
+    ) -> np.ndarray:
         """Return the last fft_size samples ending at end_frame, zero-padded at edges."""
         window_start = int(end_frame) - int(fft_size)
         window_end = int(end_frame)
@@ -164,9 +176,7 @@ class OfflineRenderWorker(QThread):
 
         for source in analysis_sources:
             track_id = source["track_id"]
-            block = self._window_ending_at(
-                source["samples"], end_frame, self.fft_size
-            )
+            block = self._window_ending_at(source["samples"], end_frame, self.fft_size)
             analyzer = analyzers.get(track_id)
             if analyzer is None:
                 analyzer = AudioAnalyzer(self.fft_size, self.band_count, self.window)
@@ -210,7 +220,7 @@ class OfflineRenderWorker(QThread):
 
         try:
             with tempfile.TemporaryDirectory(
-                    prefix="waveforming_m5_", dir=output_path.parent
+                prefix="waveforming_m5_", dir=output_path.parent
             ) as temporary:
                 audio_path = Path(temporary) / "mix.wav"
                 temporary_video = Path(temporary) / "rendered.mp4"
@@ -220,20 +230,48 @@ class OfflineRenderWorker(QThread):
                     return
 
                 command = [
-                    ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-                    "-f", "rawvideo", "-pixel_format", "rgba",
-                    "-video_size", f"{width}x{height}",
-                    "-framerate", str(self.fps), "-i", "pipe:0",
-                    "-i", str(audio_path),
-                    "-map", "0:v:0", "-map", "1:a:0",
-                    "-c:v", "libx264", "-preset", "ultrafast",
-                    "-crf", "20", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k",
-                    "-movflags", "+faststart", "-shortest",
+                    ffmpeg,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "rawvideo",
+                    "-pixel_format",
+                    "rgba",
+                    "-video_size",
+                    f"{width}x{height}",
+                    "-framerate",
+                    str(self.fps),
+                    "-i",
+                    "pipe:0",
+                    "-i",
+                    str(audio_path),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "1:a:0",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-crf",
+                    "20",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    "-movflags",
+                    "+faststart",
+                    "-shortest",
                     str(temporary_video),
                 ]
                 process = subprocess.Popen(
-                    command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                    command,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                 )
                 compositor = VisualCompositor(
@@ -249,7 +287,8 @@ class OfflineRenderWorker(QThread):
                     feature_bus = FeatureBus(analysis_rate=self.fps / analysis_stride)
                     source_groups = {
                         source["track_id"]: source["group_id"]
-                        for source in self.sources if source["group_id"]
+                        for source in self.sources
+                        if source["group_id"]
                     }
                     director = CompositionDirector(self.director_mode)
                     cached_packet = None
@@ -261,7 +300,9 @@ class OfflineRenderWorker(QThread):
                         if cached_packet is None or frame_index % analysis_stride == 0:
                             raw_packet = self._analysis_packet(seconds, analyzers)
                             raw_packet["position"] = seconds
-                            cached_packet = feature_bus.update(raw_packet, source_groups)
+                            cached_packet = feature_bus.update(
+                                raw_packet, source_groups
+                            )
                         packet = dict(cached_packet)
                         packet["position"] = seconds
                         tracker_cue = tracker_packet_at(self.tracker_data, seconds)
@@ -275,16 +316,33 @@ class OfflineRenderWorker(QThread):
                         }
                         if director_output.request_variation and self.layers:
                             # A frame-derived seed makes automatic offline changes reproducible.
-                            seed = (int(self.settings.seed) + frame_index * 104729) & 0x7FFFFFFF
+                            seed = (
+                                int(self.settings.seed) + frame_index * 104729
+                            ) & 0x7FFFFFFF
                             self.layers = vary_composition(
                                 self.layers, compositor.generator_names(), seed
                             )
                             self.settings.seed = seed
-                        frame_settings = self.timeline.settings_at(seconds, self.settings)
+                        frame_settings = self.timeline.settings_at(
+                            seconds, self.settings
+                        )
                         frame_settings = GeneratorSettings(
-                            complexity=max(5.0,
-                                           min(100.0, frame_settings.complexity * director_output.complexity_scale)),
-                            motion=max(0.0, min(100.0, frame_settings.motion * director_output.motion_scale)),
+                            complexity=max(
+                                5.0,
+                                min(
+                                    100.0,
+                                    frame_settings.complexity
+                                    * director_output.complexity_scale,
+                                ),
+                            ),
+                            motion=max(
+                                0.0,
+                                min(
+                                    100.0,
+                                    frame_settings.motion
+                                    * director_output.motion_scale,
+                                ),
+                            ),
                             sensitivity=frame_settings.sensitivity,
                             seed=frame_settings.seed,
                         )
@@ -300,7 +358,9 @@ class OfflineRenderWorker(QThread):
                             feedback_shift=float(self.feedback.get("shift", 0.0)),
                         )
                         if process.stdin is None:
-                            raise RuntimeError("FFmpeg video input pipe was not created.")
+                            raise RuntimeError(
+                                "FFmpeg video input pipe was not created."
+                            )
                         process.stdin.write(image.tobytes("raw", "RGBA"))
                         self.progress.emit(frame_index + 1, total_frames)
 
@@ -315,10 +375,21 @@ class OfflineRenderWorker(QThread):
                         return
                     return_code = process.wait()
                     if return_code != 0:
-                        error = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
-                        raise RuntimeError(error.strip() or f"FFmpeg exited with code {return_code}.")
-                    if not temporary_video.is_file() or temporary_video.stat().st_size <= 0:
-                        raise RuntimeError("FFmpeg finished without producing a valid MP4 file.")
+                        error = (
+                            process.stderr.read().decode("utf-8", errors="replace")
+                            if process.stderr
+                            else ""
+                        )
+                        raise RuntimeError(
+                            error.strip() or f"FFmpeg exited with code {return_code}."
+                        )
+                    if (
+                        not temporary_video.is_file()
+                        or temporary_video.stat().st_size <= 0
+                    ):
+                        raise RuntimeError(
+                            "FFmpeg finished without producing a valid MP4 file."
+                        )
                     # Only replace the destination after a complete successful encode;
                     # cancellation or failure cannot leave a corrupt partial file.
                     os.replace(temporary_video, output_path)

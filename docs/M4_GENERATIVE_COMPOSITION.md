@@ -117,7 +117,6 @@ Noise remains one possible texture or generator family, not the default visual l
 - Audio/video muxing and export presets.
 - Preview and export must share the same composition graph and seed state.
 
-
 ## M4 visual/performance stability patch
 
 Following the first Windows test session, the following corrections were added:

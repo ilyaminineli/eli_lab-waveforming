@@ -39,7 +39,9 @@ class LayerStack:
         self.layers: list[VisualLayer] = []
 
     def add(self, generator: str, name: str | None = None) -> VisualLayer:
-        layer = VisualLayer(name or f"{generator.title()} {len(self.layers) + 1:02d}", generator)
+        layer = VisualLayer(
+            name or f"{generator.title()} {len(self.layers) + 1:02d}", generator
+        )
         self.layers.append(layer)
         return layer
 
@@ -47,13 +49,20 @@ class LayerStack:
         self.layers = [layer for layer in self.layers if layer.layer_id != layer_id]
 
     def move(self, layer_id: str, direction: int) -> None:
-        index = next((i for i, layer in enumerate(self.layers) if layer.layer_id == layer_id), -1)
+        index = next(
+            (i for i, layer in enumerate(self.layers) if layer.layer_id == layer_id), -1
+        )
         target = index + int(direction)
         if index >= 0 and 0 <= target < len(self.layers):
-            self.layers[index], self.layers[target] = self.layers[target], self.layers[index]
+            self.layers[index], self.layers[target] = (
+                self.layers[target],
+                self.layers[index],
+            )
 
     def duplicate(self, layer_id: str) -> VisualLayer | None:
-        source = next((layer for layer in self.layers if layer.layer_id == layer_id), None)
+        source = next(
+            (layer for layer in self.layers if layer.layer_id == layer_id), None
+        )
         if source is None:
             return None
         data = source.to_dict()

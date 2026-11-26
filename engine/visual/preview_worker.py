@@ -31,7 +31,9 @@ class PreviewRenderWorker(threading.Thread):
     pending requests are replaced with the newest playhead/layer snapshot.
     """
 
-    def __init__(self, assets: AssetCatalog, render_size: tuple[int, int] = PREVIEW_SIZE):
+    def __init__(
+        self, assets: AssetCatalog, render_size: tuple[int, int] = PREVIEW_SIZE
+    ):
         super().__init__(name="WaveformingPreview", daemon=True)
         self.signals = PreviewSignals()
         self._assets = assets
@@ -64,18 +66,18 @@ class PreviewRenderWorker(threading.Thread):
                 self._reset_generators_requested = True
 
     def submit(
-            self,
-            packet: dict | None,
-            seconds: float,
-            layers: list[VisualLayer],
-            settings: GeneratorSettings,
-            screen: str,
-            feedback_enabled: bool,
-            feedback_amount: float,
-            feedback_decay: float,
-            feedback_shift: float,
-            sequence: int,
-            gpu_composite: bool = False,
+        self,
+        packet: dict | None,
+        seconds: float,
+        layers: list[VisualLayer],
+        settings: GeneratorSettings,
+        screen: str,
+        feedback_enabled: bool,
+        feedback_amount: float,
+        feedback_decay: float,
+        feedback_shift: float,
+        sequence: int,
+        gpu_composite: bool = False,
     ) -> None:
         # Snapshot UI-owned state. Audio feature packets are immutable after emit;
         # large NumPy arrays are shared read-only to avoid duplicating RAM.
@@ -112,11 +114,14 @@ class PreviewRenderWorker(threading.Thread):
         try:
             if os.name == "nt":
                 import ctypes
+
                 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
                 kernel32.GetCurrentThread.restype = ctypes.c_void_p
                 kernel32.SetThreadPriority.argtypes = (ctypes.c_void_p, ctypes.c_int)
                 kernel32.SetThreadPriority.restype = ctypes.c_int
-                kernel32.SetThreadPriority(kernel32.GetCurrentThread(), -1)  # BELOW_NORMAL
+                kernel32.SetThreadPriority(
+                    kernel32.GetCurrentThread(), -1
+                )  # BELOW_NORMAL
             else:
                 os.nice(5)
         except Exception:
@@ -126,7 +131,9 @@ class PreviewRenderWorker(threading.Thread):
     def run(self) -> None:
         self._lower_thread_priority()
         try:
-            self._compositor = VisualCompositor(self._assets, render_size=self._render_size)
+            self._compositor = VisualCompositor(
+                self._assets, render_size=self._render_size
+            )
             while not self._stop_event.is_set():
                 try:
                     request = self._queue.get(timeout=0.2)
@@ -158,7 +165,11 @@ class PreviewRenderWorker(threading.Thread):
                     self._compositor.reset_feedback(preserve_generators=True)
                 if self._compositor is not None and not reset_generators:
                     self._compositor.generators.retain_layers(
-                        {layer.layer_id: layer.generator for layer in request["layers"] if layer.visible}
+                        {
+                            layer.layer_id: layer.generator
+                            for layer in request["layers"]
+                            if layer.visible
+                        }
                     )
                 try:
                     render_args = {
@@ -183,7 +194,9 @@ class PreviewRenderWorker(threading.Thread):
                             feedback_shift=request["feedback_shift"],
                         )
                     if self._compositor is not None:
-                        self.signals.profile_ready.emit(dict(self._compositor.last_profile))
+                        self.signals.profile_ready.emit(
+                            dict(self._compositor.last_profile)
+                        )
                     self.signals.frame_ready.emit(
                         image, request["audio_seconds"], request["sequence"]
                     )
