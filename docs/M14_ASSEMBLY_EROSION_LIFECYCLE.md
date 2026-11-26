@@ -30,4 +30,4 @@ The CI smoke workflow verifies JSON round-trip of seed-bearing contracts, byte-i
 
 ## Next
 
-Temporal echo remains a separate transition-local history-buffer increment. It must be keyed by transition identity and sampled show time, reset on backward seeks/transition changes, and share the same deterministic live/offline replay contract. It should not reuse the compositor's optional global feedback buffer implicitly.
+Temporal echo is now implemented as a separate transition-local history buffer. See [M14_TEMPORAL_ECHO_HISTORY.md](M14_TEMPORAL_ECHO_HISTORY.md). The next lifecycle families are mask reveal and displacement.
