@@ -1327,6 +1327,8 @@ class TrackerEnsemble(VisualGenerator):
             pitch = float(np.clip(channel.get("pitch", 0.0), 0.0, 1.0))
             activity = float(np.clip(channel.get("activity", 0.0), 0.0, 1.0))
             density = float(np.clip(channel.get("note_density", 0.0), 0.0, 1.0))
+            recent_hits = int(channel.get("recent_hits", 0))
+            event_heat = float(np.clip(recent_hits / 8.0, 0.0, 1.0))
             trigger = float(np.clip(channel.get("trigger", 0.0), 0.0, 1.0))
             volume = float(np.clip(channel.get("volume", 0.82), 0.0, 1.0))
             pan = float(np.clip(channel.get("pan", 0.5), 0.0, 1.0))
@@ -1343,6 +1345,7 @@ class TrackerEnsemble(VisualGenerator):
             pitch_shift = (pitch - 0.5) * min_dimension * 0.045 if note else 0.0
             base_radius = min_dimension * (
                 0.010 + activity * 0.036 + density * 0.010
+                + event_heat * 0.008
             )
             base_radius = max(1.0, base_radius)
             lobes = 2 + ((instrument * 3 + channel_number) % 5)
@@ -1363,7 +1366,7 @@ class TrackerEnsemble(VisualGenerator):
 
             # Instrument identity selects a stable geometry grammar.
             family = (instrument + channel_number * 2) % 4
-            point_count = 24 + int(24 * detail)
+            point_count = 24 + int(24 * detail) + int(event_heat * 12)
             points = []
             for point_index in range(point_count + 1):
                 theta = math.tau * point_index / point_count
@@ -1398,7 +1401,9 @@ class TrackerEnsemble(VisualGenerator):
                 points.append((int(x), int(y)))
 
             base_colour = self.PALETTE[(max(1, instrument) - 1) % len(self.PALETTE)]
-            alpha = int(np.clip(24 + activity * 188 + density * 34, 18, 225))
+            alpha = int(np.clip(
+                24 + activity * 188 + density * 34 + event_heat * 18, 18, 235
+            ))
             draw.line(
                 points,
                 fill=(*base_colour, alpha),
