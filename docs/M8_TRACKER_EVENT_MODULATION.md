@@ -80,5 +80,7 @@ pattern/channel overview.
 
 ## Next
 
-M9 — Perceptual scene director: convert transition/reprise/activity features into
-scene-level decisions, controlled visual mutations and beat/bar-aware transitions.
+M9 — Perceptual scene director is implemented in
+[docs/M9_PERCEPTUAL_SCENE_DIRECTOR.md](M9_PERCEPTUAL_SCENE_DIRECTOR.md). M10 is the
+scene recipe and transition system: reusable structural roles, transition curves,
+seed locking and beat/bar-aware scene changes.
