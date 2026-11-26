@@ -14,6 +14,8 @@ RENDERED_TRANSITION_MODES = {
     "dissolve": "crossfade",
     "cut": "cut",
     "morph": "object_morph",
+    "assembly": "assembly",
+    "erosion": "erosion",
 }
 
 
