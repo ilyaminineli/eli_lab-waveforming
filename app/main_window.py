@@ -22,6 +22,7 @@ from engine.project.session import scan_audio_tree
 from engine.render.ffmpeg import resolve_ffmpeg
 from engine.render.offline import OfflineRenderWorker
 from engine.timeline import Timeline
+from engine.tracker.xm import load_xm, tracker_packet_at
 from engine.visual.assets import AssetCatalog
 from engine.visual.canvas import GpuCompositionCanvas
 from engine.visual.composition_director import (
@@ -115,6 +116,8 @@ class MainWindow(QMainWindow):
         self.director = CompositionDirector("SEMI-AUTO")
         self.feature_bus = FeatureBus(analysis_rate=8.0)
         self.timeline = Timeline()
+        self._tracker_data: dict = {}
+        self._tracker_duration = 0.0
         self.layer_stack = LayerStack()
         self._auto_composed = False
         self._gpu_preview_disabled = False
@@ -183,6 +186,10 @@ class MainWindow(QMainWindow):
         add_folder = QAction("Import audio folder…", self)
         add_folder.triggered.connect(self.import_audio_folder)
         menu.addAction(add_folder)
+        add_tracker = QAction("Import XM tracker score…", self)
+        add_tracker.setShortcut("Ctrl+Shift+M")
+        add_tracker.triggered.connect(self.import_tracker)
+        menu.addAction(add_tracker)
         menu.addSeparator()
         play = QAction("Play / Pause", self)
         play.setShortcut("Space")
@@ -713,6 +720,55 @@ class MainWindow(QMainWindow):
             self.preview_worker.request_reset()
         self._render_frame()
 
+    def import_tracker(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import XM tracker score", "",
+            "FastTracker / MilkyTracker module (*.xm);;All files (*)",
+        )
+        if not filename:
+            return
+        try:
+            module = load_xm(Path(filename))
+            tracker_data = module.visual_data()
+        except Exception as exc:
+            QMessageBox.warning(self, "XM import failed", str(exc))
+            return
+
+        self._tracker_data = tracker_data
+        self._tracker_duration = module.duration
+        self.timeline.markers = [
+            marker for marker in self.timeline.markers
+            if marker.kind.upper() != "TRACKER"
+        ]
+        self.timeline.set_duration(max(self.audio.duration, self._tracker_duration))
+        for cue in module.cues:
+            self.timeline.add_marker(
+                cue.start_seconds,
+                label=f"O{cue.order:02d} / P{cue.pattern:02d}",
+                kind="TRACKER",
+            )
+        self.timeline.bpm = float(module.bpm)
+        self.bpm.blockSignals(True)
+        self.bpm.setValue(float(module.bpm))
+        self.bpm.blockSignals(False)
+        self.timeline_widget.set_timeline(self.timeline)
+        self._update_timeline_duration()
+        self.preview_worker.request_reset(reset_generators=False)
+        self._render_frame()
+
+        message = (
+            f"XM SCORE LOADED · {module.channels} CH · "
+            f"{len(module.orders)} ORDERS · {module.bpm} BPM"
+        )
+        if module.flow_control_effect_count:
+            message += " · FLOW EFFECTS: TIMING APPROXIMATED"
+        self.status.setText(message)
+        self.status.setToolTip(
+            f"{module.title}\n{module.tracker}\n"
+            f"{module.effect_count} effect commands; "
+            f"{module.flow_control_effect_count} order/loop flow commands."
+        )
+
     def import_audio(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Import audio sources", "",
@@ -860,6 +916,7 @@ class MainWindow(QMainWindow):
             "settings": asdict(self._settings),
             "layers": self.layer_stack.to_list(),
             "timeline": self.timeline.to_dict(),
+            "tracker_data": self._tracker_data,
             "screen": self.screen.currentText(),
             "feedback": {
                 "enabled": self.feedback_enabled.isChecked(),
@@ -947,6 +1004,10 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 missing_sources.append(f"{path}: {exc}")
 
+        self._tracker_data = data.get("tracker_data") or {}
+        if not isinstance(self._tracker_data, dict):
+            self._tracker_data = {}
+        self._tracker_duration = max(0.0, float(self._tracker_data.get("duration", 0.0)))
         self._settings = GeneratorSettings(**data.get("settings", {}))
         self.complexity.setValue(int(self._settings.complexity))
         self.motion.setValue(int(self._settings.motion))
@@ -962,6 +1023,8 @@ class MainWindow(QMainWindow):
             elif layer.source_id:
                 layer.source_id = source_id_map.get(layer.source_id, "")
         self.timeline = Timeline.from_dict(data.get("timeline"))
+        if self._tracker_data:
+            self.timeline.bpm = float(self._tracker_data.get("bpm", self.timeline.bpm))
         saved_director_mode = str(data.get("director_mode", "SEMI-AUTO"))
         if saved_director_mode not in CompositionDirector.MODES:
             saved_director_mode = "SEMI-AUTO"
@@ -1080,6 +1143,7 @@ class MainWindow(QMainWindow):
                 "shift": self.feedback_shift.value() / 100.0,
             },
             director_mode=self.director.mode,
+            tracker_data=self._tracker_data,
         )
         self._export_progress.canceled.connect(self._export_worker.cancel)
         self._export_worker.progress.connect(self._on_export_progress)
@@ -1190,6 +1254,9 @@ class MainWindow(QMainWindow):
             seed=base_settings.seed,
         )
         frame_packet = dict(self._last_packet)
+        tracker_cue = tracker_packet_at(self._tracker_data, audio_seconds)
+        if tracker_cue is not None:
+            frame_packet["tracker_cue"] = tracker_cue
         frame_packet["director_output"] = {
             "glitch_amount": director_output.glitch_amount,
             "accent_amount": director_output.accent_amount,
@@ -1308,13 +1375,19 @@ class MainWindow(QMainWindow):
 
     def _seek_to_time(self, seconds: float) -> None:
         duration = self.audio.duration
-        target = min(max(0.0, float(seconds)), duration) if duration > 0 else 0.0
+        seek_duration = duration if duration > 0 else self._tracker_duration
+        target = min(max(0.0, float(seconds)), seek_duration) if seek_duration > 0 else 0.0
         if target < self._last_position:
             self.feature_bus.reset()
             self.director.reset()
             self._last_packet = {}
-        self.audio.seek(target)
-        self._last_position = self.audio.position
+        if duration > 0:
+            self.audio.seek(min(target, duration))
+            self._last_position = self.audio.position
+        else:
+            self._last_position = target
+            self.timeline_widget.set_position(target)
+            self._update_time_label()
         self.preview_worker.request_reset()
         self._render_frame()
 
@@ -1334,9 +1407,10 @@ class MainWindow(QMainWindow):
             self.timeline_widget.set_timeline(self.timeline)
 
     def _update_timeline_duration(self) -> None:
-        self.timeline.set_duration(self.audio.duration)
+        duration = max(float(self.audio.duration), float(self._tracker_duration))
+        self.timeline.set_duration(duration)
         if hasattr(self, "timeline_widget"):
-            self.timeline_widget.set_duration(self.audio.duration)
+            self.timeline_widget.set_duration(duration)
 
     def _update_time_label(self) -> None:
         self.time_label.setText(f"{format_time(self._last_position)} / {format_time(self.audio.duration)}")
