@@ -762,6 +762,11 @@ class VisualCompositor:
         compose_started = perf_counter()
         frame = scene["background"].copy()
         for layer in scene["layers"]:
+            # render_scene includes the guide as a final GPU scene layer so it
+            # stays above generated ink. The CPU path composites the guide once,
+            # after temporal feedback, so skip that scene-only placeholder here.
+            if layer.get("layer_id") == "__screen_guide__":
+                continue
             self._blend_at(
                 frame,
                 layer["image"],
