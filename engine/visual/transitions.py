@@ -37,6 +37,122 @@ def _strings(value: Any) -> list[str]:
     return [str(item) for item in value if str(item)]
 
 
+def normalize_path_correspondence(
+    value: Any,
+    object_pairs: set[tuple[str, str]] | None = None,
+) -> list[dict]:
+    """Validate authored path mappings, including one-to-many split/merge groups.
+
+    Anchors are normalized arc-length fractions on each path. Missing endpoints
+    are added automatically. Anchor order must remain monotonic on both paths.
+    """
+    if not isinstance(value, list):
+        return []
+    normalized = []
+    used_source: set[tuple[str, str]] = set()
+    used_target: set[tuple[str, str]] = set()
+    allowed_pairs = set(object_pairs or ())
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise ValueError("Path correspondence entries must be mappings.")
+        source_object_id = str(raw.get("source_object_id", "")).strip()
+        target_object_id = str(raw.get("target_object_id", "")).strip()
+        if not source_object_id or not target_object_id:
+            raise ValueError("Path correspondence requires source and target object IDs.")
+        pair = (source_object_id, target_object_id)
+        if object_pairs is not None and pair not in allowed_pairs:
+            raise ValueError(
+                "Path correspondence must belong to a declared object correspondence."
+            )
+
+        def path_ids(key: str) -> list[str]:
+            raw_ids = raw.get(key, [])
+            if isinstance(raw_ids, str):
+                raw_ids = [raw_ids]
+            if not isinstance(raw_ids, list):
+                raise ValueError(f"{key} must be a path ID or a list of path IDs.")
+            result = [str(item).strip() for item in raw_ids]
+            if not result or any(not item for item in result):
+                raise ValueError(f"{key} must contain non-empty path IDs.")
+            if len(result) != len(set(result)):
+                raise ValueError(f"{key} contains duplicate path IDs.")
+            return result
+
+        source_ids = path_ids("source_path_ids")
+        target_ids = path_ids("target_path_ids")
+        mode = str(raw.get("mode", "pair")).strip().lower()
+        expected = {
+            "pair": (1, 1),
+            "split": (1, None),
+            "merge": (None, 1),
+        }
+        if mode not in expected:
+            raise ValueError("Path correspondence mode must be pair, split or merge.")
+        source_count, target_count = expected[mode]
+        if source_count is not None and len(source_ids) != source_count:
+            raise ValueError(f"{mode} correspondence requires {source_count} source path.")
+        if target_count is not None and len(target_ids) != target_count:
+            raise ValueError(f"{mode} correspondence requires {target_count} target path.")
+        if mode == "split" and len(target_ids) < 2:
+            raise ValueError("A split correspondence requires at least two target paths.")
+        if mode == "merge" and len(source_ids) < 2:
+            raise ValueError("A merge correspondence requires at least two source paths.")
+
+        anchors_raw = raw.get("anchors", [])
+        if not isinstance(anchors_raw, list):
+            raise ValueError("Path anchors must be a list of normalized arc-length pairs.")
+        anchors = []
+        for anchor in anchors_raw:
+            if not isinstance(anchor, dict):
+                raise ValueError("Each path anchor must be a mapping.")
+            source_t = float(anchor.get("source_t", anchor.get("source", 0.0)))
+            target_t = float(anchor.get("target_t", anchor.get("target", 0.0)))
+            if (
+                not math.isfinite(source_t) or not math.isfinite(target_t)
+                or source_t < 0.0 or source_t > 1.0
+                or target_t < 0.0 or target_t > 1.0
+            ):
+                raise ValueError("Path anchor positions must be finite values in [0, 1].")
+            anchors.append({"source_t": source_t, "target_t": target_t})
+        anchors.sort(key=lambda item: item["source_t"])
+        if not anchors or anchors[0]["source_t"] > 1e-9:
+            anchors.insert(0, {"source_t": 0.0, "target_t": 0.0})
+        elif abs(anchors[0]["source_t"]) <= 1e-9:
+            if abs(anchors[0]["target_t"]) > 1e-9:
+                raise ValueError("The first path anchor must start at (0, 0).")
+        if anchors[-1]["source_t"] < 1.0 - 1e-9:
+            anchors.append({"source_t": 1.0, "target_t": 1.0})
+        elif abs(anchors[-1]["source_t"] - 1.0) <= 1e-9:
+            if abs(anchors[-1]["target_t"] - 1.0) > 1e-9:
+                raise ValueError("The final path anchor must end at (1, 1).")
+        for previous, current in zip(anchors, anchors[1:]):
+            if (
+                current["source_t"] <= previous["source_t"]
+                or current["target_t"] <= previous["target_t"]
+            ):
+                raise ValueError("Path anchors must be strictly increasing on both paths.")
+
+        for path_id in source_ids:
+            key = (source_object_id, path_id)
+            if key in used_source:
+                raise ValueError(f"Outgoing path is mapped more than once: {path_id}")
+            used_source.add(key)
+        for path_id in target_ids:
+            key = (target_object_id, path_id)
+            if key in used_target:
+                raise ValueError(f"Incoming path is mapped more than once: {path_id}")
+            used_target.add(key)
+        normalized.append({
+            "source_object_id": source_object_id,
+            "target_object_id": target_object_id,
+            "source_path_ids": source_ids,
+            "target_path_ids": target_ids,
+            "mode": mode,
+            "anchors": anchors,
+        })
+    return normalized
+
+
 @dataclass(slots=True)
 class SceneTransition:
     """A declarative transition contract between two persistent scenes.
@@ -58,6 +174,7 @@ class SceneTransition:
     preserved_object_ids: list[str] = field(default_factory=list)
     discarded_object_ids: list[str] = field(default_factory=list)
     object_correspondence: list[dict] = field(default_factory=list)
+    path_correspondence: list[dict] = field(default_factory=list)
     interruption_policy: str = "reject"
     outgoing_policy: str = "archive"
     seed: int = 0
@@ -116,7 +233,35 @@ class SceneTransition:
                 "target_object_id": target_id,
                 "kind": "explicit",
             })
+        object_pairs = {
+            (item["source_object_id"], item["target_object_id"])
+            for item in correspondence
+        }
+        path_correspondence = normalize_path_correspondence(
+            self.path_correspondence
+        )
+        # An authored path map also declares the parent VisualObject match.
+        for item in path_correspondence:
+            pair = (item["source_object_id"], item["target_object_id"])
+            if pair in object_pairs:
+                continue
+            source_id, target_id = pair
+            if source_id in source_seen or target_id in target_seen:
+                raise ValueError(
+                    "Path correspondence conflicts with one-to-one object correspondence."
+                )
+            source_seen.add(source_id)
+            target_seen.add(target_id)
+            object_pairs.add(pair)
+            correspondence.append({
+                "source_object_id": source_id,
+                "target_object_id": target_id,
+                "kind": "path_map",
+            })
         self.object_correspondence = correspondence
+        self.path_correspondence = normalize_path_correspondence(
+            path_correspondence, object_pairs
+        )
         overlap = set(self.preserved_object_ids) & set(self.discarded_object_ids)
         if overlap:
             raise ValueError(
@@ -173,6 +318,7 @@ class SceneTransition:
             "incoming_weight": eased,
             "completed": raw >= 1.0,
             "object_correspondence": [dict(item) for item in self.object_correspondence],
+            "path_correspondence": [dict(item) for item in self.path_correspondence],
         }
 
     def to_dict(self) -> dict:

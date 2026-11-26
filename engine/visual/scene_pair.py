@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .transitions import TRANSITION_FAMILIES
+from .transitions import TRANSITION_FAMILIES, normalize_path_correspondence
 
 
 RENDERED_TRANSITION_MODES = {
@@ -51,8 +51,9 @@ class ScenePairRenderContract:
     outgoing: dict = field(default_factory=dict)
     incoming: dict = field(default_factory=dict)
     object_correspondence: list[dict] = field(default_factory=list)
+    path_correspondence: list[dict] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
-    version: int = 2
+    version: int = 3
 
     def __post_init__(self) -> None:
         self.transition_id = str(self.transition_id)
@@ -206,6 +207,13 @@ class ScenePairRenderContract:
             used_targets.add(target_object_id)
 
         self.object_correspondence = normalized_pairs
+        object_pairs = {
+            (item["source_object_id"], item["target_object_id"])
+            for item in normalized_pairs
+        }
+        self.path_correspondence = normalize_path_correspondence(
+            self.path_correspondence, object_pairs
+        )
         self.metadata = _dict(self.metadata)
         self.version = max(1, int(self.version))
 
@@ -260,6 +268,9 @@ class ScenePairRenderContract:
         requested_correspondence = sample_data.get("object_correspondence")
         if not requested_correspondence:
             requested_correspondence = transition_record.get("object_correspondence", [])
+        requested_path_correspondence = sample_data.get("path_correspondence")
+        if not requested_path_correspondence:
+            requested_path_correspondence = transition_record.get("path_correspondence", [])
         resolved = {
             "project_id": project.project_id,
             "active_scene_id": project.active_scene_id,
@@ -292,6 +303,7 @@ class ScenePairRenderContract:
                 "layers": project.layers_for_scene(target_id),
             },
             object_correspondence=_records(requested_correspondence),
+            path_correspondence=_records(requested_path_correspondence),
             metadata={
                 "trigger": deepcopy(transition_record.get("trigger", {})),
             },
