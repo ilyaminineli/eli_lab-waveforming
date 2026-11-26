@@ -49,6 +49,7 @@ class OfflineRenderWorker(QThread):
         feedback: dict | None = None,
         director_mode: str = "SEMI-AUTO",
         tracker_data: dict | None = None,
+        render_scale: float = 0.5,
         parent=None,
     ):
         super().__init__(parent)
@@ -83,6 +84,11 @@ class OfflineRenderWorker(QThread):
             max(2, int(resolution[0]) // 2 * 2),
             max(2, int(resolution[1]) // 2 * 2),
         )
+        self.render_scale = float(max(0.25, min(1.0, render_scale)))
+        self.render_resolution = (
+            max(2, int(round(self.resolution[0] * self.render_scale)) // 2 * 2),
+            max(2, int(round(self.resolution[1] * self.render_scale)) // 2 * 2),
+        )
         self.feedback = dict(feedback or {})
         self.tracker_data = dict(tracker_data or {})
         self.director_mode = (
@@ -98,13 +104,15 @@ class OfflineRenderWorker(QThread):
         return self._cancel_event.is_set()
 
     def _duration(self) -> float:
-        return max(
+        audio_duration = max(
             (
                 len(source["samples"]) / max(1, self.sample_rate)
                 for source in self.sources
             ),
             default=0.0,
         )
+        tracker_duration = float(self.tracker_data.get("duration", 0.0))
+        return max(audio_duration, tracker_duration)
 
     def _write_audio_mix(self, path: Path, duration: float) -> None:
         total_frames = max(0, int(math.ceil(duration * self.sample_rate)))
@@ -205,8 +213,8 @@ class OfflineRenderWorker(QThread):
                 "add ffmpeg.exe to PATH, or set FFMPEG_BINARY to its full path."
             )
             return
-        if not self.sources:
-            self.failed.emit("Import at least one audio source before exporting.")
+        if not self.sources and not self.tracker_data:
+            self.failed.emit("Import an XM tracker score or audio source before exporting.")
             return
 
         duration = self._duration()
@@ -215,6 +223,7 @@ class OfflineRenderWorker(QThread):
             return
         total_frames = max(1, int(math.ceil(duration * self.fps)))
         width, height = self.resolution
+        render_width, render_height = self.render_resolution
         output_path = self.output_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -224,7 +233,9 @@ class OfflineRenderWorker(QThread):
             ) as temporary:
                 audio_path = Path(temporary) / "mix.wav"
                 temporary_video = Path(temporary) / "rendered.mp4"
-                self._write_audio_mix(audio_path, duration)
+                has_audio = bool(self.sources)
+                if has_audio:
+                    self._write_audio_mix(audio_path, duration)
                 if self.cancelled:
                     self.render_cancelled.emit()
                     return
@@ -240,17 +251,27 @@ class OfflineRenderWorker(QThread):
                     "-pixel_format",
                     "rgba",
                     "-video_size",
-                    f"{width}x{height}",
+                    f"{render_width}x{render_height}",
                     "-framerate",
                     str(self.fps),
                     "-i",
                     "pipe:0",
-                    "-i",
-                    str(audio_path),
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "1:a:0",
+                ]
+                if has_audio:
+                    command.extend(["-i", str(audio_path)])
+                command.extend(["-map", "0:v:0"])
+                if has_audio:
+                    command.extend(["-map", "1:a:0"])
+                else:
+                    command.append("-an")
+                if (render_width, render_height) != (width, height):
+                    # Keep the output dimensions fixed while doing the expensive
+                    # Python/Pillow generator work at a smaller internal canvas.
+                    command.extend([
+                        "-vf",
+                        f"scale={width}:{height}:flags=bicubic",
+                    ])
+                command.extend([
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -259,15 +280,10 @@ class OfflineRenderWorker(QThread):
                     "20",
                     "-pix_fmt",
                     "yuv420p",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "192k",
-                    "-movflags",
-                    "+faststart",
-                    "-shortest",
-                    str(temporary_video),
-                ]
+                ])
+                if has_audio:
+                    command.extend(["-c:a", "aac", "-b:a", "192k", "-shortest"])
+                command.extend(["-movflags", "+faststart", str(temporary_video)])
                 process = subprocess.Popen(
                     command,
                     stdin=subprocess.PIPE,
@@ -275,7 +291,7 @@ class OfflineRenderWorker(QThread):
                     stderr=subprocess.PIPE,
                 )
                 compositor = VisualCompositor(
-                    AssetCatalog(self.assets_root), render_size=self.resolution
+                    AssetCatalog(self.assets_root), render_size=self.render_resolution
                 )
                 compositor.reset_feedback()
                 analyzers = {}
@@ -297,12 +313,24 @@ class OfflineRenderWorker(QThread):
                             process.terminate()
                             break
                         seconds = frame_index / float(self.fps)
-                        if cached_packet is None or frame_index % analysis_stride == 0:
+                        if has_audio and (
+                            cached_packet is None or frame_index % analysis_stride == 0
+                        ):
                             raw_packet = self._analysis_packet(seconds, analyzers)
                             raw_packet["position"] = seconds
                             cached_packet = feature_bus.update(
                                 raw_packet, source_groups
                             )
+                        elif cached_packet is None:
+                            # XM-only projects need no audio decoder, FFT, or
+                            # placeholder PCM. Tracker events are the score input.
+                            cached_packet = {
+                                "frames": {},
+                                "source_ids": [],
+                                "correlation": np.empty((0, 0), dtype=np.float32),
+                                "master_features": {},
+                                "position": seconds,
+                            }
                         packet = dict(cached_packet)
                         packet["position"] = seconds
                         tracker_cue = tracker_packet_at(self.tracker_data, seconds)
