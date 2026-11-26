@@ -44,7 +44,10 @@ class PreviewRenderWorker(threading.Thread):
         self._state_lock = threading.Lock()
         self._reset_feedback_requested = True
         self._reset_generators_requested = False
-        self._reset_temporal_echo_requested = False
+        # Generation counters avoid losing a seek reset requested while an
+        # older frame is already rendering on the worker thread.
+        self._temporal_echo_reset_generation = 0
+        self._applied_temporal_echo_reset_generation = 0
         self._compositor: VisualCompositor | None = None
 
     @property
@@ -71,7 +74,7 @@ class PreviewRenderWorker(threading.Thread):
             if reset_generators:
                 self._reset_generators_requested = True
             if reset_temporal_echo:
-                self._reset_temporal_echo_requested = True
+                self._temporal_echo_reset_generation += 1
 
     def submit(
         self,
@@ -156,13 +159,21 @@ class PreviewRenderWorker(threading.Thread):
                 with self._state_lock:
                     reset_feedback = self._reset_feedback_requested
                     reset_generators = self._reset_generators_requested
-                    reset_temporal_echo = self._reset_temporal_echo_requested
+                    temporal_echo_reset_generation = (
+                        self._temporal_echo_reset_generation
+                    )
                     requested_size = self._requested_render_size
                     self._reset_feedback_requested = False
                     self._reset_generators_requested = False
-                    self._reset_temporal_echo_requested = False
+                reset_temporal_echo = (
+                    temporal_echo_reset_generation
+                    != self._applied_temporal_echo_reset_generation
+                )
                 if reset_temporal_echo and self._compositor is not None:
                     self._compositor.reset_temporal_echo("playhead_seek")
+                    self._applied_temporal_echo_reset_generation = (
+                        temporal_echo_reset_generation
+                    )
                 if requested_size != self._render_size:
                     # Preserve independent generator simulation state when only
                     # preview quality changes; the compositor's dimensions are
