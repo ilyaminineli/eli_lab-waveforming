@@ -561,8 +561,9 @@ class MainWindow(QMainWindow):
         self.export_fps.addItems(["15", "24", "25", "30"])
         self.export_fps.setCurrentText("24")
         self.export_quality = QComboBox()
-        self.export_quality.addItems(["PERFORMANCE  ·  ⅓", "BALANCED  ·  ½", "HIGH  ·  1×"])
-        self.export_quality.setCurrentText("BALANCED  ·  ½")
+        self.export_quality.addItems(["PERF ⅓", "BAL ½", "FULL 1×"])
+        self.export_quality.setCurrentText("BAL ½")
+        self.export_quality.setFixedWidth(82)
         self.export_quality.setToolTip(
             "Internal render resolution. MP4 delivery remains 1920×1440."
         )
@@ -1344,9 +1345,9 @@ class MainWindow(QMainWindow):
             for track_id, source in self.sources.items()
         ]
         render_scale = {
-            "PERFORMANCE  ·  ⅓": 1.0 / 3.0,
-            "BALANCED  ·  ½": 0.5,
-            "HIGH  ·  1×": 1.0,
+            "PERF ⅓": 1.0 / 3.0,
+            "BAL ½": 0.5,
+            "FULL 1×": 1.0,
         }.get(self.export_quality.currentText(), 0.5)
         duration = max(float(self.audio.duration), float(self._tracker_duration))
         frame_total = max(1, int(duration * fps + 0.999))
@@ -1752,7 +1753,12 @@ class MainWindow(QMainWindow):
             if self.audio.is_playing or self._tracker_playing
             else "PAUSED" if self._last_position > 0 else "READY"
         )
-        if count:
+        if count and self._tracker_data:
+            self.status.setText(
+                f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
+                f"  ·  XM {int(self._tracker_data.get('channels', 0)):02d} CH"
+            )
+        elif count:
             self.status.setText(
                 f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
             )
