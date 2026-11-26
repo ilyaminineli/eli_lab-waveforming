@@ -123,3 +123,54 @@ def test_real_uploaded_total_fvckery_module(tmp_path):
     assert module.cues[0].note_count == 17
     assert module.cues[-1].is_silent
     assert module.effect_count == 0
+
+
+def test_parser_streams_pattern_table_without_reading_trailing_sample_data(tmp_path, monkeypatch):
+    path = make_xm(tmp_path / "streamed.xm")
+    sample_tail = b"\xA5" * 65536
+    with path.open("ab") as target:
+        target.write(sample_tail)
+
+    original_open = Path.open
+    streams = []
+
+    class CountingStream:
+        def __init__(self, stream):
+            self.stream = stream
+            self.bytes_read = 0
+
+        def read(self, size=-1):
+            data = self.stream.read(size)
+            self.bytes_read += len(data)
+            return data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+    def tracked_open(self, *args, **kwargs):
+        stream = CountingStream(original_open(self, *args, **kwargs))
+        streams.append(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", tracked_open)
+    monkeypatch.setattr(
+        Path, "read_bytes",
+        lambda _self: (_ for _ in ()).throw(AssertionError("whole-file read is forbidden")),
+    )
+
+    module = load_xm(path)
+
+    assert len(module.cues) == 2
+    assert streams[0].bytes_read <= path.stat().st_size - len(sample_tail)
+
+
+def test_blank_module_title_falls_back_to_filename(tmp_path):
+    path = make_xm(tmp_path / "nameless-module.xm")
+    data = bytearray(path.read_bytes())
+    data[17:37] = b" " * 20
+    path.write_bytes(data)
+
+    assert load_xm(path).title == "nameless-module"
