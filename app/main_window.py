@@ -723,7 +723,7 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def _auto_variation_changed(self, enabled: bool) -> None:
-        if enabled and self.audio.is_playing:
+        if enabled and (self.audio.is_playing or self._tracker_playing):
             self._variation_timer.start()
         else:
             self._variation_timer.stop()
@@ -1498,7 +1498,7 @@ class MainWindow(QMainWindow):
 
         if (
             director_output.request_variation
-            and self.audio.is_playing
+            and (self.audio.is_playing or self._tracker_playing)
             and self.layer_stack.layers
         ):
             selected = self._current_layer()
