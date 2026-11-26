@@ -24,6 +24,16 @@ RELATIONSHIP_TYPES = frozenset({
     "prepares", "returns_as", "occupies", "synchronised_with",
     "independent_of",
 })
+SCENE_STATE_TRANSITIONS = {
+    "INACTIVE": {"PREPARED", "SAFE_FALLBACK"},
+    "PREPARED": {"ENTERING", "INACTIVE", "SAFE_FALLBACK"},
+    "ENTERING": {"ACTIVE", "PREPARED", "SAFE_FALLBACK"},
+    "ACTIVE": {"HELD", "EXITING", "SAFE_FALLBACK"},
+    "HELD": {"ACTIVE", "EXITING", "ARCHIVED", "SAFE_FALLBACK"},
+    "EXITING": {"ARCHIVED", "HELD", "ACTIVE", "SAFE_FALLBACK"},
+    "ARCHIVED": {"PREPARED", "SAFE_FALLBACK"},
+    "SAFE_FALLBACK": {"PREPARED", "ACTIVE", "INACTIVE"},
+}
 
 
 def _new_id(prefix: str) -> str:
@@ -214,6 +224,25 @@ class VisualScene:
     transition_eligible: bool = True
     fallback_scene_id: str = ""
     metadata: dict = field(default_factory=dict)
+
+    def can_transition_to(self, next_state: str) -> bool:
+        next_state = str(next_state).upper()
+        if next_state not in SCENE_STATES:
+            return False
+        if next_state == "SAFE_FALLBACK":
+            return self.state != "SAFE_FALLBACK"
+        return next_state in SCENE_STATE_TRANSITIONS.get(self.state, set())
+
+    def transition_state(self, next_state: str) -> None:
+        """Apply one declared scene lifecycle transition or reject it explicitly."""
+        next_state = str(next_state).upper()
+        if next_state == self.state:
+            return
+        if not self.can_transition_to(next_state):
+            raise ValueError(
+                f"Invalid scene transition: {self.state} -> {next_state}"
+            )
+        self.state = next_state
 
     def synchronize_layers(
         self, layers: list[Any], tracker_data: dict | None = None
