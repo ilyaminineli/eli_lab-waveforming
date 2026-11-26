@@ -421,3 +421,23 @@ def test_cpu_frame_exposes_scene_and_per_layer_profile():
     assert profile["layer_count"] == 1
     assert profile["layers"][0]["generator"] == "PHASE ORBIT"
     assert profile["layers"][0]["render_ms"] >= 0.0
+
+
+def test_cpu_frame_composites_screen_guide_once(monkeypatch):
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(32, 24)
+    )
+    guide = Image.new("RGBA", (32, 24), (100, 100, 100, 128))
+    monkeypatch.setattr(compositor, "_screen", lambda _name: guide)
+
+    output = compositor.render_cpu_frame(
+        packet=None,
+        seconds=0.0,
+        layers=[],
+        settings=GeneratorSettings(),
+        screen="TEST GUIDE",
+        feedback_enabled=False,
+    )
+
+    # One alpha composite over black is ~50; two passes would produce ~75.
+    assert output.getpixel((4, 4))[:3] == (50, 50, 50)
