@@ -433,6 +433,12 @@ class OfflineRenderWorker(QThread):
                                             outgoing_policy=str(
                                                 route.get("outgoing_policy", "archive")
                                             ),
+                                            object_correspondence=list(
+                                                route.get("object_correspondence", [])
+                                            ),
+                                            path_correspondence=list(
+                                                route.get("path_correspondence", [])
+                                            ),
                                             trigger=trigger,
                                         )
                                         proposal = transition_controller.propose(
