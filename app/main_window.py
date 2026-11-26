@@ -946,7 +946,6 @@ class MainWindow(QMainWindow):
             )
         else:
             self._render_timer.start()
-            self._render_frame()
         self._refresh_scene_controls()
         return True
 
@@ -954,7 +953,8 @@ class MainWindow(QMainWindow):
         target_scene_id = self._selected_transition_target()
         if not target_scene_id:
             return
-        self._begin_scene_transition(target_scene_id)
+        if self._begin_scene_transition(target_scene_id):
+            self._render_frame()
 
     def _score_cue_at(self, seconds: float):
         candidates = [
@@ -2295,7 +2295,8 @@ class MainWindow(QMainWindow):
             return
         if self._tracker_playing:
             self._tracker_playing = False
-            self._render_timer.stop()
+            if not self.scene_transition_controller.transition_active:
+                self._render_timer.stop()
             self._variation_timer.stop()
             self.play_button.setText("▶  PLAY")
             self._update_status()
