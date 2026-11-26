@@ -191,8 +191,14 @@ class VisualProject:
             old_object_id = visual_object.object_id
             object_id_map[old_object_id] = _new_id("obj")
             visual_object.object_id = object_id_map[old_object_id]
+            old_layer_id = visual_object.layer_id
+            if old_layer_id and old_layer_id not in layer_id_map:
+                # Archived graph objects can outlive their backing layer record.
+                # Give those identities a fresh layer key too, so duplication
+                # never creates two scenes that claim the same renderer layer.
+                layer_id_map[old_layer_id] = uuid4().hex[:10]
             visual_object.layer_id = layer_id_map.get(
-                visual_object.layer_id, visual_object.layer_id
+                old_layer_id, old_layer_id
             )
             visual_object.lineage = [
                 *visual_object.lineage,
