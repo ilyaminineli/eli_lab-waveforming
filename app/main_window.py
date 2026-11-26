@@ -21,6 +21,9 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QSplitter,
     QMessageBox,
+    QDialog,
+    QDialogButtonBox,
+    QPlainTextEdit,
     QGroupBox,
     QFormLayout,
     QScrollArea,
@@ -50,7 +53,7 @@ from engine.visual.composition_director import (
     vary_composition,
 )
 from engine.visual.compositor import PREVIEW_SIZE, PROJECT_SIZE, VisualCompositor
-from engine.visual.generators import GeneratorSettings
+from engine.visual.generators import GeneratorBank, GeneratorSettings
 from engine.visual.layers import LayerStack, VisualLayer
 from engine.visual.preview_worker import (
     PreviewRenderWorker,
@@ -84,6 +87,47 @@ def format_time(seconds: float) -> str:
 
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, float(value)))
+
+
+class PathMapEditorDialog(QDialog):
+    """Small JSON authoring surface with a live path-ID catalogue."""
+
+    def __init__(self, parent, catalogue: str, initial_json: str):
+        super().__init__(parent)
+        self.setWindowTitle("AUTHORED MORPH PATH MAP")
+        self.resize(920, 760)
+        layout = QVBoxLayout(self)
+        hint = QLabel(
+            "Map source/target VisualObject IDs to path IDs. Modes: pair (1→1), "
+            "split (1→N), merge (N→1). Anchors are normalized arc-length pairs "
+            "from 0.0 to 1.0; omitted endpoints are added automatically."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        layout.addWidget(QLabel("AVAILABLE OBJECTS AND GENERATED PATH IDS"))
+        self.catalogue = QPlainTextEdit()
+        self.catalogue.setReadOnly(True)
+        self.catalogue.setPlainText(catalogue)
+        self.catalogue.setMaximumHeight(270)
+        layout.addWidget(self.catalogue)
+        layout.addWidget(QLabel("PATH CORRESPONDENCE JSON"))
+        self.editor = QPlainTextEdit()
+        self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.editor.setPlainText(initial_json)
+        layout.addWidget(self.editor, 1)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def path_mapping(self) -> list[dict]:
+        values = json.loads(self.editor.toPlainText() or "[]")
+        if not isinstance(values, list):
+            raise ValueError("The path map root must be a JSON array.")
+        return values
 
 
 class SourceRow(QWidget):
@@ -159,6 +203,7 @@ class MainWindow(QMainWindow):
         self._tracker_clock_started = 0.0
         self._tracker_clock_origin = 0.0
         self._settings = GeneratorSettings()
+        self._path_catalog_generators = GeneratorBank()
         self.director = CompositionDirector("SEMI-AUTO")
         self.feature_bus = FeatureBus(analysis_rate=8.0)
         self.timeline = Timeline()
@@ -428,7 +473,13 @@ class MainWindow(QMainWindow):
             "Commit through M12. DISSOLVE blends frames; MORPH deforms matched objects and "
             "line-generator paths. Other transition families remain lifecycle-only for now."
         )
+        self.path_map_button = QPushButton("EDIT MORPH PATH MAP")
+        self.path_map_button.setToolTip(
+            "Author path-to-path matches and normalized anchors, including one-to-many "
+            "splits and many-to-one merges. The map is saved with the project."
+        )
         self.cue_route_button = QPushButton("ROUTE CURRENT XM CUE")
+        scene_form.addRow(self.path_map_button)
         scene_form.addRow(self.scene_transition_button)
         scene_form.addRow(self.cue_route_button)
         self.scene_status_label = QLabel("1 PERSISTENT SCENE")
@@ -442,6 +493,7 @@ class MainWindow(QMainWindow):
         self.add_scene_button.clicked.connect(self.add_scene)
         self.duplicate_scene_button.clicked.connect(self.duplicate_scene)
         self.scene_transition_button.clicked.connect(self.commit_scene_transition)
+        self.path_map_button.clicked.connect(self.edit_morph_path_map)
         self.cue_route_button.clicked.connect(self.route_current_xm_cue)
 
         self.complexity.valueChanged.connect(self._settings_changed)
@@ -898,6 +950,131 @@ class MainWindow(QMainWindow):
     def _selected_transition_target(self) -> str:
         return str(self.scene_target.currentData() or "")
 
+    def _scene_path_catalogue(self, scene_id: str) -> tuple[str, list[dict]]:
+        scene = self.visual_project.get_scene(scene_id)
+        if scene is None:
+            return "Scene not found.", []
+        layers = {
+            item.layer_id: item
+            for item in (
+                VisualLayer.from_dict(record)
+                for record in self.visual_project.layers_for_scene(scene_id)
+            )
+        }
+        catalogue = []
+        lines = []
+        for visual_object in scene.objects:
+            layer = layers.get(visual_object.layer_id)
+            if layer is None:
+                continue
+            paths = self._path_catalog_generators.vector_geometry(
+                layer.generator,
+                self._last_packet,
+                float(self._preview_animation_seconds),
+                tuple(self.preview_worker.render_size),
+                self._settings,
+                source_id=layer.source_id or None,
+            )
+            path_ids = [str(item["path_id"]) for item in (paths or [])]
+            catalogue.append({
+                "object_id": visual_object.object_id,
+                "name": visual_object.name,
+                "generator": layer.generator,
+                "path_ids": path_ids,
+            })
+            lines.append(
+                f"{visual_object.name}  |  {layer.generator}\n"
+                f"  object_id: {visual_object.object_id}"
+            )
+            if paths is None:
+                lines.append("  raster-only generator; object transform fallback")
+            else:
+                for path_id in path_ids[:220]:
+                    lines.append(f"  - {path_id}")
+                if len(path_ids) > 220:
+                    lines.append(f"  … {len(path_ids) - 220} more paths")
+        return "\n".join(lines) if lines else "No renderable VisualObjects in this scene.", catalogue
+
+    def edit_morph_path_map(self) -> None:
+        source_id = self.visual_project.active_scene_id
+        target_id = self._selected_transition_target()
+        if not target_id:
+            self.scene_status_label.setText("SELECT A TARGET SCENE BEFORE EDITING PATH MAPS")
+            return
+        source_text, source_catalogue = self._scene_path_catalogue(source_id)
+        target_text, target_catalogue = self._scene_path_catalogue(target_id)
+        catalogue = (
+            "OUTGOING SCENE\n" + source_text
+            + "\n\nINCOMING SCENE\n" + target_text
+        )
+        draft = self.visual_project.metadata.get("path_correspondence_draft", {})
+        if (
+            isinstance(draft, dict)
+            and draft.get("source_scene_id") == source_id
+            and draft.get("target_scene_id") == target_id
+        ):
+            initial = draft.get("path_correspondence", [])
+        else:
+            initial = []
+            # Pre-fill a usable pair example when both scenes contain vector paths.
+            source_obj = next((item for item in source_catalogue if item["path_ids"]), None)
+            target_obj = next((item for item in target_catalogue if item["path_ids"]), None)
+            if source_obj and target_obj:
+                initial = [{
+                    "source_object_id": source_obj["object_id"],
+                    "target_object_id": target_obj["object_id"],
+                    "mode": "pair",
+                    "source_path_ids": [source_obj["path_ids"][0]],
+                    "target_path_ids": [target_obj["path_ids"][0]],
+                    "anchors": [
+                        {"source_t": 0.0, "target_t": 0.0},
+                        {"source_t": 0.5, "target_t": 0.5},
+                        {"source_t": 1.0, "target_t": 1.0},
+                    ],
+                }]
+        dialog = PathMapEditorDialog(
+            self,
+            catalogue,
+            json.dumps(initial, ensure_ascii=False, indent=2),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            path_mapping = dialog.path_mapping()
+            source_ids = {item.object_id for item in self.visual_project.get_scene(source_id).objects}
+            target_ids = {item.object_id for item in self.visual_project.get_scene(target_id).objects}
+            for item in path_mapping:
+                if item.get("source_object_id") not in source_ids:
+                    raise ValueError(
+                        f"Unknown outgoing VisualObject ID: {item.get('source_object_id')}"
+                    )
+                if item.get("target_object_id") not in target_ids:
+                    raise ValueError(
+                        f"Unknown incoming VisualObject ID: {item.get('target_object_id')}"
+                    )
+            validated = SceneTransition(
+                source_scene_id=source_id,
+                target_scene_id=target_id,
+                family="morph",
+                path_correspondence=path_mapping,
+            )
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "INVALID PATH MAP", str(exc))
+            return
+        self.visual_project.metadata["path_correspondence_draft"] = {
+            "source_scene_id": source_id,
+            "target_scene_id": target_id,
+            "object_correspondence": [dict(item) for item in validated.object_correspondence],
+            "path_correspondence": [dict(item) for item in validated.path_correspondence],
+        }
+        split_count = sum(item["mode"] == "split" for item in validated.path_correspondence)
+        merge_count = sum(item["mode"] == "merge" for item in validated.path_correspondence)
+        self.scene_status_label.setText(
+            f"PATH MAP SAVED  ·  {len(validated.path_correspondence)} GROUPS  ·  "
+            f"{split_count} SPLITS  ·  {merge_count} MERGES"
+        )
+        self._render_frame()
+
     def _transition_contract(
         self, target_scene_id: str, *, trigger: dict | None = None,
         route: dict | None = None
@@ -913,7 +1090,22 @@ class MainWindow(QMainWindow):
             easing=str(route.get("easing", "smoothstep")),
             interruption_policy=str(route.get("interruption_policy", "cancel")),
             outgoing_policy=str(route.get("outgoing_policy", "archive")),
-            object_correspondence=list(route.get("object_correspondence", [])),
+            object_correspondence=list(
+                route.get(
+                    "object_correspondence",
+                    self.visual_project.metadata.get("path_correspondence_draft", {}).get(
+                        "object_correspondence", []
+                    ) if not route else [],
+                )
+            ),
+            path_correspondence=list(
+                route.get(
+                    "path_correspondence",
+                    self.visual_project.metadata.get("path_correspondence_draft", {}).get(
+                        "path_correspondence", []
+                    ) if not route else [],
+                )
+            ),
             trigger=dict(trigger or {"type": "manual"}),
         )
 
@@ -951,6 +1143,14 @@ class MainWindow(QMainWindow):
             self.scene_status_label.setText(f"TRANSITION NOT COMMITTED: {exc}")
             return False
         self.visual_project.add_transition(transition)
+        if (trigger or {}).get("type", "manual") == "manual":
+            draft = self.visual_project.metadata.get("path_correspondence_draft", {})
+            if (
+                isinstance(draft, dict)
+                and draft.get("source_scene_id") == transition.source_scene_id
+                and draft.get("target_scene_id") == transition.target_scene_id
+            ):
+                self.visual_project.metadata.pop("path_correspondence_draft", None)
         self._last_transition_sample = sample
         self.scene_status_label.setText(
             f"{transition.family.upper()}  ·  "
@@ -989,12 +1189,24 @@ class MainWindow(QMainWindow):
             self.scene_status_label.setText("NO XM CUE AT THE CURRENT PLAYHEAD")
             return
         try:
+            draft = self.visual_project.metadata.get("path_correspondence_draft", {})
+            use_draft = (
+                isinstance(draft, dict)
+                and draft.get("source_scene_id") == self.visual_project.active_scene_id
+                and draft.get("target_scene_id") == target_scene_id
+            )
             route = self.visual_project.set_cue_route(
                 cue.cue_id,
                 target_scene_id,
                 source_scene_id=self.visual_project.active_scene_id,
                 family=self.transition_family.currentText(),
                 duration_seconds=self.transition_duration.value(),
+                object_correspondence=(
+                    draft.get("object_correspondence", []) if use_draft else []
+                ),
+                path_correspondence=(
+                    draft.get("path_correspondence", []) if use_draft else []
+                ),
             )
         except ValueError as exc:
             self.scene_status_label.setText(str(exc))

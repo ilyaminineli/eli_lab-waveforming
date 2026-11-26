@@ -987,6 +987,10 @@ class VisualCompositor:
             outgoing_records = {str(item.get("layer_id","")): item for item in contract.outgoing.get("layers", [])}
             incoming_records = {str(item.get("layer_id","")): item for item in contract.incoming.get("layers", [])}
             vector_overrides, vector_path_counts = {}, []
+            path_mapping_warnings = []
+            authored_path_map_count = 0
+            split_path_map_count = 0
+            merge_path_map_count = 0
             for correspondence in contract.object_correspondence:
                 source_object = outgoing_objects.get(correspondence["source_object_id"], {})
                 target_object = incoming_objects.get(correspondence["target_object_id"], {})
@@ -1011,7 +1015,31 @@ class VisualCompositor:
                 )
                 # Raster-only generators keep the object-transform fallback.
                 if source_paths is None or target_paths is None: continue
-                vector_overrides[layer_id] = interpolate_vector_paths(source_paths, target_paths, contract.eased_progress)
+                authored_maps = [
+                    item for item in contract.path_correspondence
+                    if item["source_object_id"] == correspondence["source_object_id"]
+                    and item["target_object_id"] == correspondence["target_object_id"]
+                ]
+                try:
+                    vector_overrides[layer_id] = interpolate_vector_paths(
+                        source_paths, target_paths, contract.eased_progress,
+                        path_correspondence=authored_maps,
+                    )
+                except ValueError as exc:
+                    # Generator settings/score changes can invalidate a draft's
+                    # path IDs. Keep the frame renderable and expose the warning
+                    # in the profile; the stable automatic matcher remains safe.
+                    path_mapping_warnings.append(str(exc))
+                    vector_overrides[layer_id] = interpolate_vector_paths(
+                        source_paths, target_paths, contract.eased_progress
+                    )
+                authored_path_map_count += len(authored_maps)
+                split_path_map_count += sum(
+                    1 for item in authored_maps if item["mode"] == "split"
+                )
+                merge_path_map_count += sum(
+                    1 for item in authored_maps if item["mode"] == "merge"
+                )
                 vector_path_counts.append(len(vector_overrides[layer_id]))
             frame = self.render(
                 packet=packet, seconds=seconds, layers=morph_layers, settings=settings,
@@ -1137,6 +1165,10 @@ class VisualCompositor:
                 ),
                 "vector_morph_object_count": len(vector_path_counts) if contract.render_mode == "object_morph" else 0,
                 "vector_morph_path_count": sum(vector_path_counts) if contract.render_mode == "object_morph" else 0,
+                "authored_path_map_count": authored_path_map_count if contract.render_mode == "object_morph" else 0,
+                "split_path_map_count": split_path_map_count if contract.render_mode == "object_morph" else 0,
+                "merge_path_map_count": merge_path_map_count if contract.render_mode == "object_morph" else 0,
+                "path_mapping_warnings": path_mapping_warnings if contract.render_mode == "object_morph" else [],
             },
         }
         return frame
