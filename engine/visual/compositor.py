@@ -7,7 +7,11 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 from .assets import AssetCatalog
 from .generators import GeneratorBank, GeneratorSettings
 from .layers import VisualLayer
-from .scene_pair import ScenePairRenderContract, blend_scene_pair_frames
+from .scene_pair import (
+    ScenePairRenderContract,
+    blend_scene_pair_frames,
+    build_object_morph_state,
+)
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
@@ -968,7 +972,24 @@ class VisualCompositor:
             if isinstance(item, dict)
         ]
 
-        if contract.render_mode == "crossfade":
+        if contract.render_mode == "object_morph":
+            morph_scene, morph_records = build_object_morph_state(contract)
+            morph_layers = [
+                VisualLayer.from_dict(item)
+                for item in morph_records
+                if isinstance(item, dict)
+            ]
+            frame = self.render(
+                packet=packet,
+                seconds=seconds,
+                layers=morph_layers,
+                settings=settings,
+                screen=screen,
+                feedback_enabled=False,
+                visual_scene=morph_scene,
+            )
+            profiles = (dict(self.last_profile),)
+        elif contract.render_mode == "crossfade":
             outgoing_frame = self.render(
                 packet=packet,
                 seconds=seconds,
@@ -1079,6 +1100,11 @@ class VisualCompositor:
                 "incoming_scene_id": contract.target_scene_id,
                 "outgoing_weight": contract.outgoing_weight,
                 "incoming_weight": contract.incoming_weight,
+                "object_correspondence_count": len(contract.object_correspondence),
+                "morphed_object_count": (
+                    len(contract.object_correspondence)
+                    if contract.render_mode == "object_morph" else 0
+                ),
             },
         }
         return frame
