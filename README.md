@@ -134,6 +134,7 @@ See [docs/M6_XM_TRACKER_WORKFLOW.md](docs/M6_XM_TRACKER_WORKFLOW.md) and [docs/G
 - Offline export has three internal render profiles: PERFORMANCE (640×480), BALANCED (960×720) and FULL (1920×1440). FFmpeg upscales reduced internal renders to the fixed **1920×1440** delivery canvas.
 - XM-only export produces a silent video stream; with audio stems imported, the same export path adds the mixed AAC soundtrack.
 - At BALANCED, the generator/compositor handles one quarter of the pixels per frame compared with FULL; this is a pixel-work reduction, not a claim of a measured 4× speedup.
+- FPS is independent of quality: for a 133.18 s XM, 30 FPS is about 3,996 frames while 15 FPS is about 1,998. Use 15 FPS for quick drafts and 24 FPS for general MV review.
 
 See [docs/M7_RENDER_PROFILE.md](docs/M7_RENDER_PROFILE.md).
 
