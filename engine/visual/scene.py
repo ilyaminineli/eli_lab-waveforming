@@ -435,6 +435,27 @@ class VisualScoreCue:
         return cls(**clean)
 
 
+def crossed_score_cues(
+    cues: list[VisualScoreCue],
+    previous_seconds: float,
+    current_seconds: float,
+) -> list[VisualScoreCue]:
+    """Return score cues crossed by a transport step, including loop wraps.
+
+    Seeking is handled by the caller resetting its scan cursor. A backwards
+    step here therefore represents a transport wrap: scan the new pass from
+    the beginning rather than clamping the playhead to the previous pass.
+    """
+    previous = float(previous_seconds)
+    current = max(0.0, float(current_seconds))
+    if current < previous - 1e-3:
+        previous = -1e-6
+    return [
+        cue for cue in cues
+        if previous < float(cue.time) <= current + 1e-6
+    ]
+
+
 @dataclass(slots=True)
 class VisualScore:
     """Ordered visual trajectory with source-linked cues and scene references."""
