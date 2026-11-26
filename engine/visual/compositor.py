@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from time import perf_counter
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .assets import AssetCatalog
@@ -49,6 +50,7 @@ class VisualCompositor:
         self._paper_cache: dict[tuple[str, tuple[int, int]], tuple] = {}
         self._feedback: Image.Image | None = None
         self._last_time: float | None = None
+        self.last_profile: dict = {"scene_ms": 0.0, "compose_ms": 0.0, "frame_ms": 0.0, "layers": []}
 
     def generator_names(self) -> list[str]:
         return self.generators.names()
@@ -650,8 +652,10 @@ class VisualCompositor:
             include_guide: bool = True,
     ) -> dict:
         """Build a layer-separated scene for GPU composition."""
+        frame_started = perf_counter()
         settings = settings or GeneratorSettings()
         layers = layers or []
+        layer_profiles = []
         background = Image.new("RGBA", self.size, (10, 10, 10, 255))
         guide = self._screen(screen)
         if guide is not None and include_guide:
@@ -662,6 +666,7 @@ class VisualCompositor:
         for layer in layers:
             if not layer.visible:
                 continue
+            layer_started = perf_counter()
             if gpu_native:
                 spec = self._gpu_interference_spec(
                     layer, packet, seconds, settings, self.size, screen
@@ -674,6 +679,12 @@ class VisualCompositor:
                         "blend_mode": layer.blend_mode,
                         "opacity": layer.opacity,
                         "layer_id": layer.layer_id,
+                    })
+                    layer_profiles.append({
+                        "layer_id": layer.layer_id,
+                        "generator": layer.generator,
+                        "render_ms": (perf_counter() - layer_started) * 1000.0,
+                        "backend": "OPENGL_SPEC",
                     })
                     continue
             if layer.generator == "INTERFERENCE FIELD":
@@ -694,6 +705,12 @@ class VisualCompositor:
                 "opacity": layer.opacity,
                 "layer_id": layer.layer_id,
             })
+            layer_profiles.append({
+                "layer_id": layer.layer_id,
+                "generator": layer.generator,
+                "render_ms": (perf_counter() - layer_started) * 1000.0,
+                "backend": "CPU",
+            })
         if not include_guide and guide is not None:
             rendered_layers.append({
                 "image": guide,
@@ -702,12 +719,22 @@ class VisualCompositor:
                 "opacity": 1.0,
                 "layer_id": "__screen_guide__",
             })
+        scene_ms = (perf_counter() - frame_started) * 1000.0
+        self.last_profile = {
+            "scene_ms": scene_ms,
+            "compose_ms": 0.0,
+            "frame_ms": scene_ms,
+            "layer_count": len(layer_profiles),
+            "layers": layer_profiles,
+            "backend": "OPENGL_SPEC" if gpu_native else "CPU",
+        }
         return {
             "background": background,
             "layers": rendered_layers,
             "size": self.size,
             "time": float(seconds),
             "screen": screen,
+            "profile": self.last_profile,
         }
 
     def render_cpu_frame(
@@ -723,6 +750,7 @@ class VisualCompositor:
             feedback_shift: float = 0.0,
     ) -> Image.Image:
         """Compose every generator and effect into a complete CPU RGBA frame."""
+        compose_started = perf_counter()
         scene = self.render_scene(
             packet=packet,
             seconds=seconds,
@@ -767,6 +795,9 @@ class VisualCompositor:
         guide = self._screen(screen)
         if guide is not None:
             frame.alpha_composite(guide)
+        compose_ms = (perf_counter() - compose_started) * 1000.0
+        self.last_profile["compose_ms"] = compose_ms
+        self.last_profile["frame_ms"] = self.last_profile["scene_ms"] + compose_ms
         return frame
 
     def render(self, packet: dict | None, seconds: float,
