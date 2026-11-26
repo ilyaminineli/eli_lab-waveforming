@@ -40,10 +40,16 @@ class VisualMetrics:
     def from_packet(cls, packet: dict | None, source_id: str | None = None) -> "VisualMetrics":
         packet = packet or {}
         tracker = packet.get("tracker_cue") or {}
-        tracker_notes = np.asarray(tracker.get("notes") or [], dtype=np.uint8)
+        raw_notes = tracker.get("notes")
+        tracker_notes = np.asarray(
+            raw_notes if raw_notes is not None else [], dtype=np.uint8
+        )
         if tracker_notes.ndim != 2:
             tracker_notes = None
-        tracker_instruments = np.asarray(tracker.get("instruments") or [], dtype=np.uint8)
+        raw_instruments = tracker.get("instruments")
+        tracker_instruments = np.asarray(
+            raw_instruments if raw_instruments is not None else [], dtype=np.uint8
+        )
         if tracker_instruments.ndim != 2 or tracker_notes is None or tracker_instruments.shape != tracker_notes.shape:
             tracker_instruments = None
         tracker_values = {
