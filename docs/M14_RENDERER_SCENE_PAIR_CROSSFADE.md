@@ -128,10 +128,10 @@ The CI smoke path checks:
 
 ## 8. Current limitations and next steps
 
-This first M14 increment implements the pair-rendering architecture and dissolve, not all transition families.
+This M14 increment implements the pair-rendering architecture, dissolve, object/path morphing, and deterministic assembly/erosion, but not all transition families.
 
 - Scene-pair rendering is CPU-side; a future GPU-native pair compositor can optimize it.
-- `assembly` and `erosion` use deterministic seeded tile-fragment lifecycle rendering. `mask_reveal`, `displacement` and `temporal_echo` remain explicit hold modes; temporal echo is the next M14 slice.
+- `assembly` and `erosion` use deterministic seeded tile-fragment lifecycle rendering. `mask_reveal`, `displacement` and `temporal_echo` remain explicit hold modes; temporal echo is the next M14 slice. Assembly/erosion details and validation are documented in [M14_ASSEMBLY_EROSION_LIFECYCLE.md](M14_ASSEMBLY_EROSION_LIFECYCLE.md).
 - Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction and closed-path direction reversal remain future work. Automatic matches use nearest-centroid pairing within compatible path groups; authored pair/split/merge maps and normalized path anchors override that fallback.
 - Correspondence is one-to-one. Split/merge mapping and explicit object transfer/merge policies remain future work.
 - There is no independent preparation or establishment image treatment yet; the M12 phase sample is exposed to the compositor.
