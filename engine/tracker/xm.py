@@ -166,8 +166,13 @@ class XMModule:
         seen_patterns: set[int] = set()
         previous: XMOrderCue | None = None
         carried_instruments = [0] * self.channels
+        carried_notes = [0] * self.channels
+        carried_note_ages = [0] * self.channels
         for cue in self.cues:
             rows = self.patterns[cue.pattern]
+            initial_instruments = list(carried_instruments)
+            initial_notes = list(carried_notes)
+            initial_note_ages = list(carried_note_ages)
             item = cue.to_dict(
                 tuple(
                     tuple(event.note if event.has_note else 0 for event in row)
@@ -177,11 +182,28 @@ class XMModule:
             item["instruments"] = [
                 [event.instrument for event in row] for row in rows
             ]
-            item["channel_initial_instruments"] = list(carried_instruments)
+            item["channel_initial_instruments"] = initial_instruments
+            item["channel_initial_notes"] = initial_notes
+            item["channel_initial_note_ages"] = initial_note_ages
+            item["note_commands"] = [
+                [event.note for event in row] for row in rows
+            ]
             for row in rows:
                 for channel_index, event in enumerate(row):
                     if event.instrument:
                         carried_instruments[channel_index] = event.instrument
+                    if 1 <= event.note <= 96:
+                        carried_notes[channel_index] = event.note
+                        carried_note_ages[channel_index] = 0
+                    elif event.note in (97, 98, 99):
+                        carried_notes[channel_index] = 0
+                        carried_note_ages[channel_index] = 0
+                    elif carried_notes[channel_index]:
+                        carried_note_ages[channel_index] += 1
+            # One more row elapses between the final row and the next order.
+            for channel_index in range(self.channels):
+                if carried_notes[channel_index]:
+                    carried_note_ages[channel_index] += 1
             item["volumes"] = [
                 [event.volume for event in row] for row in rows
             ]
@@ -292,6 +314,9 @@ def tracker_packet_at(
     }
     instrument_rows = cue.get("instruments") or []
     initial_instruments = cue.get("channel_initial_instruments") or []
+    note_command_rows = cue.get("note_commands") or []
+    initial_notes = cue.get("channel_initial_notes") or []
+    initial_note_ages = cue.get("channel_initial_note_ages") or []
     volume_rows = cue.get("volumes") or []
     effect_rows = cue.get("effects") or []
     parameter_rows = cue.get("parameters") or []
@@ -306,6 +331,12 @@ def tracker_packet_at(
         current_note = (
             int(row_notes[channel_index])
             if channel_index < len(row_notes) else 0
+        )
+        current_note_command = (
+            int(note_command_rows[row_index][channel_index])
+            if row_index < len(note_command_rows)
+            and channel_index < len(note_command_rows[row_index])
+            else current_note
         )
         current_instrument = (
             int(instrument_rows[row_index][channel_index])
@@ -333,21 +364,33 @@ def tracker_packet_at(
         )
 
         # Tracker instrument selection and note pitch persist until replaced.
-        held_note = 0
+        held_note = (
+            int(initial_notes[channel_index])
+            if channel_index < len(initial_notes) else 0
+        )
         held_instrument = (
             int(initial_instruments[channel_index])
             if channel_index < len(initial_instruments) else 0
         )
-        note_age = row_total + 1
+        note_age = (
+            int(initial_note_ages[channel_index]) + row_index
+            if held_note and channel_index < len(initial_note_ages)
+            else row_total + 1
+        )
         recent_hits = 0
         volume = 0.82
         volume_found = False
         for scan_row in range(row_index, -1, -1):
-            if scan_row < len(note_rows) and channel_index < len(note_rows[scan_row]):
-                note_value = int(note_rows[scan_row][channel_index])
-                if note_value and held_note == 0:
-                    held_note = note_value
+            if scan_row < len(note_command_rows) and channel_index < len(note_command_rows[scan_row]):
+                note_command = int(note_command_rows[scan_row][channel_index])
+                if 1 <= note_command <= 96:
+                    held_note = note_command
                     note_age = row_index - scan_row
+                    break
+                if note_command in (97, 98, 99):
+                    held_note = 0
+                    note_age = row_index - scan_row
+                    break
             if scan_row < len(instrument_rows) and channel_index < len(instrument_rows[scan_row]):
                 instrument_value = int(instrument_rows[scan_row][channel_index])
                 if instrument_value and held_instrument == 0:
@@ -368,7 +411,7 @@ def tracker_packet_at(
             if channel_index < len(channel_note_counts) else 0.0
         )
         envelope = math.exp(-max(0, note_age) / 5.0) if held_note else 0.0
-        trigger = 1.0 if 1 <= current_note <= 96 else 0.0
+        trigger = 1.0 if 1 <= current_note_command <= 96 else 0.0
         activity = max(trigger, envelope * 0.78) * max(0.12, volume)
         pan = 0.5
         if current_effect == 0x08:
