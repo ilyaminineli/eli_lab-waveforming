@@ -441,3 +441,21 @@ def test_cpu_frame_composites_screen_guide_once(monkeypatch):
 
     # One alpha composite over black is ~50; two passes would produce ~75.
     assert output.getpixel((4, 4))[:3] == (50, 50, 50)
+
+
+def test_tracker_matrix_keeps_instrument_colours_on_white_plates():
+    compositor = VisualCompositor(AssetCatalog(Path("missing-assets")))
+    source = Image.new("RGBA", (4, 1))
+    source.putdata([
+        (104, 145, 190, 220),
+        (188, 166, 106, 220),
+        (159, 135, 178, 220),
+        (174, 184, 192, 205),
+    ])
+    layer = VisualLayer("Tracker", "TRACKER MATRIX")
+
+    result = compositor._apply_palette(
+        source, layer, packet={}, white_plate=True
+    )
+
+    assert list(result.getdata()) == list(source.getdata())
