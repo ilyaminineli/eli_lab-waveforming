@@ -472,15 +472,6 @@ class OfflineRenderWorker(QThread):
                             project_model.active_scene_id
                             if project_model is not None else ""
                         )
-                        scene_pair_contract = None
-                        if (
-                            project_model is not None
-                            and transition_controller.transition_active
-                            and active_transition_sample is not None
-                        ):
-                            scene_pair_contract = ScenePairRenderContract.from_project(
-                                project_model, active_transition_sample
-                            )
                         frame_layers = (
                             scene_layers.get(active_scene_id, [])
                             if project_model is not None else self.layers
@@ -502,6 +493,16 @@ class OfflineRenderWorker(QThread):
                             else:
                                 self.layers = frame_layers
                             self.settings.seed = seed
+
+                        scene_pair_contract = None
+                        if (
+                            project_model is not None
+                            and transition_controller.transition_active
+                            and active_transition_sample is not None
+                        ):
+                            scene_pair_contract = ScenePairRenderContract.from_project(
+                                project_model, active_transition_sample
+                            )
 
                         frame_scene = self.visual_scene
                         if project_model is not None:
