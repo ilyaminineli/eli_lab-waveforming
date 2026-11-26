@@ -1,6 +1,6 @@
 # eli_lab — WAVEFORMING
 
-An experimental audio-reactive visual composition workstation for abstract IDM-style motion graphics. The visual system is built from sound descriptors, mathematical generators and layered compositing—not standard equalizer displays.
+A tracker-first visual composition instrument for IDM and experimental electronic music. XM/MOD-style musical structure is a first-class visual score: every tracker channel keeps its identity and drives a persistent visual voice. Audio stems are optional for playback, reference and complementary timbral analysis.
 
 ## Multichannel, generative direction and GPU preview
 
@@ -33,12 +33,7 @@ The shared run configuration launches $PROJECT_DIR$/main.py with $PROJECT_DIR$ a
     pip install -r requirements.txt
     python main.py
 
-For the test dependencies:
-
-    pip install -r requirements-dev.txt
-    python -m pytest -q
-
-The repository includes `pytest.ini` and `tests/conftest.py` so imports such as `engine.audio` resolve from the repository root in terminal and PyCharm test runs.
+The repository's GitHub Actions workflow performs a Python compile check, validates the OpenGL shader source, and smoke-tests the XM-to-channel-to-visual-instrument path. The previous pytest suite was intentionally removed during the architecture cleanup.
 
 ## M1 — Synchronized audio and analysis
 
@@ -120,27 +115,25 @@ The supplied target machine is an AMD Ryzen AI 5 330 at 2.00 GHz with Radeon 820
 
 See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implementation details, export assumptions and acceptance checks.
 
-## M6 — XM tracker-driven visuals
+## M6 — XM as a visual score
 
-- Import XM tracker scores from the visible **+ XM** button or PROJECT → Import XM tracker score… (Ctrl+Shift+M). The audio file chooser also routes selected .xm files to the tracker importer instead of the audio decoder.
-- Import a mixed folder with **+ FOLDER**: supported audio stems and XM score files are scanned separately, so XM files no longer cause an audio-format error.
-- Extract order/pattern cues, note rows, instrument assignments and active channels.
-- Set timeline tempo from the module and add independently styled TRACKER order markers.
-- Save tracker cue/note maps inside the .wfp project; live preview and offline export use the same cue packet.
-- **TRACKER MATRIX** visual instrument renders channel/row note activity with instrument-coloured cells and a pattern playhead.
-- The importer reads metadata only; it does not play XM samples. Import the corresponding audio separately for playback and spectral response.
-- Fxx speed/tempo changes are included in cue timing. Bxx/Dxx/E6x control-flow commands are not yet simulated and are flagged as approximate timing.
+- **XM is not imported as audio.** Use **+ XM** for a tracker score, **+ AUDIO** for optional sound/stems, or **+ FOLDER** to discover both separately.
+- The importer extracts all tracker channels, patterns, note rows, carried instrument assignments, instrument/sample names, volume-column values and effect-column commands. Sample payload bytes are skipped; they are not decoded for visual use.
+- The channel inspector lists every XM channel, its sample identity, note count and silent/active state.
+- **TRACKER ENSEMBLE** renders the actual channel voices together as one bounded compositional instrument. Channel number is a stable spatial identity; instrument/sample, pitch, note age, volume, recent hits and tracker commands modulate the voice.
+- An XM score can be played as a standalone visual transport: play, pause, seek and loop do not require WAV/FLAC input.
+- Saving a .wfp project embeds tracker structure and channel metadata. Tracker-only MP4 export is supported without a dummy audio stream.
 
-See [docs/M6_XM_TRACKER_WORKFLOW.md](docs/M6_XM_TRACKER_WORKFLOW.md).
+See [docs/M6_XM_TRACKER_WORKFLOW.md](docs/M6_XM_TRACKER_WORKFLOW.md) and [docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md](docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md).
 
-## M7 — Balanced preview and render profiling
+## M7 — Render profiling and efficient offline export
 
-- Default preview is BALANCED at **480×360 / 8 FPS**, with ECO and LOW profiles retained.
-- The preview header displays measured scene/frame time; hover to inspect individual layer costs.
-- Screen artwork is composited behind generated layers in live CPU preview, GPU preview and offline export.
-- Generator feature metrics are cached per frame and source route, avoiding repeated aggregation when multiple layers share the same audio feature packet.
-- Profiling distinguishes CPU scene preparation from final CPU composition. The OpenGL profile currently measures scene preparation, not completed GPU draw time.
-- These measurements are intended to guide further optimisation; no universal FPS guarantee is implied.
+- Preview defaults to BALANCED at **480×360 / 8 FPS**, with ECO and LOW retained.
+- The preview header exposes measured scene/frame time and per-layer cost.
+- Screen plates are composited behind generated visuals in live CPU, OpenGL and offline paths.
+- Offline export has three internal render profiles: PERFORMANCE (640×480), BALANCED (960×720) and FULL (1920×1440). FFmpeg upscales reduced internal renders to the fixed **1920×1440** delivery canvas.
+- XM-only export produces a silent video stream; with audio stems imported, the same export path adds the mixed AAC soundtrack.
+- At BALANCED, the generator/compositor handles one quarter of the pixels per frame compared with FULL; this is a pixel-work reduction, not a claim of a measured 4× speedup.
 
 See [docs/M7_RENDER_PROFILE.md](docs/M7_RENDER_PROFILE.md).
 
@@ -161,6 +154,12 @@ See [docs/M8_TRACKER_EVENT_MODULATION.md](docs/M8_TRACKER_EVENT_MODULATION.md).
 - Live preview and offline export now attach tracker cues before director evaluation, keeping the decision path aligned.
 
 See [docs/M9_PERCEPTUAL_SCENE_DIRECTOR.md](docs/M9_PERCEPTUAL_SCENE_DIRECTOR.md).
+
+## M10 — Tracker-first architecture
+
+The next architectural direction is a score/scene model based on the IDM Visual Instrument guide: VisualScore, stable voice identities, persistent VisualScene/VisualObject state, explicit MappingRules, cue/phrase transitions, deterministic snapshots and a live performance override layer. The current tracker ensemble is the first executable slice, not the complete scene-graph system.
+
+See [docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md](docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md).
 
 ## Canvas and performance
 
