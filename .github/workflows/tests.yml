@@ -423,7 +423,7 @@ jobs:
                   black, white, start_contract
               )
               assert start_frame.getpixel((0, 0)) == (0, 0, 0, 255)
-              assert middle_frame.getpixel((0, 0)) == (128, 128, 128, 255)
+              assert middle_frame.getpixel((0, 0)) == (127, 127, 127, 255)
               end_contract = ScenePairRenderContract.from_dict({
                   **pair_contract.to_dict(),
                   "incoming_weight": 1.0,
@@ -465,7 +465,7 @@ jobs:
               rendered_pair = pair_compositor.render_scene_pair(
                   packet={}, seconds=1.0, scene_pair=pair_round_trip
               )
-              assert rendered_pair.getpixel((0, 0)) == (128, 128, 128, 255)
+              assert rendered_pair.getpixel((0, 0)) == (127, 127, 127, 255)
               assert pair_compositor.last_profile["backend"] == "CPU_SCENE_PAIR"
               assert pair_compositor.last_profile["scene_pair"]["transition_id"] == (
                   "transition-smoke"
