@@ -162,7 +162,10 @@ class MainWindow(QMainWindow):
         self._variation_timer.timeout.connect(self.vary_composition)
 
         initial = self.layer_stack.add("PHASE LATTICE", "PHASE LATTICE 01")
-        initial.pass_mode = "PAPER RELIEF"
+        # Keep the first-use visual responsive; full paper-relief passes are
+        # an intentional layer treatment, not an expensive default.
+        initial.pass_mode = "NONE"
+        initial.pass_strength = 0.0
         initial.pass_map = "DISPLACEMENT"
         self._refresh_layer_list(select_id=initial.layer_id)
         self.preview_worker.request_reset()
@@ -941,8 +944,8 @@ class MainWindow(QMainWindow):
                 self._auto_composed = False
                 default = VisualLayer(
                     name="PHASE LATTICE 01", generator="PHASE LATTICE",
-                    pass_mode="PAPER RELIEF", pass_map="DISPLACEMENT",
-                    pass_strength=0.55,
+                    pass_mode="NONE", pass_map="DISPLACEMENT",
+                    pass_strength=0.0,
                 )
                 self.layer_stack.layers = [default]
             selected = (
