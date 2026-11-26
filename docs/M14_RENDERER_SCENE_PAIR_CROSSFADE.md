@@ -28,7 +28,7 @@ Renderer modes in this increment:
 | --- | --- |
 | `dissolve` | Real pixel crossfade using incoming weight |
 | `cut` | Outgoing image until completion, then incoming |
-| `morph` | Matched VisualObjects interpolate transforms/material values; unmatched objects fade independently |
+| `morph` | Matched VisualObjects interpolate transforms/material values; supported generator paths deform point-by-point; unmatched objects/paths fade independently |
 | Assembly, erosion, mask reveal, displacement, temporal echo and other future families | Lifecycle-only hold; no fake dissolve |
 
 `blend_scene_pair_frames()` is the shared pixel-level blend function. It validates identical frame dimensions and always works in RGBA.
@@ -40,6 +40,14 @@ M14 adds a one-to-one correspondence list to `SceneTransition`. Each entry ident
 `ScenePairRenderContract` snapshots the resolved correspondence. A matched pair becomes one intermediate `VisualObject` and one renderer layer. Position, scale, shortest-path rotation, opacity, pass strength, salience and numeric geometry/material values interpolate using the controller's eased progress. Categorical generator/material modes switch at the midpoint, while the outgoing layer ID remains the generator simulation key for the duration of the morph.
 
 Unmatched outgoing objects fade by the outgoing weight; unmatched incoming objects fade by the incoming weight. The compositor renders this single intermediate scene, so the screen guide and paper-grain background are drawn once rather than crossfading two complete textured frames. Layer order follows the outgoing scene before the midpoint and the incoming scene after it.
+
+### Generator-aware path deformation
+
+For line/edge generators, the compositor obtains normalized vector paths from the generator at the current tracker/audio packet and show time. The first supported set is **Phase Orbit, Phase Lattice, Geometric Field, Geometric Plate, Axonometric Field, Polyhedral Field and Mobius Field**.
+
+Paths are matched by stable path IDs first, then by compatible semantic path groups and nearest normalized centroid. Matched paths are resampled by arc length, their direction/orientation is aligned, and corresponding points, stroke width and ink values are interpolated using eased transition progress. Unmatched source/target paths fade independently. The resulting paths are rasterized into one intermediate layer and then pass through the normal compositor palette, paper-relief, transform and mask stages.
+
+Particle, cellular, reaction-diffusion, interference and other raster/simulation generators retain the existing object-level morph fallback. The path model does not invent topology for raster outputs.
 
 ## 4. Compositor
 
@@ -92,9 +100,9 @@ This first M14 increment implements the pair-rendering architecture and dissolve
 
 - Scene-pair rendering is CPU-side; a future GPU-native pair compositor can optimize it.
 - `assembly`, `erosion`, `mask_reveal`, `displacement` and `temporal_echo` currently hold the outgoing frame until lifecycle completion.
-- Morph currently interpolates object-level transforms and numeric geometry/material fields; topology-aware vector/path deformation and generator-specific shape correspondence are not implemented yet.
+- Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction, path splitting/merging and semantic anchor editing remain future work.
 - Correspondence is one-to-one. Split/merge mapping and explicit object transfer/merge policies remain future work.
 - There is no independent preparation or establishment image treatment yet; the M12 phase sample is exposed to the compositor.
 - Runtime transition checkpoints and replay of manually authored transitions in offline export are not implemented.
 
-**Next M14 slices:** extend morphing with generator-specific geometry/path interpolation; implement assembly and erosion as deterministic object lifecycle operations; then introduce temporal echo as a transition-local history buffer. Keep each effect behind the same scene-pair contract so live and offline rendering stay aligned.
+**Next M14 slices:** extend path correspondence with authored anchors and split/merge operations; implement assembly and erosion as deterministic object lifecycle operations; then introduce temporal echo as a transition-local history buffer. Keep each effect behind the same scene-pair contract so live and offline rendering stay aligned.

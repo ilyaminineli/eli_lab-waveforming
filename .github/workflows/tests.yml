@@ -46,6 +46,7 @@ jobs:
           from engine.visual.generators import GeneratorBank, GeneratorSettings
           from engine.visual.layers import VisualLayer
           from engine.visual.compositor import VisualCompositor
+          from engine.visual.assets import AssetCatalog
           from engine.visual.scene import (
               VisualObject, VisualRelationship, VisualScene, VisualScore, VisualScoreCue,
               crossed_score_cues,
@@ -57,6 +58,9 @@ jobs:
           )
           from engine.visual.transitions import (
               SceneTransition, SceneTransitionController,
+          )
+          from engine.visual.vector_geometry import (
+              interpolate_vector_paths, render_vector_paths,
           )
           from PIL import Image
           from types import MethodType
@@ -610,6 +614,74 @@ jobs:
                   "target_object_id": lineage_target.object_id,
                   "kind": "lineage",
               }]
+
+              # Generator-aware geometry morphing: Phase Orbit paths are matched
+              # to Mobius surface rows, resampled and deformed before rasterization.
+              vector_source_layer = VisualLayer(
+                  name="VECTOR SOURCE", generator="PHASE ORBIT",
+              )
+              vector_target_layer = VisualLayer(
+                  name="VECTOR TARGET", generator="MOBIUS FIELD",
+              )
+              vector_source_object = VisualObject.from_layer(vector_source_layer)
+              vector_target_object = VisualObject.from_layer(vector_target_layer)
+              vector_source_scene = VisualScene(
+                  scene_id="vector-source", name="VECTOR SOURCE",
+                  objects=[vector_source_object],
+                  layer_order=[vector_source_layer.layer_id],
+              )
+              vector_target_scene = VisualScene(
+                  scene_id="vector-target", name="VECTOR TARGET",
+                  objects=[vector_target_object],
+                  layer_order=[vector_target_layer.layer_id],
+              )
+              vector_project = VisualProject(
+                  scenes=[vector_source_scene, vector_target_scene],
+                  active_scene_id=vector_source_scene.scene_id,
+                  layer_snapshots={
+                      vector_source_scene.scene_id: [vector_source_layer.to_dict()],
+                      vector_target_scene.scene_id: [vector_target_layer.to_dict()],
+                  },
+              )
+              vector_sample = {
+                  **pair_sample,
+                  "transition_id": "transition-vector-morph",
+                  "source_scene_id": vector_source_scene.scene_id,
+                  "target_scene_id": vector_target_scene.scene_id,
+                  "family": "morph",
+                  "object_correspondence": [{
+                      "source_object_id": vector_source_object.object_id,
+                      "target_object_id": vector_target_object.object_id,
+                  }],
+              }
+              vector_contract = ScenePairRenderContract.from_project(
+                  vector_project, vector_sample
+              )
+              vector_compositor = VisualCompositor(
+                  AssetCatalog(Path(".")), render_size=(96, 72)
+              )
+              vector_frame = vector_compositor.render_scene_pair(
+                  packet={}, seconds=0.75, scene_pair=vector_contract
+              )
+              assert vector_frame.size == (96, 72)
+              assert vector_compositor.last_profile["scene_pair"]["vector_morph_object_count"] == 1
+              assert vector_compositor.last_profile["scene_pair"]["vector_morph_path_count"] > 0
+
+              path_bank = GeneratorBank()
+              source_paths = path_bank.vector_geometry(
+                  "PHASE ORBIT", {}, 0.0, (320, 240), GeneratorSettings()
+              )
+              target_paths = path_bank.vector_geometry(
+                  "MOBIUS FIELD", {}, 1.0, (320, 240), GeneratorSettings()
+              )
+              assert source_paths and target_paths
+              interpolated_paths = interpolate_vector_paths(
+                  source_paths, target_paths, 0.5
+              )
+              assert any(path["path_id"].startswith("morph:") for path in interpolated_paths)
+              path_image = render_vector_paths(interpolated_paths, (320, 240))
+              assert path_image.size == (320, 240)
+              assert path_image.getchannel("A").getbbox() is not None
 
               # Other future families retain lifecycle-only rendering and skip
               # the hidden incoming scene.

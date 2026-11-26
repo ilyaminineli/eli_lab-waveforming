@@ -413,8 +413,8 @@ class MainWindow(QMainWindow):
         self.transition_family.addItems(sorted(TRANSITION_FAMILIES))
         self.transition_family.setCurrentText("dissolve")
         self.transition_family.setToolTip(
-            "DISSOLVE crossfades complete frames. MORPH interpolates matched VisualObjects "
-            "and fades unmatched objects. CUT switches at completion; other families are staged."
+            "DISSOLVE crossfades complete frames. MORPH deforms matched VisualObjects and "
+            "supported generator paths, fading unmatched paths. CUT switches at completion."
         )
         self.transition_duration = QDoubleSpinBox()
         self.transition_duration.setRange(0.0, 120.0)
@@ -425,8 +425,8 @@ class MainWindow(QMainWindow):
         scene_form.addRow("DURATION (S)", self.transition_duration)
         self.scene_transition_button = QPushButton("COMMIT TRANSITION")
         self.scene_transition_button.setToolTip(
-            "Commit through M12. DISSOLVE blends frames; MORPH interpolates matched "
-            "VisualObjects. Other transition families retain lifecycle-only rendering for now."
+            "Commit through M12. DISSOLVE blends frames; MORPH deforms matched objects and "
+            "line-generator paths. Other transition families remain lifecycle-only for now."
         )
         self.cue_route_button = QPushButton("ROUTE CURRENT XM CUE")
         scene_form.addRow(self.scene_transition_button)
