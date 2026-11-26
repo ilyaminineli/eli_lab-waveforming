@@ -251,7 +251,10 @@ def load_xm(path: str | Path) -> XMModule:
             for channel_index, event in enumerate(row):
                 if event.effect or event.parameter:
                     effect_count += 1
-                    if event.effect in flow_effects:
+                    if (
+                        event.effect in (0x0B, 0x0D)
+                        or (event.effect == 0x0E and (event.parameter >> 4) == 0x06)
+                    ):
                         flow_control_effect_count += 1
                     if event.effect == 0x0F and event.parameter:
                         if event.parameter < 32:
