@@ -58,6 +58,7 @@ from engine.visual.preview_worker import (
 )
 from engine.visual.scene import VisualScene, VisualScore, crossed_score_cues
 from engine.visual.project import VisualProject
+from engine.visual.scene_pair import ScenePairRenderContract
 from engine.visual.transitions import (
     SceneTransition,
     SceneTransitionController,
@@ -1070,6 +1071,22 @@ class MainWindow(QMainWindow):
                 )
         self._process_tracker_cue_routes(score_seconds)
 
+    def _scene_pair_for_render(self) -> dict | None:
+        if (
+            not self.scene_transition_controller.transition_active
+            or not self._last_transition_sample
+        ):
+            return None
+        try:
+            return ScenePairRenderContract.from_project(
+                self.visual_project, self._last_transition_sample
+            ).to_dict()
+        except (KeyError, TypeError, ValueError) as exc:
+            self.scene_status_label.setText(
+                f"SCENE-PAIR RENDER FALLBACK: {exc}"
+            )
+            return None
+
     def _resolved_scene_state(self) -> dict:
         transition = self._last_transition_sample
         if self.scene_transition_controller.transition_active:
@@ -2026,6 +2043,7 @@ class MainWindow(QMainWindow):
         self._advance_scene_transitions(self._last_position)
         visual_scene_data = self._sync_visual_graph().to_dict()
         visual_scene_data["resolved_state"] = self._resolved_scene_state()
+        scene_pair_data = self._scene_pair_for_render()
         self._render_sequence += 1
         audio_seconds = self._last_position
         seconds = float(self._preview_animation_seconds)
@@ -2083,12 +2101,14 @@ class MainWindow(QMainWindow):
             feedback_shift=self.feedback_shift.value() / 100.0,
             sequence=self._render_sequence,
             gpu_composite=(
-                not force_cpu_preview
+                scene_pair_data is None
+                and not force_cpu_preview
                 and bool(getattr(self.canvas, "gpu_ready", False))
                 and not self._gpu_preview_disabled
                 and not self.feedback_enabled.isChecked()
             ),
             visual_scene=visual_scene_data,
+            scene_pair=scene_pair_data,
         )
         if force_cpu_preview:
             self._force_cpu_preview_frames = max(0, self._force_cpu_preview_frames - 1)
