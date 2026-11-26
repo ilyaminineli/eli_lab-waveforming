@@ -1718,8 +1718,9 @@ class MainWindow(QMainWindow):
         active_snapshot = self.visual_project.layers_for_scene(
             self.visual_project.active_scene_id
         )
-        if active_snapshot:
-            self.layer_stack.from_list(active_snapshot)
+        # An intentionally empty scene is still authoritative; do not
+        # accidentally fall back to the previous scene's legacy layer list.
+        self.layer_stack.from_list(active_snapshot)
         saved_visual_score = data.get("visual_score")
         self.visual_score = (
             VisualScore.from_dict(saved_visual_score)
