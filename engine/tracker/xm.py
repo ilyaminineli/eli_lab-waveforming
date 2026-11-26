@@ -19,6 +19,36 @@ class XMParseError(ValueError):
     """Raised when an XM file is truncated or structurally invalid."""
 
 
+EFFECT_NAMES = {
+    0x00: "ARPEGGIO",
+    0x01: "SLIDE_UP",
+    0x02: "SLIDE_DOWN",
+    0x03: "PORTAMENTO",
+    0x04: "VIBRATO",
+    0x05: "PORTA_VOLUME",
+    0x06: "VIBRATO_VOLUME",
+    0x07: "TREMOLO",
+    0x08: "PAN",
+    0x09: "SAMPLE_OFFSET",
+    0x0A: "VOLUME_SLIDE",
+    0x0B: "ORDER_JUMP",
+    0x0D: "PATTERN_BREAK",
+    0x0F: "TEMPO_SPEED",
+}
+EXTENDED_EFFECT_NAMES = {
+    0x1: "FINE_SLIDE_UP",
+    0x2: "FINE_SLIDE_DOWN",
+    0x4: "VIBRATO_WAVE",
+    0x6: "PATTERN_LOOP",
+    0x7: "TREMOLO_WAVE",
+    0x8: "PAN",
+    0x9: "RETRIGGER",
+    0xC: "NOTE_CUT",
+    0xD: "NOTE_DELAY",
+    0xE: "PATTERN_DELAY",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class XMEvent:
     note: int = 0
@@ -419,36 +449,11 @@ def tracker_packet_at(
         elif current_effect == 0x0E and (current_parameter >> 4) == 0x08:
             pan = (current_parameter & 0x0F) / 15.0
 
-        effect_names = {
-            0x00: "ARPEGGIO",
-            0x01: "SLIDE_UP",
-            0x02: "SLIDE_DOWN",
-            0x03: "PORTAMENTO",
-            0x04: "VIBRATO",
-            0x05: "PORTA_VOLUME",
-            0x06: "VIBRATO_VOLUME",
-            0x07: "TREMOLO",
-            0x08: "PAN",
-            0x09: "SAMPLE_OFFSET",
-            0x0A: "VOLUME_SLIDE",
-            0x0B: "ORDER_JUMP",
-            0x0D: "PATTERN_BREAK",
-            0x0F: "TEMPO_SPEED",
-        }
-        effect_name = effect_names.get(current_effect, "")
+        effect_name = EFFECT_NAMES.get(current_effect, "")
         if current_effect == 0x0E:
-            effect_name = {
-                0x1: "FINE_SLIDE_UP",
-                0x2: "FINE_SLIDE_DOWN",
-                0x4: "VIBRATO_WAVE",
-                0x6: "PATTERN_LOOP",
-                0x7: "TREMolo_WAVE",
-                0x8: "PAN",
-                0x9: "RETRIGGER",
-                0xC: "NOTE_CUT",
-                0xD: "NOTE_DELAY",
-                0xE: "PATTERN_DELAY",
-            }.get(current_parameter >> 4, "EXTENDED")
+            effect_name = EXTENDED_EFFECT_NAMES.get(
+                current_parameter >> 4, "EXTENDED"
+            )
         resolved_instrument = current_instrument or held_instrument or int(
             profile.get("instrument_id", 0)
         )
