@@ -573,6 +573,7 @@ class OfflineRenderWorker(QThread):
                                 ),
                             )
                         else:
+                            compositor.reset_temporal_echo("transition_ended")
                             image = compositor.render(
                                 packet=packet,
                                 seconds=seconds,
