@@ -473,6 +473,9 @@ class MainWindow(QMainWindow):
 
         self.temporal_echo_box = QGroupBox("TEMPORAL ECHO CONTROLS")
         echo_form = QFormLayout(self.temporal_echo_box)
+        self.echo_enabled = QCheckBox("ENABLE TEMPORAL ECHO")
+        self.echo_enabled.setChecked(True)
+        echo_form.addRow(self.echo_enabled)
 
         def echo_pair(label_a, widget_a, label_b, widget_b):
             row = QHBoxLayout()
@@ -1190,7 +1193,7 @@ class MainWindow(QMainWindow):
         angle = radians(float(self.echo_direction_angle.value()))
         return {
             "temporal_echo": {
-                "enabled": True,
+                "enabled": bool(self.echo_enabled.isChecked()),
                 "history_seconds": float(self.echo_history_seconds.value()),
                 "max_samples": int(self.echo_max_samples.value()),
                 "sample_interval_seconds": float(self.echo_sample_interval.value()),
