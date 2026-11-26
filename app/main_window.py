@@ -581,11 +581,17 @@ class MainWindow(QMainWindow):
         self._refresh_layer_list(layer.layer_id)
         self._render_frame()
 
+    def _available_generator_names(self) -> list[str]:
+        names = self.compositor.generator_names()
+        if not self._tracker_data:
+            names = [name for name in names if name != "TRACKER MATRIX"]
+        return names
+
     def auto_compose(self) -> None:
         self._auto_composed = True
         seed = int(time_ns() & 0x7FFFFFFF)
         self.layer_stack.layers = create_auto_composition(
-            self.compositor.generator_names(), list(self.sources.keys()), seed
+            self._available_generator_names(), list(self.sources.keys()), seed
         )
         self._settings.seed = seed
         self.preview_worker.request_reset()
@@ -601,7 +607,7 @@ class MainWindow(QMainWindow):
         selected = self._current_layer()
         selected_id = selected.layer_id if selected else self.layer_stack.layers[0].layer_id
         self.layer_stack.layers = vary_composition(
-            self.layer_stack.layers, self.compositor.generator_names(), seed
+            self.layer_stack.layers, self._available_generator_names(), seed
         )
         self._settings.seed = seed
         self.preview_worker.request_reset()
