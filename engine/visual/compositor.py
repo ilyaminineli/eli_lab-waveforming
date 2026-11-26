@@ -7,6 +7,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 from .assets import AssetCatalog
 from .generators import GeneratorBank, GeneratorSettings
 from .layers import VisualLayer
+from .scene_pair import ScenePairRenderContract, blend_scene_pair_frames
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
@@ -923,6 +924,149 @@ class VisualCompositor:
         compose_ms = (perf_counter() - compose_started) * 1000.0
         self.last_profile["compose_ms"] = compose_ms
         self.last_profile["frame_ms"] = self.last_profile["scene_ms"] + compose_ms
+        return frame
+
+    def render_scene_pair(
+        self,
+        packet: dict | None,
+        seconds: float,
+        scene_pair: ScenePairRenderContract | dict,
+        settings: GeneratorSettings | None = None,
+        screen: str = "No guide",
+        feedback_enabled: bool = False,
+        feedback_amount: float = 0.35,
+        feedback_decay: float = 0.90,
+        feedback_shift: float = 0.0,
+    ) -> Image.Image:
+        """Render both scene snapshots, then apply the transition as a frame blend.
+
+        Both sides use the same packet, show time, settings and screen guide.
+        Temporal feedback is applied once to the resolved pair, not separately
+        to each side, so a dissolve cannot leak stale outgoing pixels into the
+        incoming scene.
+        """
+        contract = (
+            scene_pair
+            if isinstance(scene_pair, ScenePairRenderContract)
+            else ScenePairRenderContract.from_dict(scene_pair)
+        )
+        settings = settings or GeneratorSettings()
+        started = perf_counter()
+        previous_feedback = self._feedback
+        previous_time = self._last_time
+
+        outgoing_scene = dict(contract.outgoing.get("scene") or {})
+        incoming_scene = dict(contract.incoming.get("scene") or {})
+        outgoing_layers = [
+            VisualLayer.from_dict(item)
+            for item in contract.outgoing.get("layers", [])
+            if isinstance(item, dict)
+        ]
+        incoming_layers = [
+            VisualLayer.from_dict(item)
+            for item in contract.incoming.get("layers", [])
+            if isinstance(item, dict)
+        ]
+
+        outgoing_frame = self.render(
+            packet=packet,
+            seconds=seconds,
+            layers=outgoing_layers,
+            settings=settings,
+            screen=screen,
+            feedback_enabled=False,
+            visual_scene=outgoing_scene,
+        )
+        outgoing_profile = dict(self.last_profile)
+        incoming_frame = self.render(
+            packet=packet,
+            seconds=seconds,
+            layers=incoming_layers,
+            settings=settings,
+            screen=screen,
+            feedback_enabled=False,
+            visual_scene=incoming_scene,
+        )
+        incoming_profile = dict(self.last_profile)
+
+        # render() intentionally resets feedback on standalone, non-feedback
+        # frames; restore the pair's history and apply feedback to the final
+        # resolved image exactly once.
+        self._feedback = previous_feedback
+        self._last_time = previous_time
+        frame = blend_scene_pair_frames(
+            outgoing_frame, incoming_frame, contract
+        )
+
+        if self._last_time is not None and seconds < self._last_time:
+            self._feedback = None
+        if (
+            feedback_enabled
+            and self._feedback is not None
+            and self._last_time is not None
+            and seconds > self._last_time
+        ):
+            dx = int(round(float(feedback_shift) * self.size[0]))
+            dy = int(round(float(feedback_shift) * self.size[1] * 0.62))
+            previous = self._feedback.copy()
+            if dx or dy:
+                previous = previous.transform(
+                    self.size,
+                    Image.Transform.AFFINE,
+                    (1, 0, -dx, 0, 1, -dy),
+                    resample=Image.Resampling.BILINEAR,
+                )
+            alpha = previous.getchannel("A").point(
+                [
+                    int(value * float(np.clip(feedback_decay, 0.0, 0.99)))
+                    for value in range(256)
+                ]
+            )
+            previous.putalpha(alpha)
+            self._blend_at(
+                frame,
+                previous,
+                (0, 0),
+                "Screen",
+                float(np.clip(feedback_amount, 0.0, 1.0)),
+            )
+        self._feedback = frame.copy() if feedback_enabled else None
+        self._last_time = float(seconds)
+
+        total_ms = (perf_counter() - started) * 1000.0
+        self.last_profile = {
+            "scene_ms": (
+                float(outgoing_profile.get("scene_ms", 0.0))
+                + float(incoming_profile.get("scene_ms", 0.0))
+            ),
+            "compose_ms": max(
+                0.0,
+                total_ms
+                - float(outgoing_profile.get("scene_ms", 0.0))
+                - float(incoming_profile.get("scene_ms", 0.0)),
+            ),
+            "frame_ms": total_ms,
+            "layer_count": (
+                int(outgoing_profile.get("layer_count", 0))
+                + int(incoming_profile.get("layer_count", 0))
+            ),
+            "layers": (
+                list(outgoing_profile.get("layers", []))
+                + list(incoming_profile.get("layers", []))
+            ),
+            "backend": "CPU_SCENE_PAIR",
+            "scene_pair": {
+                "transition_id": contract.transition_id,
+                "family": contract.family,
+                "render_mode": contract.render_mode,
+                "phase": contract.phase,
+                "progress": contract.progress,
+                "outgoing_scene_id": contract.source_scene_id,
+                "incoming_scene_id": contract.target_scene_id,
+                "outgoing_weight": contract.outgoing_weight,
+                "incoming_weight": contract.incoming_weight,
+            },
+        }
         return frame
 
     def render(
