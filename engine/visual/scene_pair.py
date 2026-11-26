@@ -92,6 +92,18 @@ class ScenePairRenderContract:
         self.render_mode = expected_mode
         self.outgoing = self._clean_side(self.outgoing, self.source_scene_id)
         self.incoming = self._clean_side(self.incoming, self.target_scene_id)
+        outgoing_layer_ids = {
+            str(item["layer_id"]) for item in self.outgoing["layers"]
+        }
+        incoming_layer_ids = {
+            str(item["layer_id"]) for item in self.incoming["layers"]
+        }
+        shared_layer_ids = outgoing_layer_ids & incoming_layer_ids
+        if shared_layer_ids:
+            raise ValueError(
+                "Outgoing and incoming scene snapshots must own distinct layer IDs: "
+                + ", ".join(sorted(shared_layer_ids))
+            )
         self.metadata = _dict(self.metadata)
         self.version = max(1, int(self.version))
 
@@ -109,12 +121,17 @@ class ScenePairRenderContract:
         side = _dict(value)
         scene = _dict(side.get("scene"))
         scene_id = str(scene.get("scene_id", ""))
-        if scene_id and scene_id != expected_scene_id:
+        if scene_id != expected_scene_id:
             raise ValueError(
-                f"Scene-pair side expected {expected_scene_id}, got {scene_id}."
+                f"Scene-pair side expected {expected_scene_id}, got {scene_id or 'no scene ID'}."
             )
         side["scene"] = scene
         side["layers"] = _records(side.get("layers"))
+        layer_ids = [str(item.get("layer_id", "")) for item in side["layers"]]
+        if any(not layer_id for layer_id in layer_ids):
+            raise ValueError("Every scene-pair layer record requires a layer_id.")
+        if len(layer_ids) != len(set(layer_ids)):
+            raise ValueError("A scene-pair side cannot contain duplicate layer IDs.")
         return side
 
     @classmethod
