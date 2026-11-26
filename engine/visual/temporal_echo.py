@@ -139,6 +139,16 @@ class TemporalEchoHistoryBuffer:
         if not identity:
             raise ValueError("Temporal echo requires a stable transition ID.")
 
+        if not settings.enabled:
+            self.reset("disabled")
+            return [], {
+                "sample_count": 0,
+                "buffer_size": 0,
+                "sampled_current_frame": False,
+                "oldest_age_seconds": 0.0,
+                "reset_reason": "disabled",
+            }
+
         reset_reason = ""
         if self._transition_id and identity != self._transition_id:
             reset_reason = "transition_changed"
