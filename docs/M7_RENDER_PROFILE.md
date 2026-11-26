@@ -19,6 +19,38 @@ layers, and the CPU/offline paths alpha-composited it after the generated stack.
 Opaque grain/registration artwork therefore concealed the generators. The corrected
 ordering keeps the screen material visible underneath the generated ink.
 
+## Offline export resolution profiles
+
+Offline MP4 export accepts three internal render resolutions while keeping the
+output/delivery canvas fixed at 1920 × 1440:
+
+| Profile | Internal render | Pixels per frame | Relative to FULL |
+|---|---:|---:|---:|
+| PERFORMANCE | 640 × 480 | 307,200 | 1/9 |
+| BALANCED | 960 × 720 | 691,200 | 1/4 |
+| FULL | 1920 × 1440 | 2,764,800 | 1× |
+
+At 4,000 frames these internal canvases represent approximately 1.23B, 2.76B
+and 11.06B pixels respectively, before accounting for layers, masks, transformations,
+feedback and intermediate buffers. The reduced profiles perform generator and
+compositor work at the smaller resolution; FFmpeg scales the frame stream to the
+fixed delivery dimensions during encoding.
+
+These are pixel-work ratios, not measured elapsed-time speedups. CPU-side Python
+generators, per-layer processing, cache misses, memory traffic and encoding may
+dominate differently on different computers. The profile choice therefore remains
+explicit, with FULL available when native-resolution detail is required.
+
+## Tracker-only export
+
+- XM visual sessions can be exported without any audio sources.
+- The XM order/row clock provides the timeline duration and cue data.
+- No audio analyzer, dummy PCM or silent placeholder track is constructed for
+  tracker-only export.
+- FFmpeg receives video-only input and produces a silent MP4.
+- When audio sources are present, the same renderer creates the mix and adds AAC
+  audio to the MP4.
+
 ## Live render profile
 
 The preview worker reports:
@@ -61,7 +93,7 @@ fresh descriptor build; no stale feature values are carried between frames.
 
 - It does not make every generator GPU-native.
 - It does not guarantee 8 FPS on every Windows machine or every layer stack.
-- It does not change the deterministic offline export resolution or quality.
+- It does not claim a measured 3×/4×/9× elapsed-time speedup from the pixel ratios.
 - It does not introduce asynchronous work inside the audio callback.
 - It does not yet cache dynamic generator images across frames. Dynamic generators
   still depend on time/audio state; static-layer caching needs explicit invalidation
