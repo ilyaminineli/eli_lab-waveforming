@@ -1245,7 +1245,11 @@ class MainWindow(QMainWindow):
         self._render_sequence += 1
         audio_seconds = self._last_position
         seconds = float(self._preview_animation_seconds)
-        director_output = self.director.update(self._last_packet, audio_seconds)
+        frame_packet = dict(self._last_packet or {})
+        tracker_cue = tracker_packet_at(self._tracker_data, audio_seconds)
+        if tracker_cue is not None:
+            frame_packet["tracker_cue"] = tracker_cue
+        director_output = self.director.update(frame_packet, audio_seconds)
 
         if director_output.request_variation and self.audio.is_playing and self.layer_stack.layers:
             selected = self._current_layer()
@@ -1265,10 +1269,6 @@ class MainWindow(QMainWindow):
             sensitivity=base_settings.sensitivity,
             seed=base_settings.seed,
         )
-        frame_packet = dict(self._last_packet)
-        tracker_cue = tracker_packet_at(self._tracker_data, audio_seconds)
-        if tracker_cue is not None:
-            frame_packet["tracker_cue"] = tracker_cue
         frame_packet["director_output"] = {
             "glitch_amount": director_output.glitch_amount,
             "accent_amount": director_output.accent_amount,
