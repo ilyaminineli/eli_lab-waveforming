@@ -114,11 +114,11 @@ The outgoing-scene policy independently determines whether a completed outgoing 
 
 The controller is sampled with caller-supplied show time. It does not use wall-clock timers or background threads. Identical transition data, start time and sample time produce identical results.
 
-The current application has not yet connected its standalone XM/audio transport to a multi-scene controller. That integration belongs to the next increment, where the scene collection and active-scene reference will become project state.
+M13 connects the controller to a project-level scene collection and the standalone XM/audio transport. Each project now persists its scene collection, active-scene reference, per-scene layer snapshots, transition contracts and explicitly authored XM cue routes. Live preview and offline export can propose and commit those routes through this controller.
 
 ## 6. Validation
 
-The CI smoke test now checks:
+The CI smoke test checks:
 
 - invalid scene-state jumps are rejected;
 - proposal does not change either scene;
@@ -127,17 +127,17 @@ The CI smoke test now checks:
 - completion archives the outgoing scene and activates the target;
 - cancellation restores the outgoing scene and prepares the target;
 - transition contracts round-trip through JSON;
-- the existing XM → VisualScene → VisualScore path still passes.
+- scene collection migration, scene/layer/object identity remapping, cue-route persistence and active-scene selection;
+- the XM → VisualScene → VisualScore path still passes.
 
 ## 7. Explicitly not implemented yet
 
-- scene collection and active-scene persistence in `.wfp`;
-- transition editing UI or cue binding;
-- renderer-side dissolve/morph/assembly/erosion/mask/echo implementations;
-- transfer or cloning of preserved VisualObjects between scenes;
-- candidate-generation and selection policy in the VisualScore director;
-- automatic triggers from XM phrase/pattern semantics;
-- performer overrides, transition queueing and reverse transitions;
-- visual safety constraints during transition interpolation.
+- renderer-side dissolve/crossfade, morph, assembly, erosion, mask reveal, displacement or temporal-echo pixel effects;
+- simultaneous outgoing/incoming scene composition;
+- transfer or merging of preserved VisualObjects between scenes;
+- automatic semantic candidate-generation from XM phrase/pattern meaning; cue routes are explicitly authored;
+- performer overrides, reverse transitions and runtime transition checkpoint/resume;
+- visual safety constraints during transition interpolation;
+- deterministic offline replay of manual transitions at their original show-time (score-cue routes are replayed).
 
-**Next: M13 — Multi-scene project state and score-cue integration.** It will store multiple scene graphs in one project, define the active scene and allow explicit score cues to nominate or commit a validated scene proposal. The compositor will render only the resolved scene(s) handed to it.
+**Next: M14 — Renderer-side transition effects.** The first slice should add a shared outgoing/incoming scene-pair contract and a real dissolve/crossfade, then expand into object-aware morphing, assembly/erosion and temporal echo.
