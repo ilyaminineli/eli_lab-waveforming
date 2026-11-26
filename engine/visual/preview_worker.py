@@ -78,6 +78,7 @@ class PreviewRenderWorker(threading.Thread):
         feedback_shift: float,
         sequence: int,
         gpu_composite: bool = False,
+        visual_scene: dict | None = None,
     ) -> None:
         # Snapshot UI-owned state. Audio feature packets are immutable after emit;
         # large NumPy arrays are shared read-only to avoid duplicating RAM.
@@ -95,6 +96,7 @@ class PreviewRenderWorker(threading.Thread):
             "feedback_shift": float(feedback_shift),
             "sequence": int(sequence),
             "gpu_composite": bool(gpu_composite),
+            "visual_scene": dict(visual_scene or {}),
         }
         try:
             self._queue.put_nowait(request)
@@ -178,6 +180,7 @@ class PreviewRenderWorker(threading.Thread):
                         "layers": request["layers"],
                         "settings": request["settings"],
                         "screen": request["screen"],
+                        "visual_scene": request["visual_scene"],
                     }
                     if request["gpu_composite"] and not request["feedback_enabled"]:
                         image = self._compositor.render_scene(
