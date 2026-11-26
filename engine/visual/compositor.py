@@ -59,6 +59,25 @@ class VisualCompositor:
             "layers": [],
         }
 
+    @staticmethod
+    def _order_layers_from_scene(
+        layers: list[VisualLayer], visual_scene: dict | None
+    ) -> list[VisualLayer]:
+        """Apply scene-graph ordering without changing the legacy layer API."""
+        data = visual_scene if isinstance(visual_scene, dict) else {}
+        order = [
+            str(layer_id)
+            for layer_id in data.get("layer_order", [])
+            if str(layer_id)
+        ]
+        if not order:
+            return layers
+        by_id = {layer.layer_id: layer for layer in layers}
+        ordered = [by_id[layer_id] for layer_id in order if layer_id in by_id]
+        included = set(order)
+        ordered.extend(layer for layer in layers if layer.layer_id not in included)
+        return ordered
+
     def generator_names(self) -> list[str]:
         return self.generators.names()
 
@@ -739,11 +758,12 @@ class VisualCompositor:
         screen: str = "No guide",
         gpu_native: bool = False,
         include_guide: bool = True,
+        visual_scene: dict | None = None,
     ) -> dict:
         """Build a layer-separated scene for GPU composition."""
         frame_started = perf_counter()
         settings = settings or GeneratorSettings()
-        layers = layers or []
+        layers = self._order_layers_from_scene(layers or [], visual_scene)
         layer_profiles = []
         background = Image.new("RGBA", self.size, (10, 10, 10, 255))
         guide = self._screen(screen)
@@ -837,6 +857,7 @@ class VisualCompositor:
         feedback_amount: float = 0.35,
         feedback_decay: float = 0.90,
         feedback_shift: float = 0.0,
+        visual_scene: dict | None = None,
     ) -> Image.Image:
         """Compose every generator and effect into a complete CPU RGBA frame."""
         scene = self.render_scene(
@@ -847,6 +868,7 @@ class VisualCompositor:
             screen=screen,
             gpu_native=False,
             include_guide=True,
+            visual_scene=visual_scene,
         )
         compose_started = perf_counter()
         frame = scene["background"].copy()
@@ -907,9 +929,10 @@ class VisualCompositor:
         feedback_amount: float = 0.35,
         feedback_decay: float = 0.90,
         feedback_shift: float = 0.0,
+        visual_scene: dict | None = None,
     ) -> Image.Image:
         settings = settings or GeneratorSettings()
-        layers = layers or []
+        layers = self._order_layers_from_scene(layers or [], visual_scene)
         base = Image.new("RGBA", self.size, (10, 10, 10, 255))
         guide = self._screen(screen)
         # Screen artwork is the canvas background. Generated layers and
