@@ -172,7 +172,7 @@ class PreviewRenderWorker(threading.Thread):
                         image = self._compositor.render_scene(
                             **render_args,
                             gpu_native=True,
-                            include_guide=False,
+                            include_guide=True,
                         )
                     else:
                         image = self._compositor.render_cpu_frame(
