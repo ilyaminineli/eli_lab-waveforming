@@ -1435,7 +1435,17 @@ class MainWindow(QMainWindow):
         self.timeline_widget.set_timeline(self.timeline)
 
     def _delete_timeline_marker(self) -> None:
-        if self.timeline.remove_nearest_marker(self._last_position):
+        # Tracker markers describe the imported score; manual deletion should
+        # target only user-authored markers/sections.
+        candidates = [
+            marker for marker in self.timeline.markers
+            if marker.kind.upper() != "TRACKER"
+        ]
+        if not candidates:
+            return
+        nearest = min(candidates, key=lambda marker: abs(marker.time - self._last_position))
+        if abs(nearest.time - self._last_position) <= 2.0:
+            self.timeline.remove_marker(nearest.marker_id)
             self.timeline_widget.set_timeline(self.timeline)
 
     def _update_timeline_duration(self) -> None:
