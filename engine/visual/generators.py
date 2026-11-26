@@ -35,6 +35,12 @@ class VisualMetrics:
     tracker_order: int = -1
     tracker_pattern: int = -1
     tracker_density: float = 0.0
+    tracker_row: int = 0
+    tracker_row_note_count: int = 0
+    tracker_row_activity: float = 0.0
+    tracker_pitch_centroid: float = 0.0
+    tracker_transition: float = 0.0
+    tracker_reprise: bool = False
 
     @classmethod
     def from_packet(cls, packet: dict | None, source_id: str | None = None) -> "VisualMetrics":
@@ -52,14 +58,58 @@ class VisualMetrics:
         )
         if tracker_instruments.ndim != 2 or tracker_notes is None or tracker_instruments.shape != tracker_notes.shape:
             tracker_instruments = None
+        progress = float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0))
+        tracker_density = float(np.clip(tracker.get("density", 0.0), 0.0, 1.0))
+        if tracker_notes is not None and tracker_notes.size:
+            note_rows, note_channels = tracker_notes.shape
+            row_index = int(np.clip(
+                tracker.get("row_index", int(progress * note_rows)),
+                0, note_rows - 1,
+            ))
+            row_values = tracker_notes[row_index]
+            valid_notes = row_values[(row_values >= 1) & (row_values <= 96)]
+            row_note_count = int(tracker.get("row_note_count", len(valid_notes)))
+            row_activity = float(np.clip(
+                tracker.get("row_activity", row_note_count / max(1, note_channels)),
+                0.0, 1.0,
+            ))
+            pitch_centroid = (
+                float(np.mean(valid_notes) / 96.0) if len(valid_notes) else 0.0
+            )
+        else:
+            row_index = int(tracker.get("row_index", 0))
+            row_note_count = int(tracker.get("row_note_count", 0))
+            row_activity = float(np.clip(tracker.get("row_activity", 0.0), 0.0, 1.0))
+            pitch_centroid = 0.0
+        transition_strength = float(np.clip(
+            tracker.get("transition_strength", 0.0), 0.0, 1.0
+        ))
+        # A cue transition is a short structural impulse, not a sustained
+        # brightness boost for the entire pattern.
+        transition_envelope = transition_strength * max(0.0, 1.0 - progress * 5.0)
+        pattern_reprise = bool(tracker.get("pattern_reprise", False))
         tracker_values = {
             "tracker_notes": tracker_notes,
             "tracker_instruments": tracker_instruments,
-            "tracker_progress": float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0)),
+            "tracker_progress": progress,
             "tracker_order": int(tracker.get("order", -1)),
             "tracker_pattern": int(tracker.get("pattern", -1)),
-            "tracker_density": float(np.clip(tracker.get("density", 0.0), 0.0, 1.0)),
+            "tracker_density": tracker_density,
+            "tracker_row": row_index,
+            "tracker_row_note_count": row_note_count,
+            "tracker_row_activity": row_activity,
+            "tracker_pitch_centroid": pitch_centroid,
+            "tracker_transition": transition_envelope,
+            "tracker_reprise": pattern_reprise,
         }
+        tracker_energy = float(np.clip(
+            tracker_density * 0.20 + row_activity * 0.48
+            + transition_envelope * 0.18 + (0.06 if pattern_reprise else 0.0),
+            0.0, 0.85,
+        ))
+        tracker_transient = float(np.clip(
+            row_activity * 0.55 + transition_envelope * 0.25, 0.0, 0.85
+        ))
         frame_map = packet.get("frames", {})
         group_map = packet.get("group_frames", {})
         source_ids = list(packet.get("source_ids") or frame_map.keys())
@@ -74,14 +124,24 @@ class VisualMetrics:
             indices = [0]
         elif source_id:
             if source_id not in frame_map:
-                return cls(**tracker_values)
+                return cls(
+                    energy=tracker_energy,
+                    transient=tracker_transient,
+                    centroid=pitch_centroid,
+                    **tracker_values,
+                )
             frames = [frame_map[source_id]]
             indices = [source_ids.index(source_id)] if source_id in source_ids else [0]
         else:
             frames = list(frame_map.values())
             indices = list(range(len(frames)))
         if not frames:
-            return cls(**tracker_values)
+            return cls(
+                energy=tracker_energy,
+                transient=tracker_transient,
+                centroid=pitch_centroid,
+                **tracker_values,
+            )
 
         def mean(field: str) -> float:
             return float(np.mean([getattr(frame, field) for frame in frames]))
@@ -106,12 +166,16 @@ class VisualMetrics:
             coherence = float(np.mean(offdiag))
         rms = mean("rms")
         flux = mean("flux")
+        audio_energy = float(np.tanh(rms * 4.5))
+        audio_transient = float(np.clip(flux * 32.0, 0.0, 1.0))
+        audio_centroid = mean("centroid_norm")
         return cls(
             rms=rms,
-            energy=float(np.tanh(rms * 4.5)),
-            transient=float(np.clip(flux * 32.0, 0.0, 1.0)),
+            energy=max(audio_energy, tracker_energy * 0.72),
+            transient=max(audio_transient, tracker_transient * 0.72),
             flux=flux,
-            centroid=mean("centroid_norm"),
+            centroid=(audio_centroid * 0.88 + pitch_centroid * 0.12)
+            if row_note_count else audio_centroid,
             flatness=mean("flatness"),
             entropy=mean("entropy"),
             zcr=mean("zcr"),
