@@ -949,14 +949,12 @@ class VisualCompositor:
         transition_id: str,
         layer_ids: list[str],
         assembly: bool,
-        screen: str,
     ) -> tuple[Image.Image, int]:
-        """Apply a stateless, deterministic tile lifecycle to a rendered scene.
+        """Apply a stateless, deterministic tile lifecycle to scene ink.
 
-        Each tile's ordering and displacement are derived from a SHA-256 digest
-        of the persisted transition seed, transition ID and stable layer IDs.
-        Every tile is sampled directly from the source image. No scene state,
-        global RNG or frame-to-frame simulation is mutated.
+        The schedule is derived from SHA-256 keys, not from a mutable random
+        stream. At progress 0 and 1 the caller uses exact source/empty
+        endpoints; intermediate samples can be evaluated in any order.
         """
         source = image.convert("RGBA")
         width, height = source.size
@@ -966,38 +964,34 @@ class VisualCompositor:
         count = columns * rows
         identity = "|".join(sorted(layer_ids))
         key = f"{int(seed)}|{transition_id}|{identity}|{width}x{height}"
-        digest = hashlib.sha256(key.encode("utf-8")).digest()
-        rank_key = hashlib.sha256(digest + b":rank").digest()
-        motion_key = hashlib.sha256(digest + b":motion").digest()
-        ranks = []
-        offsets = []
-        for index in range(count):
-            rank_digest = hashlib.sha256(rank_key + index.to_bytes(8, "big")).digest()
-            motion_digest = hashlib.sha256(motion_key + index.to_bytes(8, "big")).digest()
-            rank = int.from_bytes(rank_digest[:8], "big") / float(2**64 - 1)
-            dx = (int.from_bytes(motion_digest[:4], "big") / float(2**32 - 1) - 0.5)
-            dy = (int.from_bytes(motion_digest[4:8], "big") / float(2**32 - 1) - 0.5)
-            ranks.append(rank)
-            offsets.append((dx, dy))
+        root = hashlib.sha256(key.encode("utf-8")).digest()
+        rank_root = hashlib.sha256(root + b":rank").digest()
+        motion_root = hashlib.sha256(root + b":motion").digest()
+
         output = Image.new("RGBA", source.size, (0, 0, 0, 0))
-        src = source.load()
-        dst = output.load()
+        src, dst = source.load(), output.load()
         active = 0
         amount = max(0.0, min(1.0, float(progress)))
-        for index, rank in enumerate(ranks):
+        for index in range(count):
             row, column = divmod(index, columns)
             x0, y0 = column * tile, row * tile
             x1, y1 = min(width, x0 + tile), min(height, y0 + tile)
-            # Assembly grows from a deterministic scattered subset to all
-            # tiles; erosion removes that same ordering from the source.
-            visible = (rank <= amount) if assembly else (rank >= amount)
-            if not visible:
+            token = index.to_bytes(8, "big")
+            rank_digest = hashlib.sha256(rank_root + token).digest()
+            motion_digest = hashlib.sha256(motion_root + token).digest()
+            rank = int.from_bytes(rank_digest[:8], "big") / float(2**64 - 1)
+            dx_unit = int.from_bytes(motion_digest[:4], "big") / float(2**32 - 1) - 0.5
+            dy_unit = int.from_bytes(motion_digest[4:8], "big") / float(2**32 - 1) - 0.5
+
+            # Assembly: deterministic tiles converge from displaced fragments.
+            # Erosion: the same construction disperses outward while fading.
+            keep = rank <= amount if assembly else rank >= amount
+            if not keep:
                 continue
             active += 1
-            dx_unit, dy_unit = offsets[index]
-            displacement = (1.0 - amount) if assembly else amount
-            dx = int(round(dx_unit * tile * 2.2 * displacement))
-            dy = int(round(dy_unit * tile * 2.2 * displacement))
+            travel = (1.0 - amount) if assembly else amount
+            dx = int(round(dx_unit * tile * 2.2 * travel))
+            dy = int(round(dy_unit * tile * 2.2 * travel))
             alpha_gain = amount if assembly else (1.0 - amount)
             for y in range(y0, y1):
                 for x in range(x0, x1):
@@ -1008,9 +1002,6 @@ class VisualCompositor:
                             pixel[0], pixel[1], pixel[2],
                             int(round(pixel[3] * alpha_gain)),
                         )
-        # Keep the printable screen plate untouched and above/below ink exactly
-        # as the normal compositor does. Scene render already contains guide;
-        # transparent lifecycle output therefore overlays a neutral base.
         return output, active
 
     def render_scene_pair(
