@@ -329,7 +329,7 @@ jobs:
                   json.loads(json.dumps(visual_project.to_dict()))
               )
               assert project_round_trip.active_scene_id == restored_scene.scene_id
-              assert len(project_round_trip.scenes) == 2
+              assert len(project_round_trip.scenes) == 3
               assert project_round_trip.layers_for_scene(
                   duplicate.scene_id
               ) == visual_project.layers_for_scene(duplicate.scene_id)
