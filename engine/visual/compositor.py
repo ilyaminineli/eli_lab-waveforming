@@ -245,6 +245,10 @@ class VisualCompositor:
     @staticmethod
     def _apply_palette(image: Image.Image, layer: VisualLayer,
                        packet: dict | None, white_plate: bool) -> Image.Image:
+        # TRACKER MATRIX encodes instrument identity in its own ink colours;
+        # replacing those colours with a layer-wide tint would erase that data.
+        if layer.generator == "TRACKER MATRIX":
+            return image
         rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
         visible = rgba[..., 3] > 0
         if layer.palette_mode == "MONOCHROME":
