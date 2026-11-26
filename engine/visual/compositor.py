@@ -805,6 +805,10 @@ class VisualCompositor:
         layers = layers or []
         base = Image.new("RGBA", self.size, (10, 10, 10, 255))
         guide = self._screen(screen)
+        # Screen artwork is the canvas background. Generated layers and
+        # temporal feedback must be composited above its printable area.
+        if guide is not None:
+            base.alpha_composite(guide)
 
         frame_box = self._frame_box(screen)
         stack = Image.new("RGBA", self.size, (0, 0, 0, 0))
@@ -845,8 +849,5 @@ class VisualCompositor:
             self._feedback = None
             self._last_time = seconds
 
-        # Keep screen artwork above generated ink in both CPU and GPU paths.
         base.alpha_composite(stack)
-        if guide is not None:
-            base.alpha_composite(guide)
         return base
