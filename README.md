@@ -175,6 +175,17 @@ See [docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md](docs/Guide/WAVEFORMIN
 
 See [docs/M11_VISUAL_SCORE_SCENE_GRAPH.md](docs/M11_VISUAL_SCORE_SCENE_GRAPH.md).
 
+## M12 — Scene state machine and transition contracts
+
+- Adds explicit validated scene states: INACTIVE, PREPARED, ENTERING, ACTIVE, HELD, EXITING, ARCHIVED and SAFE_FALLBACK.
+- Adds serializable transition contracts for cut, dissolve, morph, assembly, erosion, mask reveal, displacement, camera, palette, attention transfer, temporal echo, negative, split/merge and hard reset.
+- Contracts define duration, trigger metadata, easing, preparation/transformation/establishment proportions, object preservation/discard, interruption and outgoing-scene policies.
+- Separates transition proposal from commit. Proposing validates source/target scenes and object references without mutating scene state.
+- A deterministic, absolute-time controller samples progress and blend weights, and applies completion/cancel/hold/archive lifecycle decisions.
+- Transition contracts are not yet visual effects: renderer-side morph/dissolve/assembly implementations and app-level multi-scene authoring are future steps.
+
+See [docs/M12_SCENE_STATE_MACHINE_TRANSITIONS.md](docs/M12_SCENE_STATE_MACHINE_TRANSITIONS.md).
+
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
