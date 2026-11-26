@@ -210,16 +210,19 @@ This keeps an XM channel's identity and semantic role stable even when its visua
 
 ## 9. Scene and cue model — the architectural direction
 
-The guide's longer-term Visual Instrument model remains the target. WAVEFORMING should progressively distinguish:
+The guide's longer-term Visual Instrument model remains the target. The first persistent `VisualScene` / `VisualObject` / `VisualScore` slice is now implemented:
 
-- **VisualBrief / VisualIdentity:** artistic intent, visual vocabulary, palette, material and continuity;
-- **VisualScore:** structured musical arrangement, channel/voice identities and event stream;
-- **VisualScene / VisualObject:** persistent compositional state rather than a flat list of temporary effects;
-- **VisualCue / VisualEvent:** order, pattern, phrase, note or operator event with explicit musical time;
-- **VisualRole / VisualMotif / VisualPhrase:** reusable visual grammar for foreground, anchor, texture, motion and atmosphere;
-- **MappingRule / SourceBinding:** transparent mapping from XM/audio/performance input to a visual property;
-- **SceneTransition:** declared cut, dissolve, morph, assembly, erosion, mask reveal, displacement, temporal echo, split/merge or hold;
-- **VisualSnapshot / ShowManifest:** deterministic restore, reproducibility and live-show packaging.
+- **VisualBrief / VisualIdentity:** still planned; artistic intention, visual vocabulary, palette, material and continuity are not yet an editable project model.
+- **VisualScore:** implemented as a serializable ordered trajectory with score-linked XM order/pattern cues.
+- **VisualScene / VisualObject:** implemented as persistent scene and object records linked to executable renderer layers through stable IDs.
+- **VisualRelationship:** a typed relationship record is available; authoring tools and runtime relationship semantics remain planned.
+- **VisualCue / VisualEvent:** structural XM order cues are represented with explicit musical time; note/phrase/performer event scheduling remains planned.
+- **VisualRole / VisualMotif / VisualPhrase:** basic object roles and scene attention groups exist; reusable motif and phrase grammar remains planned.
+- **MappingRule / SourceBinding:** source-binding records exist for audio routes and XM channel identities; an executable rule engine is still planned.
+- **SceneTransition:** scene lifecycle fields exist, but the state machine and transition execution are the next milestone.
+- **VisualSnapshot / ShowManifest:** deterministic snapshots, recovery and live-show packaging remain planned.
+
+The scene's canonical layer order is consumed by preview and offline rendering. `VisualLayer` remains the rendering unit for this compatibility step; a logical VisualObject containing multiple layers is future work.
 
 The director should propose candidate scene changes separately from committing them. Manual performance overrides should take precedence over explicit cues, structured musical state, per-voice features, audio estimates and autonomous visual motion, following the priority model in the companion guide.
 
@@ -238,12 +241,19 @@ The director should propose candidate scene changes separately from committing t
 - XM-only play/pause/seek/loop and XM-only MP4 export.
 - PERFORMANCE / BALANCED / FULL internal render profiles, with FFmpeg upscale to the fixed delivery canvas.
 - CI smoke validation rather than a reinstated pytest suite.
+- Persistent VisualObject IDs linked to renderer layers; archived object identity after layer removal.
+- VisualScene serialization, canonical layer order, attention grouping, and audio/XM source bindings.
+- VisualScore serialization with timed XM order-entry and pattern-return cues.
+- Scene graph layer order applied in live preview and offline rendering.
+- Version-2 project persistence with version-1 migration from the existing layer stack and tracker data.
 
 ### Still planned — do not treat as implemented
 
 - Full Bxx/Dxx/E6x order-jump, break and pattern-loop playback simulation.
 - General tracker formats beyond XM.
-- Full VisualScene/VisualObject and VisualScore serialization model.
+- Editable VisualBrief and VisualIdentity models.
+- Multi-layer logical objects, authorable relationship graph and motif lineage tools.
+- Scene state-machine execution, transition contracts and cue-driven scene changes.
 - Editable per-channel MappingRule profiles and channel solo/mute/focus controls.
 - Cue/phrase-based scene transitions with preparation, transformation and establishment phases.
 - A GPU-native tracker ensemble and multi-resolution simulation cache.
