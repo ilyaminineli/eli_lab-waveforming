@@ -85,10 +85,11 @@ class ScenePairRenderContract:
             raise ValueError("Transition duration must be finite and non-negative.")
 
         self.completed = bool(self.completed)
+        # Rendering capability is derived from the selected family, never
+        # trusted from serialized data. This prevents a future family from
+        # accidentally inheriting "crossfade" after changing its family name.
         expected_mode = RENDERED_TRANSITION_MODES.get(self.family, "hold")
-        self.render_mode = str(self.render_mode or expected_mode).lower()
-        if self.render_mode not in ("crossfade", "cut", "hold"):
-            raise ValueError(f"Unknown scene-pair render mode: {self.render_mode}")
+        self.render_mode = expected_mode
         self.outgoing = self._clean_side(self.outgoing, self.source_scene_id)
         self.incoming = self._clean_side(self.incoming, self.target_scene_id)
         self.metadata = _dict(self.metadata)
