@@ -110,3 +110,67 @@ def test_reaction_diffusion_keeps_unactivated_paper_transparent():
     assert alpha.max() > 0
     # Seeded activator structures occupy a small fraction of the printable field.
     assert np.count_nonzero(alpha) < alpha.size * 0.35
+
+
+
+def test_tracker_matrix_renders_note_rows_and_tracker_playhead():
+    bank = GeneratorBank()
+    packet = make_packet()
+    notes = [[0 for _ in range(14)] for _ in range(64)]
+    instruments = [[0 for _ in range(14)] for _ in range(64)]
+    notes[0][0] = 49
+    notes[7][3] = 61
+    instruments[0][0] = 1
+    instruments[7][3] = 4
+    packet["tracker_cue"] = {
+        "order": 4,
+        "pattern": 5,
+        "progress": 0.5,
+        "density": 0.03,
+        "notes": notes,
+        "instruments": instruments,
+    }
+
+    image = bank.render(
+        "TRACKER MATRIX", packet, 2.0, (480, 360),
+        GeneratorSettings(complexity=45, motion=30, sensitivity=100),
+    )
+
+    assert image.size == (480, 360)
+    assert image.mode == "RGBA"
+    assert np.asarray(image)[..., 3].max() > 0
+
+
+def test_tracker_matrix_can_render_without_audio_feature_frames():
+    from engine.visual.generators import TrackerMatrix, VisualMetrics
+
+    packet = {
+        "tracker_cue": {
+            "order": 0,
+            "pattern": 0,
+            "progress": 0.25,
+            "density": 0.01,
+            "notes": [[48, 0], [0, 60]],
+            "instruments": [[1, 0], [0, 2]],
+        }
+    }
+    metrics = VisualMetrics.from_packet(packet)
+    image = TrackerMatrix().render(
+        metrics, 0.0, (240, 180), GeneratorSettings()
+    )
+
+    assert metrics.source_count == 0
+    assert metrics.tracker_notes.shape == (2, 2)
+    assert image.getchannel("A").getbbox() is not None
+
+
+def test_generator_bank_reuses_metrics_for_layers_sharing_a_packet():
+    bank = GeneratorBank()
+    packet = make_packet()
+
+    first = bank._metrics_for(packet, "a")
+    second = bank._metrics_for(packet, "a")
+    third = bank._metrics_for(dict(packet), "a")
+
+    assert first is second
+    assert first is not third
