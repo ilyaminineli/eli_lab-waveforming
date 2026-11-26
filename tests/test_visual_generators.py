@@ -162,6 +162,11 @@ def test_tracker_matrix_can_render_without_audio_feature_frames():
 
     assert metrics.source_count == 0
     assert metrics.tracker_notes.shape == (2, 2)
+    assert metrics.tracker_row == 0
+    assert metrics.tracker_row_note_count == 1
+    assert metrics.tracker_row_activity == 0.5
+    assert metrics.energy > 0.0
+    assert metrics.transient > 0.0
     assert image.getchannel("A").getbbox() is not None
 
 
@@ -175,3 +180,31 @@ def test_generator_bank_reuses_metrics_for_layers_sharing_a_packet():
 
     assert first is second
     assert first is not third
+
+
+
+def test_audio_and_tracker_events_share_visual_metrics():
+    packet = make_packet()
+    packet["tracker_cue"] = {
+        "order": 2,
+        "pattern": 1,
+        "progress": 0.0,
+        "density": 0.2,
+        "transition_strength": 0.8,
+        "pattern_reprise": True,
+        "notes": [[48, 52], [0, 0]],
+        "instruments": [[1, 2], [0, 0]],
+        "row_note_counts": [2, 0],
+    }
+
+    metrics = __import__(
+        "engine.visual.generators", fromlist=["VisualMetrics"]
+    ).VisualMetrics.from_packet(packet)
+
+    assert metrics.source_count == 2
+    assert metrics.tracker_row_note_count == 2
+    assert metrics.tracker_row_activity == 1.0
+    assert metrics.tracker_transition == 0.8
+    assert metrics.tracker_reprise is True
+    assert metrics.energy > 0.0
+    assert metrics.transient > 0.0
