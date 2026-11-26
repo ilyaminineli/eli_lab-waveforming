@@ -869,11 +869,13 @@ jobs:
                   lifecycle_source, progress=0.0, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-target"],
                   assembly=True,
+                  screen="No guide",
               )
               assembly_full, _ = VisualCompositor._lifecycle_fragment_frame(
                   lifecycle_source, progress=1.0, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-target"],
                   assembly=True,
+                  screen="No guide",
               )
               assert assembly_empty.getchannel("A").getbbox() is None
               assert assembly_full.tobytes() == lifecycle_source.tobytes()
@@ -881,22 +883,26 @@ jobs:
                   lifecycle_source, progress=0.45, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-target"],
                   assembly=True,
+                  screen="No guide",
               )
               assembly_mid_b, _ = VisualCompositor._lifecycle_fragment_frame(
                   lifecycle_source, progress=0.45, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-target"],
                   assembly=True,
+                  screen="No guide",
               )
               assert assembly_mid_a.tobytes() == assembly_mid_b.tobytes()
               erosion_full, _ = VisualCompositor._lifecycle_fragment_frame(
                   lifecycle_source, progress=0.0, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-source"],
                   assembly=False,
+                  screen="No guide",
               )
               erosion_empty, _ = VisualCompositor._lifecycle_fragment_frame(
                   lifecycle_source, progress=1.0, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-source"],
                   assembly=False,
+                  screen="No guide",
               )
               assert erosion_full.tobytes() == lifecycle_source.tobytes()
               assert erosion_empty.getchannel("A").getbbox() is None
@@ -904,17 +910,20 @@ jobs:
                   lifecycle_source, progress=0.45, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-source"],
                   assembly=False,
+                  screen="No guide",
               )
               erosion_mid_b, _ = VisualCompositor._lifecycle_fragment_frame(
                   lifecycle_source, progress=0.45, seed=17,
                   transition_id="lifecycle-smoke", layer_ids=["layer-source"],
                   assembly=False,
+                  screen="No guide",
               )
               assert erosion_mid_a.tobytes() == erosion_mid_b.tobytes()
               assert VisualCompositor._lifecycle_fragment_frame(
                   lifecycle_source, progress=0.45, seed=18,
                   transition_id="lifecycle-smoke", layer_ids=["layer-source"],
                   assembly=False,
+                  screen="No guide",
               )[0].tobytes() != erosion_mid_a.tobytes()
 
               for lifecycle_family, lifecycle_mode in (
