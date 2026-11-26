@@ -245,6 +245,7 @@ class VisualProject:
         outgoing_policy: str = "archive",
         object_correspondence: list[dict] | None = None,
         path_correspondence: list[dict] | None = None,
+        metadata: dict | None = None,
     ) -> dict:
         cue_id = str(cue_id)
         source_id = str(source_scene_id or self.active_scene_id)
@@ -266,6 +267,7 @@ class VisualProject:
             outgoing_policy=outgoing_policy,
             object_correspondence=list(object_correspondence or []),
             path_correspondence=list(path_correspondence or []),
+            metadata=dict(metadata or {}),
             trigger={"type": "tracker_cue", "cue_id": cue_id},
         )
         route = {
@@ -279,6 +281,7 @@ class VisualProject:
             "outgoing_policy": contract.outgoing_policy,
             "object_correspondence": [dict(item) for item in contract.object_correspondence],
             "path_correspondence": [dict(item) for item in contract.path_correspondence],
+            "metadata": dict(contract.metadata),
         }
         self.cue_routes = [
             item for item in self.cue_routes
