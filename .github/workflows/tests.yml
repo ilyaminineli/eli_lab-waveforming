@@ -47,6 +47,9 @@ jobs:
           from engine.visual.layers import VisualLayer
           from engine.visual.compositor import VisualCompositor
           from engine.visual.scene import VisualScene, VisualScore
+          from engine.visual.transitions import (
+              SceneTransition, SceneTransitionController,
+          )
           import json
 
           # A tiny valid XM: two tracker channels, one note, one named sample.
@@ -154,5 +157,71 @@ jobs:
               migrated_scene = VisualScene()
               migrated_scene.synchronize_layers(layers, score)
               assert len(migrated_scene.objects) == len(layers)
-          print("XM → channel voices → scene graph → visual score: OK")
+
+              # Propose first, then commit: proposal must not mutate scene state.
+              outgoing = VisualScene(scene_id="scene-outgoing", name="OUTGOING")
+              incoming = VisualScene(
+                  scene_id="scene-incoming", name="INCOMING", state="INACTIVE"
+              )
+              controller = SceneTransitionController()
+              controller.register_scene(outgoing, active=True)
+              controller.register_scene(incoming)
+              transition = SceneTransition(
+                  source_scene_id=outgoing.scene_id,
+                  target_scene_id=incoming.scene_id,
+                  family="dissolve",
+                  duration_seconds=4.0,
+                  easing="smoothstep",
+                  preparation_fraction=0.15,
+                  transformation_fraction=0.70,
+                  interruption_policy="cancel",
+                  outgoing_policy="archive",
+              )
+              proposal = controller.propose(
+                  transition, proposed_at=0.0, rationale="CI lifecycle smoke"
+              )
+              assert outgoing.state == "ACTIVE"
+              assert incoming.state == "INACTIVE"
+              start = controller.commit(proposal.proposal_id, start_time=10.0)
+              assert start["phase"] == "PREPARATION"
+              middle = controller.sample(12.0)
+              assert middle["phase"] == "TRANSFORMATION"
+              end = controller.sample(14.0)
+              assert end["completed"] is True
+              assert outgoing.state == "ARCHIVED"
+              assert incoming.state == "ACTIVE"
+              assert controller.active_scene_id == incoming.scene_id
+
+              # Cancellation restores the outgoing scene and prepares the target.
+              cancel_target = VisualScene(
+                  scene_id="scene-cancel-target", name="CANCEL TARGET",
+                  state="INACTIVE",
+              )
+              controller.register_scene(cancel_target)
+              cancel_transition = SceneTransition(
+                  source_scene_id=incoming.scene_id,
+                  target_scene_id=cancel_target.scene_id,
+                  duration_seconds=3.0,
+                  interruption_policy="cancel",
+              )
+              cancel_proposal = controller.propose(
+                  cancel_transition, proposed_at=20.0
+              )
+              controller.commit(cancel_proposal.proposal_id, start_time=20.0)
+              assert controller.interrupt() == "cancelled"
+              assert incoming.state == "ACTIVE"
+              assert cancel_target.state == "PREPARED"
+              try:
+                  incoming.transition_state("ARCHIVED")
+                  raise AssertionError("Invalid scene state transition was accepted.")
+              except ValueError:
+                  pass
+
+              # Transition contracts are plain JSON-compatible project data.
+              round_trip = SceneTransition.from_dict(
+                  json.loads(json.dumps(transition.to_dict()))
+              )
+              assert round_trip.transition_id == transition.transition_id
+              assert round_trip.family == "dissolve"
+          print("XM → scene graph → visual score → scene lifecycle: OK")
           PY
