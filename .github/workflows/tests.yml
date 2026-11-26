@@ -62,6 +62,9 @@ jobs:
           from engine.visual.vector_geometry import (
               interpolate_vector_paths, render_vector_paths,
           )
+          from engine.visual.temporal_echo import (
+              TemporalEchoHistoryBuffer, TemporalEchoSettings,
+          )
           from PIL import Image
           from types import MethodType
           import json
@@ -929,6 +932,141 @@ jobs:
                   assert ScenePairRenderContract.from_dict(
                       json.loads(json.dumps(lifecycle_contract.to_dict()))
                   ).metadata["seed"] == 17
+
+              # M14 temporal echo: timestamped samples, bounded memory,
+              # deterministic replay, directional offset and reset semantics.
+              import math
+              echo_settings = TemporalEchoSettings.from_mapping({
+                  "history_seconds": 0.20,
+                  "max_samples": 3,
+                  "sample_interval_seconds": 0.05,
+                  "strength": 0.48,
+                  "decay": 0.74,
+                  "direction_x": 3.0,
+                  "direction_y": 4.0,
+                  "directional_persistence": 0.15,
+                  "history_scale": 1.0,
+              })
+              assert abs(math.hypot(
+                  echo_settings.direction_x, echo_settings.direction_y
+              ) - 1.0) < 1e-6
+
+              def temporal_echo_replay():
+                  history = TemporalEchoHistoryBuffer()
+                  samples = []
+                  for index, timestamp in enumerate((0.0, 0.05, 0.10)):
+                      source_frame = Image.new("RGBA", (32, 24), (0, 0, 0, 0))
+                      from PIL import ImageDraw
+                      ImageDraw.Draw(source_frame).rectangle(
+                          (5 + index, 7, 9 + index, 11),
+                          fill=(240, 240, 235, 255),
+                      )
+                      overlays, metrics = history.prepare(
+                          source_frame,
+                          timestamp=timestamp,
+                          transition_id="echo-transition-A",
+                          settings=echo_settings,
+                      )
+                      samples.append((
+                          [(item[0].tobytes(), item[1], item[2]) for item in overlays],
+                          metrics,
+                      ))
+                  return history, samples
+
+              echo_history_a, echo_samples_a = temporal_echo_replay()
+              echo_history_b, echo_samples_b = temporal_echo_replay()
+              assert echo_samples_a == echo_samples_b
+              assert [len(item[0]) for item in echo_samples_a] == [0, 1, 2]
+              assert echo_samples_a[-1][1]["buffer_size"] == 3
+              directional_overlay = echo_history_a
+              first_overlay = echo_samples_a[-1][0][0]
+              assert first_overlay[1] == (0, 0)
+              assert first_overlay[0]  # historical pixels are retained
+              assert echo_samples_a[-1][1]["oldest_age_seconds"] == 0.10
+
+              seek_overlays, seek_metrics = echo_history_a.prepare(
+                  Image.new("RGBA", (32, 24), (0, 0, 0, 0)),
+                  timestamp=0.02,
+                  transition_id="echo-transition-A",
+                  settings=echo_settings,
+              )
+              assert seek_overlays == []
+              assert seek_metrics["reset_reason"] == "backward_seek"
+              assert seek_metrics["buffer_size"] == 1
+              transition_overlays, transition_metrics = echo_history_a.prepare(
+                  Image.new("RGBA", (32, 24), (0, 0, 0, 0)),
+                  timestamp=0.07,
+                  transition_id="echo-transition-B",
+                  settings=echo_settings,
+              )
+              assert transition_overlays == []
+              assert transition_metrics["reset_reason"] == "transition_changed"
+              assert transition_metrics["buffer_size"] == 1
+
+              # Repeated future samples cannot exceed the configured bound.
+              for index in range(8):
+                  echo_history_a.prepare(
+                      Image.new("RGBA", (32, 24), (0, 0, 0, 0)),
+                      timestamp=0.08 + index * 0.04,
+                      transition_id="echo-transition-B",
+                      settings=echo_settings,
+                  )
+              assert echo_history_a.sample_count <= 3
+              resized_metrics = echo_history_a.prepare(
+                  Image.new("RGBA", (48, 36), (0, 0, 0, 0)),
+                  timestamp=0.50,
+                  transition_id="echo-transition-B",
+                  settings=echo_settings,
+              )[1]
+              assert resized_metrics["reset_reason"] == "frame_size_changed"
+              try:
+                  TemporalEchoSettings.from_mapping({"decay": 1.5})
+                  raise AssertionError("Out-of-range temporal echo decay was accepted.")
+              except ValueError:
+                  pass
+
+              # Settings and family survive scene-pair JSON serialization.
+              temporal_contract = ScenePairRenderContract.from_dict({
+                  **pair_contract.to_dict(),
+                  "family": "temporal_echo",
+                  "metadata": {
+                      "transition_metadata": {
+                          "temporal_echo": {
+                              "history_seconds": 0.20,
+                              "strength": 0.48,
+                              "direction_x": 1.0,
+                              "direction_y": 0.0,
+                          },
+                      },
+                  },
+              })
+              temporal_round_trip = ScenePairRenderContract.from_dict(
+                  json.loads(json.dumps(temporal_contract.to_dict()))
+              )
+              assert temporal_round_trip.render_mode == "temporal_echo"
+              assert temporal_round_trip.metadata["transition_metadata"][
+                  "temporal_echo"
+              ]["strength"] == 0.48
+
+              # Preview and offline both call this exact scene-pair compositor
+              # contract; identical timestamped requests must replay byte-for-byte.
+              echo_assets = AssetCatalog(Path("."))
+              echo_preview = VisualCompositor(echo_assets, render_size=(24, 18))
+              echo_offline = VisualCompositor(echo_assets, render_size=(24, 18))
+              echo_preview_frames, echo_offline_frames = [], []
+              for timestamp in (0.0, 0.05, 0.10):
+                  echo_preview_frames.append(echo_preview.render_scene_pair(
+                      packet={}, seconds=timestamp, scene_pair=temporal_round_trip,
+                      settings=GeneratorSettings(), screen="No guide",
+                  ).tobytes())
+                  echo_offline_frames.append(echo_offline.render_scene_pair(
+                      packet={}, seconds=timestamp, scene_pair=temporal_round_trip,
+                      settings=GeneratorSettings(), screen="No guide",
+                  ).tobytes())
+              assert echo_preview_frames == echo_offline_frames
+              assert echo_preview.last_profile["scene_pair"]["temporal_echo"][
+                  "sample_count"
+              ] == 2
 
               # Unimplemented families remain explicit hold modes; lifecycle
               # families above use their dedicated derived-render paths.
