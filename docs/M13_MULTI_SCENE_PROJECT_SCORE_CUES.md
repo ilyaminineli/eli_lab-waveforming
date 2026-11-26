@@ -79,15 +79,9 @@ A saved in-progress runtime transition is not resumed at an arbitrary partial fr
 
 ## 7. Compositor integration
 
-Live preview and offline export pass a `resolved_state` snapshot through the existing compositor interface. It contains:
+M13 passes a `resolved_state` snapshot with project/active-scene IDs, lifecycle states, the latest M12 sample and pending cue count.
 
-- project and active-scene IDs;
-- each scene's current lifecycle state;
-- whether a transition is active;
-- the latest M12 transition sample;
-- the number of queued cue routes.
-
-The compositor exposes this state in its scene result and render profile. This makes the resolved project state available to downstream render stages while preserving the existing single-scene renderer contract.
+M14 extends this state handoff with `ScenePairRenderContract`. During a supported dissolve, live preview and offline export capture both scene graphs and their independent layer snapshots, render both sides with the same score packet/settings/show time, then blend the resulting RGBA frames. The normal single-scene path remains unchanged when no pair is active.
 
 ## 8. Validation
 
@@ -98,17 +92,16 @@ The CI smoke path checks:
 - M13 project migration, independent layer snapshots, unique IDs after duplication, relationship/attention remapping, cue-route persistence and active-scene selection;
 - Python compilation and GLSL shader validation.
 
-## 9. Explicitly not implemented
+## 9. Renderer effects beyond M14
 
-M13 provides scene routing and state resolution, not rendered transition effects. During a non-zero transition the current compositor still renders the outgoing scene until the M12 controller completes, then switches to the incoming scene. The sampled weights/phases are available to the renderer, but are not yet applied as a crossfade or spatial transformation.
+M13 does not itself render transitions. M14 adds the shared scene-pair contract and real dissolve/crossfade behavior; `cut` switches at completion. During an active dissolve the compositor renders both scene stacks; the M12 sample's weights determine the outgoing/incoming pixel blend.
 
-Not yet implemented:
+Still not implemented:
 
-- pixel-level dissolve/crossfade, morph, assembly, erosion, mask reveal, displacement or temporal echo;
-- simultaneous outgoing/incoming layer rendering and transition-specific compositing;
+- object-aware morphing, assembly, erosion, mask reveal, displacement or temporal echo;
 - actual transfer/merging of preserved VisualObjects between scenes;
 - semantic auto-generation of routes from XM phrase or pattern meaning;
 - performer override layers and persisted runtime transition checkpoints;
 - replay of manually committed transitions at their original show-time in offline export (cue-routed transitions are replayed from the score).
 
-**Next: M14 — Renderer-side transition effects.** Begin with the shared scene-pair rendering contract and a real dissolve/crossfade; then add object-aware morphing, assembly/erosion and temporal echo as distinct effects with deterministic sampling.
+See [M14_RENDERER_SCENE_PAIR_CROSSFADE.md](M14_RENDERER_SCENE_PAIR_CROSSFADE.md) for the new renderer contract and current CPU path limitations.
