@@ -205,12 +205,12 @@ See [docs/M13_MULTI_SCENE_PROJECT_SCORE_CUES.md](docs/M13_MULTI_SCENE_PROJECT_SC
 - Adds a serializable `ScenePairRenderContract` with outgoing/incoming scene graphs, their independent layer snapshots, transition phase/progress/weights and resolved project metadata.
 - A single `ScenePairRenderContract` is built from the M12 controller sample and reused by live preview and offline export.
 - `VisualCompositor.render_scene_pair()` uses family-specific rendering: dissolve blends two complete RGBA frames, while morph builds one intermediate object/path scene and renders its continuous background once.
-- `dissolve` performs a deterministic pixel crossfade; `cut` switches at completion; `morph` interpolates explicitly-corresponding `VisualObject`s, including point-by-point generator paths for Phase Orbit, Phase Lattice, Geometric Field, Geometric Plate, Axonometric Field, Polyhedral Field and Mobius Field. Unmatched objects and paths fade independently. Assembly, erosion and other families remain lifecycle-only until implemented.
+- `dissolve` performs a deterministic pixel crossfade; `cut` switches at completion; `morph` interpolates explicitly-corresponding `VisualObject`s, including point-by-point paths for Phase Orbit, Phase Lattice, Geometric Field, Geometric Plate, Axonometric Field, Polyhedral Field and Mobius Field. Authored path maps support normalized arc-length anchors and pair/split/merge groups; the scene panel includes a path-ID catalogue and JSON editor. Unmatched objects and paths fade independently. Assembly, erosion and other families remain lifecycle-only until implemented.
 - Temporal feedback is applied once to the final blended frame. The pair-render profile records both scene render timings and transition weights.
 - Live preview retains generator state for both scene layer sets and sends a completed CPU frame to the canvas while a pair is active. The normal OpenGL single-scene path resumes after transition completion.
 - Offline export uses the same pair contract and blend function, keeping score-cue transition output aligned with the live render path.
 
-M14 currently implements dissolve/cut and object-aware morphing with generator-level path deformation for the supported line/edge families. Raster-only generators retain the transform/material fallback. Path splitting/merging, authored anchors, assembly, erosion, mask reveal, displacement and temporal echo remain future effects.
+M14 currently implements dissolve/cut and object-aware morphing with generator-level path deformation, authored anchors and pair/split/merge correspondence for the supported line/edge families. Raster-only generators retain the transform/material fallback. Topology-aware raster contour extraction, assembly, erosion, mask reveal, displacement and temporal echo remain future effects.
 
 See [docs/M14_RENDERER_SCENE_PAIR_CROSSFADE.md](docs/M14_RENDERER_SCENE_PAIR_CROSSFADE.md).
 ## Canvas and performance

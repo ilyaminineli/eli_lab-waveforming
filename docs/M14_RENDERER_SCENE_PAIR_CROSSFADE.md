@@ -41,6 +41,41 @@ M14 adds a one-to-one correspondence list to `SceneTransition`. Each entry ident
 
 Unmatched outgoing objects fade by the outgoing weight; unmatched incoming objects fade by the incoming weight. The compositor renders this single intermediate scene, so the screen guide and paper-grain background are drawn once rather than crossfading two complete textured frames. Layer order follows the outgoing scene before the midpoint and the incoming scene after it.
 
+### Authored path correspondence, anchors and topology groups
+
+SceneTransition.path_correspondence persists path-level authored mappings beside the parent object correspondence. Each mapping names source and target VisualObject IDs, source and target path ID arrays, a mode and optional paired normalized arc-length anchors.
+
+Accepted modes:
+
+- pair: exactly one source path to one target path;
+- split: one source path to two or more target paths. Target paths begin coincident with the source, then fan out; source ink is distributed across the copies at the start;
+- merge: two or more source paths to one target path. Source paths converge onto the target; target ink is distributed across the converging copies at completion.
+
+Example:
+
+```json
+[
+  {
+    "source_object_id": "obj_source",
+    "target_object_id": "obj_target",
+    "mode": "pair",
+    "source_path_ids": ["orbit:0"],
+    "target_path_ids": ["mobius:row:0"],
+    "anchors": [
+      {"source_t": 0.0, "target_t": 0.0},
+      {"source_t": 0.35, "target_t": 0.62},
+      {"source_t": 1.0, "target_t": 1.0}
+    ]
+  }
+]
+```
+
+Anchor positions are normalized by path arc length. The first and last endpoint anchors are inserted when omitted. Interior anchors must be strictly increasing on both paths, preventing folded parameter mappings. During rendering, both paths are sampled through the same anchor knots before point interpolation. For closed contours, the current implementation uses the generated traversal direction; authored direction reversal is not exposed yet.
+
+The EDIT MORPH PATH MAP scene-panel action displays currently available object and path IDs for the selected outgoing/incoming scenes and opens a JSON editor. A draft is stored in project metadata until the manual transition is committed; routing the current XM cue copies the same map into the persisted cue route. The project transition stores the validated map for deterministic offline rendering.
+
+Path IDs are resolved from the generator at render time because density, tracker/audio features and generator settings can change the number of paths. If an authored ID is absent at a frame, the compositor records a profile warning and uses automatic matching for that object on that frame rather than aborting preview/export.
+
 ### Generator-aware path deformation
 
 For line/edge generators, the compositor obtains normalized vector paths from the generator at the current tracker/audio packet and show time. The first supported set is **Phase Orbit, Phase Lattice, Geometric Field, Geometric Plate, Axonometric Field, Polyhedral Field and Mobius Field**.
@@ -85,6 +120,7 @@ The CI smoke path checks:
 - contract JSON round-trip;
 - exact outgoing endpoint, 50/50 midpoint and incoming endpoint pixel values;
 - the compositor's two-scene rendering orchestration and crossfade output;
+- Path-map schema validation, anchor-constrained path sampling, split/merge endpoints, runtime stale-ID fallback and a real authored Phase Orbit-to-Mobius morph;
 - vector path generation for all declared vector-capable line/edge generators, raster-only fallback, Phase Orbit-to-Mobius path matching and real intermediate-frame rendering;
 - explicit hold behavior for unimplemented transition families;
 - the existing XM, M11, M12 and M13 smoke coverage;
@@ -96,9 +132,9 @@ This first M14 increment implements the pair-rendering architecture and dissolve
 
 - Scene-pair rendering is CPU-side; a future GPU-native pair compositor can optimize it.
 - `assembly`, `erosion`, `mask_reveal`, `displacement` and `temporal_echo` currently hold the outgoing frame until lifecycle completion.
-- Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction, path splitting/merging and semantic anchor editing remain future work. Path matches are currently deterministic nearest-centroid matches within a compatible path group, not manually authored landmark correspondences.
+- Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction and closed-path direction reversal remain future work. Automatic matches use nearest-centroid pairing within compatible path groups; authored pair/split/merge maps and normalized path anchors override that fallback.
 - Correspondence is one-to-one. Split/merge mapping and explicit object transfer/merge policies remain future work.
 - There is no independent preparation or establishment image treatment yet; the M12 phase sample is exposed to the compositor.
 - Runtime transition checkpoints and replay of manually authored transitions in offline export are not implemented.
 
-**Next M14 slices:** extend path correspondence with authored anchors and split/merge operations; implement assembly and erosion as deterministic object lifecycle operations; then introduce temporal echo as a transition-local history buffer. Keep each effect behind the same scene-pair contract so live and offline rendering stay aligned.
+**Next M14 slices:** implement assembly and erosion as deterministic object lifecycle operations; then introduce temporal echo as a transition-local history buffer. Keep each effect behind the same scene-pair contract so live and offline rendering stay aligned.
