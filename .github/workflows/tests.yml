@@ -993,6 +993,23 @@ jobs:
               assert first_overlay[0]  # historical pixels are retained
               assert echo_samples_a[-1][1]["oldest_age_seconds"] == 0.10
 
+              cadence_settings = TemporalEchoSettings.from_mapping({
+                  "sample_interval_seconds": 0.125,
+                  "history_scale": 1.0,
+              })
+              cadence_buffer = TemporalEchoHistoryBuffer()
+              cadence_flags = []
+              for timestamp in (0.0, 0.05, 0.10, 0.125):
+                  _, cadence_metrics = cadence_buffer.prepare(
+                      Image.new("RGBA", (16, 12), (20, 20, 20, 255)),
+                      timestamp=timestamp,
+                      transition_id="echo-cadence",
+                      settings=cadence_settings,
+                  )
+                  cadence_flags.append(cadence_metrics["sampled_current_frame"])
+              assert cadence_flags == [True, False, False, True]
+              assert cadence_buffer.sample_count == 2
+
               seek_overlays, seek_metrics = echo_history_a.prepare(
                   Image.new("RGBA", (32, 24), (0, 0, 0, 0)),
                   timestamp=0.02,
@@ -1066,7 +1083,7 @@ jobs:
               echo_preview = VisualCompositor(echo_assets, render_size=(24, 18))
               echo_offline = VisualCompositor(echo_assets, render_size=(24, 18))
               echo_preview_frames, echo_offline_frames = [], []
-              for timestamp in (0.0, 0.05, 0.10):
+              for timestamp in (0.0, 0.125, 0.25):
                   echo_preview_frames.append(echo_preview.render_scene_pair(
                       packet={}, seconds=timestamp, scene_pair=temporal_round_trip,
                       settings=GeneratorSettings(), screen="No guide",
