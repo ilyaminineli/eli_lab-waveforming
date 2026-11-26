@@ -540,7 +540,7 @@ class MainWindow(QMainWindow):
         self.echo_sample_interval.setRange(0.005, 1.0)
         self.echo_sample_interval.setDecimals(3)
         self.echo_sample_interval.setSingleStep(0.005)
-        self.echo_sample_interval.setValue(1.0 / 24.0)
+        self.echo_sample_interval.setValue(0.125)
         self.echo_history_scale = QDoubleSpinBox()
         self.echo_history_scale.setRange(0.125, 1.0)
         self.echo_history_scale.setDecimals(3)
