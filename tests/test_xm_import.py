@@ -76,6 +76,21 @@ def test_serialised_tracker_packet_matches_live_packet(tmp_path):
     assert offline["is_silent"] is True
 
 
+def test_tracker_packets_expose_row_activity_and_pattern_reprises(tmp_path):
+    module = load_xm(make_xm(tmp_path / "fixture.xm"))
+    packet = module.visual_packet(0.1)
+    cues = module.visual_data()["cues"]
+
+    assert packet is not None
+    assert packet["row_index"] == 0
+    assert packet["row_note_count"] == 1
+    assert packet["row_activity"] == pytest.approx(0.5)
+    assert packet["row_progress"] == pytest.approx(0.1 / (6 * 2.5 / 125))
+    assert cues[0]["pattern_reprise"] is False
+    assert cues[1]["pattern_reprise"] is True
+    assert cues[1]["transition_strength"] < cues[2]["transition_strength"]
+
+
 def test_tempo_effect_updates_subsequent_row_timing(tmp_path):
     module = load_xm(make_xm(tmp_path / "tempo.xm", tempo_effect=(1, 0)))
 
