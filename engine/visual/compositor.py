@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import numpy as np
 from time import perf_counter
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
@@ -931,6 +932,87 @@ class VisualCompositor:
         self.last_profile["frame_ms"] = self.last_profile["scene_ms"] + compose_ms
         return frame
 
+    def _lifecycle_empty_frame(self, screen: str) -> Image.Image:
+        """Return the screen plate without scene ink for lifecycle endpoints."""
+        frame = Image.new("RGBA", self.size, (10, 10, 10, 255))
+        guide = self._screen(screen)
+        if guide is not None:
+            frame.alpha_composite(guide)
+        return frame
+
+    @staticmethod
+    def _lifecycle_fragment_frame(
+        image: Image.Image,
+        *,
+        progress: float,
+        seed: int,
+        transition_id: str,
+        layer_ids: list[str],
+        assembly: bool,
+        screen: str,
+    ) -> tuple[Image.Image, int]:
+        """Apply a stateless, deterministic tile lifecycle to a rendered scene.
+
+        Each tile's ordering and displacement are derived from a SHA-256 digest
+        of the persisted transition seed, transition ID and stable layer IDs.
+        Every tile is sampled directly from the source image. No scene state,
+        global RNG or frame-to-frame simulation is mutated.
+        """
+        source = image.convert("RGBA")
+        width, height = source.size
+        tile = max(4, min(24, int(round(min(width, height) / 24))))
+        columns = max(1, (width + tile - 1) // tile)
+        rows = max(1, (height + tile - 1) // tile)
+        count = columns * rows
+        identity = "|".join(sorted(layer_ids))
+        key = f"{int(seed)}|{transition_id}|{identity}|{width}x{height}"
+        digest = hashlib.sha256(key.encode("utf-8")).digest()
+        rank_key = hashlib.sha256(digest + b":rank").digest()
+        motion_key = hashlib.sha256(digest + b":motion").digest()
+        ranks = []
+        offsets = []
+        for index in range(count):
+            rank_digest = hashlib.sha256(rank_key + index.to_bytes(8, "big")).digest()
+            motion_digest = hashlib.sha256(motion_key + index.to_bytes(8, "big")).digest()
+            rank = int.from_bytes(rank_digest[:8], "big") / float(2**64 - 1)
+            dx = (int.from_bytes(motion_digest[:4], "big") / float(2**32 - 1) - 0.5)
+            dy = (int.from_bytes(motion_digest[4:8], "big") / float(2**32 - 1) - 0.5)
+            ranks.append(rank)
+            offsets.append((dx, dy))
+        output = Image.new("RGBA", source.size, (0, 0, 0, 0))
+        src = source.load()
+        dst = output.load()
+        active = 0
+        amount = max(0.0, min(1.0, float(progress)))
+        for index, rank in enumerate(ranks):
+            row, column = divmod(index, columns)
+            x0, y0 = column * tile, row * tile
+            x1, y1 = min(width, x0 + tile), min(height, y0 + tile)
+            # Assembly grows from a deterministic scattered subset to all
+            # tiles; erosion removes that same ordering from the source.
+            visible = (rank <= amount) if assembly else (rank >= amount)
+            if not visible:
+                continue
+            active += 1
+            dx_unit, dy_unit = offsets[index]
+            displacement = (1.0 - amount) if assembly else amount
+            dx = int(round(dx_unit * tile * 2.2 * displacement))
+            dy = int(round(dy_unit * tile * 2.2 * displacement))
+            alpha_gain = amount if assembly else (1.0 - amount)
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    sx, sy = x - dx, y - dy
+                    if 0 <= sx < width and 0 <= sy < height:
+                        pixel = src[sx, sy]
+                        dst[x, y] = (
+                            pixel[0], pixel[1], pixel[2],
+                            int(round(pixel[3] * alpha_gain)),
+                        )
+        # Keep the printable screen plate untouched and above/below ink exactly
+        # as the normal compositor does. Scene render already contains guide;
+        # transparent lifecycle output therefore overlays a neutral base.
+        return output, active
+
     def render_scene_pair(
         self,
         packet: dict | None,
@@ -1072,8 +1154,48 @@ class VisualCompositor:
                 outgoing_frame, incoming_frame, contract
             )
             profiles = (outgoing_profile, incoming_profile)
+        elif contract.family in ("assembly", "erosion"):
+            # Lifecycle effects operate on a derived full-scene render. Source
+            # scene/layer records remain immutable and endpoint frames are exact.
+            assembly = contract.family == "assembly"
+            if assembly:
+                selected_scene, selected_records = incoming_scene, incoming_layers
+            else:
+                selected_scene, selected_records = outgoing_scene, outgoing_layers
+            base_frame = self.render(
+                packet=packet,
+                seconds=seconds,
+                layers=selected_records,
+                settings=settings,
+                screen=screen,
+                feedback_enabled=False,
+                visual_scene=selected_scene,
+            )
+            lifecycle_progress = float(np.clip(contract.eased_progress, 0.0, 1.0))
+            fragments = 0
+            if lifecycle_progress <= 0.0 or (assembly and lifecycle_progress >= 1.0):
+                frame = (
+                    base_frame.copy() if assembly
+                    else self._lifecycle_empty_frame(screen)
+                )
+            elif lifecycle_progress >= 1.0 and not assembly:
+                frame = self._lifecycle_empty_frame(screen)
+            else:
+                frame, fragments = self._lifecycle_fragment_frame(
+                    base_frame,
+                    progress=lifecycle_progress,
+                    seed=contract.metadata.get("seed", 0),
+                    transition_id=contract.transition_id,
+                    layer_ids=[
+                        str(item.get("layer_id", ""))
+                        for item in selected_records
+                    ],
+                    assembly=assembly,
+                    screen=screen,
+                )
+            profiles = (dict(self.last_profile),)
         else:
-            # Cut and lifecycle-only future families do not needlessly render
+            # Cut and future lifecycle-only families do not needlessly render
             # the hidden side. They use the same contract but only one scene.
             if contract.completed:
                 selected_scene, selected_records = incoming_scene, incoming_layers
@@ -1169,6 +1291,9 @@ class VisualCompositor:
                 "split_path_map_count": split_path_map_count if contract.render_mode == "object_morph" else 0,
                 "merge_path_map_count": merge_path_map_count if contract.render_mode == "object_morph" else 0,
                 "path_mapping_warnings": path_mapping_warnings if contract.render_mode == "object_morph" else [],
+                "lifecycle_fragment_count": fragments if contract.family in ("assembly", "erosion") else 0,
+                "lifecycle_progress": float(np.clip(contract.eased_progress, 0.0, 1.0)) if contract.family in ("assembly", "erosion") else None,
+                "lifecycle_direction": contract.family if contract.family in ("assembly", "erosion") else None,
             },
         }
         return frame
