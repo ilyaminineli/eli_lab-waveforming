@@ -202,6 +202,73 @@ def is_default_placeholder_composition(layers: list[VisualLayer]) -> bool:
     )
 
 
+def create_tracker_composition(
+    generator_names: list[str],
+    tracker_data: dict,
+    seed: int,
+) -> list[VisualLayer]:
+    """Create one composed visual instrument from the XM's actual tracker channels.
+
+    The tracker ensemble owns channel identity internally. It is deliberately one
+    primary render layer rather than N independent full-canvas generators.
+    """
+    available = set(generator_names)
+    channel_count = max(1, min(64, int(tracker_data.get("channels", 1))))
+    profiles = tracker_data.get("channel_profiles") or []
+    active_count = sum(
+        1 for profile in profiles if not bool(profile.get("silent", False))
+    )
+    plate_name = (
+        "GEOMETRIC PLATE" if "GEOMETRIC PLATE" in available
+        else "GEOMETRIC FIELD" if "GEOMETRIC FIELD" in available
+        else "PHASE LATTICE"
+    )
+    layers = [
+        VisualLayer(
+            name="PLATE / VISUAL ENVIRONMENT",
+            generator=plate_name,
+            blend_mode="Screen",
+            opacity=0.16,
+            mask_mode="FRAME",
+            pass_mode="NONE",
+            pass_map="DISPLACEMENT",
+            pass_strength=0.0,
+            palette_mode="MONOCHROME",
+            palette_index=0,
+            role="BACKGROUND_ENVIRONMENT",
+        )
+    ]
+    primary = (
+        "TRACKER ENSEMBLE" if "TRACKER ENSEMBLE" in available
+        else "TRACKER MATRIX" if "TRACKER MATRIX" in available
+        else plate_name
+    )
+    layers.append(
+        VisualLayer(
+            name=f"XM / {channel_count:02d} CHANNEL VOICES",
+            generator=primary,
+            blend_mode="Screen",
+            opacity=0.96,
+            x_offset=0.0,
+            y_offset=0.0,
+            scale=1.0,
+            rotation=0.0,
+            mask_mode="FRAME",
+            pass_mode="NONE",
+            pass_map="DISPLACEMENT",
+            pass_strength=0.0,
+            palette_mode="MONOCHROME" if primary == "TRACKER MATRIX" else "EDITORIAL TRICOLOR",
+            palette_index=int(seed) % 6,
+            role="FOREGROUND_MOTIF",
+        )
+    )
+    # Sparse structural annotation is optional and kept as a small separate
+    # layer. The channel count is not converted into separate expensive renderers.
+    if active_count == 0:
+        layers[1].opacity = 0.22
+    return layers
+
+
 def create_auto_composition(
     generator_names: list[str],
     source_ids: list[str],
@@ -326,6 +393,13 @@ def vary_composition(
     rng.shuffle(candidates)
     selected = set(candidates[: max(1, min(2, len(candidates)))])
     for index, layer in enumerate(layers):
+        if layer.generator in ("TRACKER ENSEMBLE", "TRACKER MATRIX"):
+            # Preserve the tracker instrument and voice identities; mutate only
+            # its bounded compositing treatment.
+            if index in selected:
+                layer.opacity = round(rng.uniform(0.78, 1.0), 2)
+                layer.blend_mode = rng.choice(("Screen", "Normal", "Add"))
+            continue
         if index == 0 and layer.generator == "GEOMETRIC PLATE":
             layer.rotation = rng.choice((0, 0, 0, 90, 180, 270))
             layer.scale = round(rng.uniform(0.96, 1.04), 2)
