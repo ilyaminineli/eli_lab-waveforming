@@ -122,7 +122,8 @@ See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implement
 
 ## M6 — XM tracker-driven visuals
 
-- Import XM tracker scores from PROJECT → Import XM tracker score… (Ctrl+Shift+M).
+- Import XM tracker scores from the visible **+ XM** button or PROJECT → Import XM tracker score… (Ctrl+Shift+M). The audio file chooser also routes selected .xm files to the tracker importer instead of the audio decoder.
+- Import a mixed folder with **+ FOLDER**: supported audio stems and XM score files are scanned separately, so XM files no longer cause an audio-format error.
 - Extract order/pattern cues, note rows, instrument assignments and active channels.
 - Set timeline tempo from the module and add independently styled TRACKER order markers.
 - Save tracker cue/note maps inside the .wfp project; live preview and offline export use the same cue packet.
