@@ -1080,9 +1080,18 @@ class MainWindow(QMainWindow):
         route: dict | None = None
     ) -> SceneTransition:
         route = dict(route or {})
+        source_scene_id = self.visual_project.active_scene_id
+        target_scene_id = str(target_scene_id)
+        draft = self.visual_project.metadata.get("path_correspondence_draft", {})
+        use_draft = (
+            not route
+            and isinstance(draft, dict)
+            and draft.get("source_scene_id") == source_scene_id
+            and draft.get("target_scene_id") == target_scene_id
+        )
         return SceneTransition(
-            source_scene_id=self.visual_project.active_scene_id,
-            target_scene_id=str(target_scene_id),
+            source_scene_id=source_scene_id,
+            target_scene_id=target_scene_id,
             family=str(route.get("family") or self.transition_family.currentText()),
             duration_seconds=float(
                 route.get("duration_seconds", self.transition_duration.value())
@@ -1091,19 +1100,15 @@ class MainWindow(QMainWindow):
             interruption_policy=str(route.get("interruption_policy", "cancel")),
             outgoing_policy=str(route.get("outgoing_policy", "archive")),
             object_correspondence=list(
-                route.get(
-                    "object_correspondence",
-                    self.visual_project.metadata.get("path_correspondence_draft", {}).get(
-                        "object_correspondence", []
-                    ) if not route else [],
+                route.get("object_correspondence", [])
+                if route else (
+                    draft.get("object_correspondence", []) if use_draft else []
                 )
             ),
             path_correspondence=list(
-                route.get(
-                    "path_correspondence",
-                    self.visual_project.metadata.get("path_correspondence_draft", {}).get(
-                        "path_correspondence", []
-                    ) if not route else [],
+                route.get("path_correspondence", [])
+                if route else (
+                    draft.get("path_correspondence", []) if use_draft else []
                 )
             ),
             trigger=dict(trigger or {"type": "manual"}),
