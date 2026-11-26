@@ -22,7 +22,7 @@ from engine.visual.compositor import PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
 from engine.visual.project import VisualProject
-from engine.visual.scene import VisualScore
+from engine.visual.scene import VisualScore, crossed_score_cues
 from engine.visual.transitions import SceneTransition, SceneTransitionController
 
 
@@ -386,10 +386,9 @@ class OfflineRenderWorker(QThread):
                             )
 
                         if project_model is not None and score_model is not None:
-                            crossed_cues = [
-                                cue for cue in score_model.cues
-                                if last_cue_scan_position < float(cue.time) <= seconds + 1e-6
-                            ]
+                            crossed_cues = crossed_score_cues(
+                                score_model.cues, last_cue_scan_position, seconds
+                            )
                             last_cue_scan_position = seconds
                             for cue in crossed_cues:
                                 route = project_model.route_for_cue(cue.cue_id)
