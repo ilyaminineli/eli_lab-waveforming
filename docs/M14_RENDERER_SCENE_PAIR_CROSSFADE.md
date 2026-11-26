@@ -35,7 +35,7 @@ Renderer modes in this increment:
 
 ## 3. VisualObject correspondence and morph composition
 
-M14 adds a one-to-one correspondence list to `SceneTransition`. Each entry identifies a `source_object_id` in the outgoing scene and a `target_object_id` in the incoming scene. The controller rejects mappings that reference an object on the wrong side, duplicate source IDs or duplicate target IDs. Exact IDs present in both scenes are recorded as identity matches; no name-based or fuzzy matching is attempted.
+M14 adds a one-to-one correspondence list to `SceneTransition`. Each entry identifies a `source_object_id` in the outgoing scene and a `target_object_id` in the incoming scene. The controller rejects mappings that reference an object on the wrong side, duplicate source IDs or duplicate target IDs. Exact IDs present in both scenes are recorded as identity matches. Duplicated objects can also be matched through their `lineage` / `duplicated_from_object_id` ancestry when the relationship is uniquely one-to-one. No name-based or fuzzy matching is attempted.
 
 `ScenePairRenderContract` snapshots the resolved correspondence. A matched pair becomes one intermediate `VisualObject` and one renderer layer. Position, scale, shortest-path rotation, opacity, pass strength, salience and numeric geometry/material values interpolate using the controller's eased progress. Categorical generator/material modes switch at the midpoint, while the outgoing layer ID remains the generator simulation key for the duration of the morph.
 

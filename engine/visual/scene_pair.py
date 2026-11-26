@@ -159,6 +159,52 @@ class ScenePairRenderContract:
             })
             used_sources.add(object_id)
             used_targets.add(object_id)
+        # A duplicated VisualScene deliberately receives fresh object IDs.
+        # Its lineage/duplicated_from_object_id is an explicit, deterministic
+        # ancestry signal and can therefore be used as a one-to-one match.
+        candidates_by_source = {}
+        candidates_by_target = {}
+        for source_object in outgoing_objects:
+            source_object_id = str(source_object.get("object_id", ""))
+            if source_object_id in used_sources:
+                continue
+            for target_object in incoming_objects:
+                target_object_id = str(target_object.get("object_id", ""))
+                if target_object_id in used_targets:
+                    continue
+                target_metadata = _dict(target_object.get("metadata"))
+                source_metadata = _dict(source_object.get("metadata"))
+                target_lineage = set(
+                    str(value) for value in target_object.get("lineage", [])
+                )
+                source_lineage = set(
+                    str(value) for value in source_object.get("lineage", [])
+                )
+                related = (
+                    source_object_id in target_lineage
+                    or str(target_metadata.get("duplicated_from_object_id", "")) == source_object_id
+                    or target_object_id in source_lineage
+                    or str(source_metadata.get("duplicated_from_object_id", "")) == target_object_id
+                )
+                if related:
+                    candidates_by_source.setdefault(source_object_id, []).append(target_object_id)
+                    candidates_by_target.setdefault(target_object_id, []).append(source_object_id)
+        for source_object_id, targets in candidates_by_source.items():
+            if len(targets) != 1:
+                continue
+            target_object_id = targets[0]
+            if len(candidates_by_target.get(target_object_id, [])) != 1:
+                continue
+            if source_object_id in used_sources or target_object_id in used_targets:
+                continue
+            normalized_pairs.append({
+                "source_object_id": source_object_id,
+                "target_object_id": target_object_id,
+                "kind": "lineage",
+            })
+            used_sources.add(source_object_id)
+            used_targets.add(target_object_id)
+
         self.object_correspondence = normalized_pairs
         self.metadata = _dict(self.metadata)
         self.version = max(1, int(self.version))
