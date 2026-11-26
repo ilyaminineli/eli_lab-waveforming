@@ -17,7 +17,7 @@ class TemporalEchoSettings:
     enabled: bool = True
     history_seconds: float = 0.48
     max_samples: int = 8
-    sample_interval_seconds: float = 1.0 / 24.0
+    sample_interval_seconds: float = 0.125
     strength: float = 0.42
     decay: float = 0.72
     offset_x: float = 0.0
@@ -155,8 +155,18 @@ class TemporalEchoHistoryBuffer:
 
         # Re-rendering the same timestamp replaces that sample rather than
         # creating a zero-age echo of itself.
-        if self._samples and abs(self._samples[-1].timestamp - now) <= 1e-9:
+        replace_latest = bool(
+            self._samples
+            and abs(self._samples[-1].timestamp - now) <= 1e-9
+        )
+        if replace_latest:
             self._samples.pop()
+        record_sample = (
+            replace_latest
+            or not self._samples
+            or now - self._samples[-1].timestamp
+            >= settings.sample_interval_seconds - 1e-9
+        )
 
         while self._samples and now - self._samples[0].timestamp > settings.history_seconds:
             self._samples.popleft()
@@ -217,15 +227,17 @@ class TemporalEchoHistoryBuffer:
         stored = frame.convert("RGBA")
         if scaled_size != frame.size:
             stored = stored.resize(scaled_size, Image.Resampling.BILINEAR)
-        self._samples.append(_FrameSample(now, stored.copy()))
-        while len(self._samples) > settings.max_samples:
-            self._samples.popleft()
+        if record_sample:
+            self._samples.append(_FrameSample(now, stored.copy()))
+            while len(self._samples) > settings.max_samples:
+                self._samples.popleft()
         self._last_timestamp = now
 
         oldest_age = max(0.0, now - history[0].timestamp) if history else 0.0
         return overlays, {
             "sample_count": len(overlays),
             "buffer_size": len(self._samples),
+            "sampled_current_frame": record_sample,
             "oldest_age_seconds": oldest_age,
             "reset_reason": reset_reason,
         }
