@@ -45,7 +45,7 @@ PREVIEW_PROFILES = {
     "LOW  ·  360×270  ·  6 FPS": ((360, 270), 167),
     "BALANCED  ·  480×360  ·  8 FPS": ((480, 360), 125),
 }
-DEFAULT_PREVIEW_PROFILE = "ECO  ·  320×240  ·  5 FPS"
+DEFAULT_PREVIEW_PROFILE = "BALANCED  ·  480×360  ·  8 FPS"
 
 
 def format_time(seconds: float) -> str:
@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
         self.compositor = VisualCompositor(self.assets, render_size=PREVIEW_SIZE)
         self.preview_worker = PreviewRenderWorker(self.assets, render_size=PREVIEW_SIZE)
         self.preview_worker.signals.frame_ready.connect(self._on_preview_frame)
+        self.preview_worker.signals.profile_ready.connect(self._on_preview_profile)
         self.preview_worker.signals.render_error.connect(self._on_preview_error)
         self.preview_worker.start()
         self.audio = PlaybackEngine(self)
@@ -431,6 +432,10 @@ class MainWindow(QMainWindow):
         preview_header.addStretch()
         preview_header.addWidget(preview_label)
         preview_header.addWidget(self.preview_quality)
+        self.preview_perf_label = QLabel("RENDER  —")
+        self.preview_perf_label.setObjectName("muted")
+        self.preview_perf_label.setToolTip("Live renderer timing appears after the first completed frame.")
+        preview_header.addWidget(self.preview_perf_label)
         preview_header.addWidget(canvas_label)
         preview_header.addWidget(self.zoom)
         right_layout.addLayout(preview_header)
@@ -1308,6 +1313,27 @@ class MainWindow(QMainWindow):
         self.preview_worker.request_reset()
         self._render_frame()
 
+    def _on_preview_profile(self, profile: dict) -> None:
+        if not hasattr(self, "preview_perf_label"):
+            return
+        frame_ms = float(profile.get("frame_ms", profile.get("scene_ms", 0.0)))
+        backend = str(profile.get("backend", "CPU"))
+        self.preview_perf_label.setText(f"RENDER  {frame_ms:.1f} ms")
+        rows = sorted(
+            profile.get("layers", []),
+            key=lambda item: float(item.get("render_ms", 0.0)),
+            reverse=True,
+        )
+        detail = [
+            f"{item.get('generator', 'LAYER')}: {float(item.get('render_ms', 0.0)):.2f} ms"
+            for item in rows
+        ]
+        self.preview_perf_label.setToolTip(
+            f"{backend} · scene {float(profile.get('scene_ms', 0.0)):.2f} ms · "
+            f"compose {float(profile.get('compose_ms', 0.0)):.2f} ms\n"
+            + ("\n".join(detail) if detail else "No visible layers.")
+        )
+
     def _on_preview_error(self, message: str) -> None:
         self.status.setText(message[:90])
 
@@ -1413,7 +1439,10 @@ class MainWindow(QMainWindow):
             self.timeline_widget.set_duration(duration)
 
     def _update_time_label(self) -> None:
-        self.time_label.setText(f"{format_time(self._last_position)} / {format_time(self.audio.duration)}")
+        display_duration = max(float(self.audio.duration), float(self._tracker_duration))
+        self.time_label.setText(
+            f"{format_time(self._last_position)} / {format_time(display_duration)}"
+        )
         self._update_timeline_duration()
 
     def _update_status(self) -> None:
