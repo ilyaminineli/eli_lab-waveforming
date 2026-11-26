@@ -1000,7 +1000,7 @@ class MainWindow(QMainWindow):
         if not (self.audio.is_playing or self._tracker_playing):
             return
         previous = float(self._last_cue_scan_position)
-        current = max(previous, float(score_seconds))
+        current = max(0.0, float(score_seconds))
         crossed = crossed_score_cues(
             self.visual_score.cues, previous, current
         )
