@@ -73,6 +73,8 @@ jobs:
               )
               module = load_xm(module_path)
               score = module.visual_data()
+              print("XM instruments:", module.instruments)
+              print("XM channels:", score["channel_profiles"])
               assert module.channels == 2
               assert module.instrument_count == 1
               assert module.instruments[0].sample_names == ("smoke-sample.wav",)
