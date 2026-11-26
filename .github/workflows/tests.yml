@@ -1080,6 +1080,16 @@ jobs:
                   "sample_count"
               ] == 2
 
+              # Ordinary compositor feedback reset is deliberately separate.
+              retained_echo_samples = echo_preview._temporal_echo_history.sample_count
+              echo_preview.reset_feedback(preserve_generators=True)
+              assert (
+                  echo_preview._temporal_echo_history.sample_count
+                  == retained_echo_samples
+              )
+              echo_preview.reset_temporal_echo("smoke")
+              assert echo_preview._temporal_echo_history.sample_count == 0
+
               # Unimplemented families remain explicit hold modes; lifecycle
               # families above use their dedicated derived-render paths.
               hold_contract = ScenePairRenderContract.from_dict({
