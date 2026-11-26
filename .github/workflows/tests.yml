@@ -987,10 +987,12 @@ jobs:
                   echo_samples_a[1][0][0][2]
                   - echo_settings.strength * echo_settings.decay
               ) < 1e-6
-              directional_overlay = echo_history_a
               first_overlay = echo_samples_a[-1][0][0]
               assert first_overlay[1] == (0, 0)
               assert first_overlay[0]  # historical pixels are retained
+              # A 3:4 direction normalizes to (0.6, 0.8); at 50% age this
+              # yields a one-pixel diagonal displacement on a 32x24 canvas.
+              assert first_overlay[0].getchannel("A").getbbox() == (6, 8, 11, 13)
               assert echo_samples_a[-1][1]["oldest_age_seconds"] == 0.10
 
               cadence_settings = TemporalEchoSettings.from_mapping({
