@@ -529,3 +529,36 @@ def test_gpu_scene_keeps_screen_plate_in_background(monkeypatch):
     assert scene["background"].getpixel((0, 0))[:3] == (12, 50, 180)
     assert len(scene["layers"]) == 1
     assert scene["layers"][0]["layer_id"] == layer.layer_id
+
+
+
+def test_offline_frame_composites_generated_layers_above_screen_plate(monkeypatch):
+    compositor = VisualCompositor(
+        AssetCatalog(Path("missing-assets")), render_size=(32, 24)
+    )
+    guide = Image.new("RGBA", (32, 24), (12, 50, 180, 255))
+    monkeypatch.setattr(compositor, "_screen", lambda _name: guide)
+
+    class SolidGeneratorBank:
+        def render(self, name, packet, seconds, size, settings, **kwargs):
+            return Image.new("RGBA", size, (220, 30, 20, 255))
+
+    compositor.generators = SolidGeneratorBank()
+    layer = VisualLayer(
+        "Visible export layer",
+        "PHASE LATTICE",
+        mask_mode="FULL",
+        pass_mode="NONE",
+        pass_strength=0.0,
+        palette_mode="MONOCHROME",
+    )
+
+    output = compositor.render(
+        packet=None,
+        seconds=0.0,
+        layers=[layer],
+        settings=GeneratorSettings(),
+        screen="TEST GUIDE",
+    )
+
+    assert output.getpixel((16, 12))[:3] == (220, 30, 20)
