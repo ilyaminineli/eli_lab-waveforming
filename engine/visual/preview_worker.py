@@ -191,6 +191,8 @@ class PreviewRenderWorker(threading.Thread):
                         "screen": request["screen"],
                         "visual_scene": request["visual_scene"],
                     }
+                    if not request.get("scene_pair"):
+                        self._compositor.reset_temporal_echo("transition_ended")
                     if request.get("scene_pair"):
                         # Two scene snapshots require a CPU frame blend. The
                         # canvas receives one finished image, never two partial
