@@ -715,14 +715,6 @@ class VisualCompositor:
                 "render_ms": (perf_counter() - layer_started) * 1000.0,
                 "backend": "CPU",
             })
-        if not include_guide and guide is not None:
-            rendered_layers.append({
-                "image": guide,
-                "position": (0, 0),
-                "blend_mode": "Normal",
-                "opacity": 1.0,
-                "layer_id": "__screen_guide__",
-            })
         scene_ms = (perf_counter() - frame_started) * 1000.0
         self.last_profile = {
             "scene_ms": scene_ms,
@@ -761,16 +753,11 @@ class VisualCompositor:
             settings=settings,
             screen=screen,
             gpu_native=False,
-            include_guide=False,
+            include_guide=True,
         )
         compose_started = perf_counter()
         frame = scene["background"].copy()
         for layer in scene["layers"]:
-            # render_scene includes the guide as a final GPU scene layer so it
-            # stays above generated ink. The CPU path composites the guide once,
-            # after temporal feedback, so skip that scene-only placeholder here.
-            if layer.get("layer_id") == "__screen_guide__":
-                continue
             self._blend_at(
                 frame,
                 layer["image"],
@@ -801,9 +788,6 @@ class VisualCompositor:
             )
         self._feedback = frame.copy() if feedback_enabled else None
         self._last_time = float(seconds)
-        guide = self._screen(screen)
-        if guide is not None:
-            frame.alpha_composite(guide)
         compose_ms = (perf_counter() - compose_started) * 1000.0
         self.last_profile["compose_ms"] = compose_ms
         self.last_profile["frame_ms"] = self.last_profile["scene_ms"] + compose_ms
