@@ -55,6 +55,7 @@ class XMModule:
     title: str
     tracker: str
     channels: int
+    instrument_count: int
     bpm: int
     speed: int
     orders: tuple[int, ...]
@@ -92,6 +93,7 @@ class XMModule:
             "title": self.title,
             "tracker": self.tracker,
             "channels": self.channels,
+            "instrument_count": self.instrument_count,
             "bpm": self.bpm,
             "speed": self.speed,
             "duration": self.duration,
@@ -151,28 +153,36 @@ def _u32(data: bytes, offset: int) -> int:
     return struct.unpack_from("<I", data, offset)[0]
 
 
+def _read_exact(stream, size: int, description: str) -> bytes:
+    if size < 0:
+        raise XMParseError(f"Invalid {description} size.")
+    data = stream.read(size)
+    if len(data) != size:
+        raise XMParseError(f"Truncated {description}.")
+    return data
+
+
 def _read_pattern(
-    data: bytes, offset: int, channels: int
+    stream, channels: int
 ) -> tuple[tuple[tuple[XMEvent, ...], ...], int]:
-    header_size = _u32(data, offset)
-    if header_size < 9 or offset + header_size > len(data):
+    header = _read_exact(stream, 9, "XM pattern header")
+    header_size = _u32(header, 0)
+    if header_size < 9 or header_size > 4096:
         raise XMParseError("Invalid XM pattern header size.")
-    packing_type = data[offset + 4]
-    rows = _u16(data, offset + 5)
-    packed_size = _u16(data, offset + 7)
+    if header_size > 9:
+        _read_exact(stream, header_size - 9, "extended XM pattern header")
+    packing_type = header[4]
+    rows = _u16(header, 5)
+    packed_size = _u16(header, 7)
     if rows < 1 or rows > 256 or packing_type != 0:
         raise XMParseError("Unsupported XM pattern packing or row count.")
-    payload_start = offset + header_size
-    payload_end = payload_start + packed_size
-    if payload_end > len(data):
-        raise XMParseError("Truncated XM pattern data.")
 
     # XM permits a zero-length packed block to represent an entirely empty pattern.
     if packed_size == 0:
         empty_row = tuple(XMEvent() for _ in range(channels))
-        return tuple(empty_row for _ in range(rows)), payload_end
+        return tuple(empty_row for _ in range(rows)), 0
 
-    payload = data[payload_start:payload_end]
+    payload = _read_exact(stream, packed_size, "XM pattern data")
     cursor = 0
     decoded: list[tuple[XMEvent, ...]] = []
     for _row in range(rows):
@@ -198,47 +208,62 @@ def _read_pattern(
             row.append(XMEvent(*values))
         decoded.append(tuple(row))
     if cursor != len(payload):
-        # Extra bytes can indicate an invalid pattern block or unsupported packing.
         raise XMParseError("XM pattern contains unconsumed packed event data.")
-    return tuple(decoded), payload_end
-
+    return tuple(decoded), packed_size
 
 def load_xm(path: str | Path) -> XMModule:
-    """Read XM song structure and derive order cue times from tracker tempo."""
-    raw = Path(path).read_bytes()
-    if len(raw) < 80 or raw[:17] != b"Extended Module: " or raw[37] != 0x1A:
-        raise XMParseError("Not a valid XM module.")
-    title = raw[17:37].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
-    tracker = raw[38:58].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
-    version = _u16(raw, 58)
-    if version < 0x0104:
-        raise XMParseError(f"Unsupported XM version 0x{version:04x}.")
-    header_size = _u32(raw, 60)
-    if header_size < 20 or 60 + header_size > len(raw):
-        raise XMParseError("Invalid XM song header size.")
-    song_length, _restart, channels, pattern_count, _instrument_count, _flags, speed, bpm = struct.unpack_from(
-        "<8H", raw, 64
-    )
-    if not 1 <= channels <= 64 or not 1 <= song_length <= 256 or not 1 <= pattern_count <= 256:
-        raise XMParseError("XM header contains unreasonable channel, order or pattern counts.")
-    if not 1 <= speed <= 31 or not 32 <= bpm <= 255:
-        raise XMParseError("XM module has invalid initial tempo settings.")
-    orders = tuple(raw[80:80 + song_length])
-    if len(orders) != song_length or any(index >= pattern_count for index in orders):
-        raise XMParseError("XM order list references a missing pattern.")
+    """Read XM headers/patterns and stop before instrument sample payloads."""
+    with Path(path).open("rb") as stream:
+        header = _read_exact(stream, 80, "XM module header")
+        if header[:17] != b"Extended Module: " or header[37] != 0x1A:
+            raise XMParseError("Not a valid XM module.")
+        title = header[17:37].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
+        tracker = header[38:58].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
+        version = _u16(header, 58)
+        if version < 0x0104:
+            raise XMParseError(f"Unsupported XM version 0x{version:04x}.")
+        header_size = _u32(header, 60)
+        if header_size < 20:
+            raise XMParseError("Invalid XM song header size.")
+        (
+            song_length, _restart, channels, pattern_count, instrument_count,
+            _flags, speed, bpm,
+        ) = struct.unpack_from("<8H", header, 64)
+        if (
+            not 1 <= channels <= 64
+            or not 1 <= song_length <= 256
+            or not 1 <= pattern_count <= 256
+            or not 0 <= instrument_count <= 128
+        ):
+            raise XMParseError("XM header contains unreasonable channel, order, pattern or instrument counts.")
+        if not 1 <= speed <= 31 or not 32 <= bpm <= 255:
+            raise XMParseError("XM module has invalid initial tempo settings.")
 
-    offset = 60 + header_size
-    patterns: list[tuple[tuple[XMEvent, ...], ...]] = []
-    for _ in range(pattern_count):
-        pattern, offset = _read_pattern(raw, offset, channels)
-        patterns.append(pattern)
+        # The order list starts at byte 80. Consume only the declared order entries,
+        # then skip the remaining header extension/padding without retaining it.
+        header_end = 60 + header_size
+        orders_end = 80 + song_length
+        if header_end < orders_end:
+            raise XMParseError("XM song header is too short for its order list.")
+        orders = tuple(_read_exact(stream, song_length, "XM order list"))
+        remaining_header = header_end - orders_end
+        if remaining_header:
+            _read_exact(stream, remaining_header, "XM song header extension")
+        if any(index >= pattern_count for index in orders):
+            raise XMParseError("XM order list references a missing pattern.")
+
+        # Decode pattern cells one pattern at a time. Instrument headers and all
+        # sample bytes follow the pattern table and are intentionally never read.
+        patterns: list[tuple[tuple[XMEvent, ...], ...]] = []
+        for _ in range(pattern_count):
+            pattern, _packed_size = _read_pattern(stream, channels)
+            patterns.append(pattern)
 
     effect_count = 0
     flow_control_effect_count = 0
     cues: list[XMOrderCue] = []
     current_speed, current_bpm = speed, bpm
     elapsed = 0.0
-    flow_effects = {0x0B, 0x0D, 0x0E}
     for order_index, pattern_index in enumerate(orders):
         rows = patterns[pattern_index]
         order_start = elapsed
@@ -286,6 +311,7 @@ def load_xm(path: str | Path) -> XMModule:
         title=title,
         tracker=tracker,
         channels=channels,
+        instrument_count=instrument_count,
         bpm=bpm,
         speed=speed,
         orders=orders,
