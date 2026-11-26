@@ -1154,60 +1154,46 @@ class VisualCompositor:
                 outgoing_frame, incoming_frame, contract
             )
             profiles = (outgoing_profile, incoming_profile)
-        elif contract.family in ("assembly", "erosion"):
-            # Lifecycle effects operate on a derived full-scene render. Source
-            # scene/layer records remain immutable and endpoint frames are exact.
-            assembly = contract.family == "assembly"
-            if assembly:
-                selected_scene, selected_records = incoming_scene, incoming_layers
-            else:
-                selected_scene, selected_records = outgoing_scene, outgoing_layers
+        elif contract.render_mode in ("assembly", "erosion"):
+            assembly = contract.render_mode == "assembly"
+            selected_scene, selected_records = (
+                (incoming_scene, incoming_layers)
+                if assembly else (outgoing_scene, outgoing_layers)
+            )
             base_frame = self.render(
-                packet=packet,
-                seconds=seconds,
-                layers=selected_records,
-                settings=settings,
-                screen=screen,
-                feedback_enabled=False,
+                packet=packet, seconds=seconds, layers=selected_records,
+                settings=settings, screen=screen, feedback_enabled=False,
                 visual_scene=selected_scene,
             )
-            lifecycle_progress = float(np.clip(contract.eased_progress, 0.0, 1.0))
+            progress = float(np.clip(contract.eased_progress, 0.0, 1.0))
             fragments = 0
-            if lifecycle_progress <= 0.0 or (assembly and lifecycle_progress >= 1.0):
-                frame = (
-                    base_frame.copy() if assembly
-                    else self._lifecycle_empty_frame(screen)
-                )
-            elif lifecycle_progress >= 1.0 and not assembly:
+            if progress >= 1.0 and assembly:
+                frame = base_frame.copy()
+            elif progress >= 1.0 and not assembly:
                 frame = self._lifecycle_empty_frame(screen)
+            elif progress <= 0.0 and assembly:
+                frame = self._lifecycle_empty_frame(screen)
+            elif progress <= 0.0:
+                frame = base_frame.copy()
             else:
                 frame, fragments = self._lifecycle_fragment_frame(
                     base_frame,
-                    progress=lifecycle_progress,
-                    seed=contract.metadata.get("seed", 0),
+                    progress=progress,
+                    seed=int(contract.metadata.get("seed", 0)),
                     transition_id=contract.transition_id,
-                    layer_ids=[
-                        str(item.get("layer_id", ""))
-                        for item in selected_records
-                    ],
+                    layer_ids=[str(item.get("layer_id", "")) for item in selected_records],
                     assembly=assembly,
-                    screen=screen,
                 )
             profiles = (dict(self.last_profile),)
         else:
-            # Cut and future lifecycle-only families do not needlessly render
-            # the hidden side. They use the same contract but only one scene.
+            # Cut and not-yet-implemented families retain the explicit hold.
             if contract.completed:
                 selected_scene, selected_records = incoming_scene, incoming_layers
             else:
                 selected_scene, selected_records = outgoing_scene, outgoing_layers
             frame = self.render(
-                packet=packet,
-                seconds=seconds,
-                layers=selected_records,
-                settings=settings,
-                screen=screen,
-                feedback_enabled=False,
+                packet=packet, seconds=seconds, layers=selected_records,
+                settings=settings, screen=screen, feedback_enabled=False,
                 visual_scene=selected_scene,
             )
             profiles = (dict(self.last_profile),)
