@@ -7,6 +7,7 @@ skipped; this module is a visual-score importer, not an XM audio player.
 """
 
 import bisect
+import math
 import struct
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -301,11 +302,9 @@ def tracker_packet_at(
 
         # Tracker instrument selection and note pitch persist until replaced.
         held_note = 0
-        held_instrument = int(profile.get("instrument_id", 0))
+        held_instrument = 0
         note_age = row_total + 1
         recent_hits = 0
-        recent_effect = current_effect
-        recent_parameter = current_parameter
         volume = 0.82
         for scan_row in range(row_index, -1, -1):
             if scan_row < len(note_rows) and channel_index < len(note_rows[scan_row]):
