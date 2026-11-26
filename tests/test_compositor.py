@@ -439,8 +439,9 @@ def test_cpu_frame_composites_screen_guide_once(monkeypatch):
         feedback_enabled=False,
     )
 
-    # One alpha composite over black is ~50; two passes would produce ~75.
-    assert output.getpixel((4, 4))[:3] == (50, 50, 50)
+    # The opaque scene base is RGB 10; one alpha pass produces 55.
+    # A redundant second pass would produce a visibly brighter result (~78).
+    assert output.getpixel((4, 4))[:3] == (55, 55, 55)
 
 
 def test_tracker_matrix_keeps_instrument_colours_on_white_plates():
