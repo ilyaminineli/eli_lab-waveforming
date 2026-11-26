@@ -47,7 +47,7 @@ Example:
 | `history_scale` | Stored frame scale to control memory use (0.125–1.0) |
 | `blend_mode` | Screen, Add, Lighten, Overlay or Normal |
 
-The desktop scene panel exposes these controls when `TEMPORAL ECHO` is selected. The current values are stored when committing a manual transition or routing an XM cue.
+The desktop scene panel exposes these controls when `TEMPORAL ECHO` is selected, including an independent enable switch. The current values are stored when committing a manual transition or routing an XM cue. Disabling the effect clears its transition-local history and stops capturing samples; it does not change ordinary compositor feedback.
 
 ## Sampling and composition
 
@@ -65,12 +65,13 @@ This makes a fixed timestamped input sequence reproducible even when sampled out
 
 History is cleared when:
 
+- the authored effect is disabled;
 - a different transition ID becomes active;
 - show time moves backwards (seek/loop);
 - the render dimensions change;
 - preview or offline rendering leaves the active scene-pair path.
 
-The explicit compositor method `reset_temporal_echo()` clears only this buffer. `reset_feedback()` continues to affect only ordinary compositor feedback, and therefore the two effects can be enabled, tuned or reset independently.
+The explicit compositor method `reset_temporal_echo()` clears only this buffer. In preview, seek resets use a generation counter so a reset requested during an in-flight frame is applied before the next submitted frame. `reset_feedback()` continues to affect only ordinary compositor feedback, and therefore the two effects can be enabled, tuned or reset independently.
 
 ## Validation
 
