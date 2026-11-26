@@ -1395,6 +1395,11 @@ class MainWindow(QMainWindow):
         if output_path.suffix.lower() != ".mp4":
             output_path = output_path.with_suffix(".mp4")
 
+        if self._tracker_playing:
+            self._tracker_playing = False
+            self._render_timer.stop()
+            self._variation_timer.stop()
+            self.play_button.setText("▶  PLAY")
         if self.audio.is_playing:
             self.audio.pause()
         fps = int(self.export_fps.currentText())
