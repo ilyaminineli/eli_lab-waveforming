@@ -572,7 +572,7 @@ def _read_instrument_table(stream, instrument_count: int, file_size: int) -> tup
         if header_size < 29 or header_size > 65536:
             raise XMParseError("Invalid XM instrument header size.")
         header = _read_exact(stream, header_size - 4, "XM instrument header")
-        name = header[:22].split(b"\\0", 1)[0].decode("latin-1", "replace").strip()
+        name = header[:22].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
         sample_count = _u16(header, 23)
         if sample_count > 256:
             raise XMParseError("XM instrument contains an unreasonable sample count.")
@@ -591,7 +591,7 @@ def _read_instrument_table(stream, instrument_count: int, file_size: int) -> tup
                 sample_length = _u32(sample_header, 0)
                 sample_name = (
                     sample_header[18:40]
-                    .split(b"\\0", 1)[0]
+                    .split(b"\0", 1)[0]
                     .decode("latin-1", "replace")
                     .strip()
                 )
@@ -625,11 +625,11 @@ def load_xm(path: str | Path) -> XMModule:
         if header[:17] != b"Extended Module: " or header[37] != 0x1A:
             raise XMParseError("Not a valid XM module.")
         title = (
-            header[17:37].split(b"\\0", 1)[0]
+            header[17:37].split(b"\0", 1)[0]
             .decode("latin-1", "replace").strip()
             or path.stem
         )
-        tracker = header[38:58].split(b"\\0", 1)[0].decode("latin-1", "replace").strip()
+        tracker = header[38:58].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
         version = _u16(header, 58)
         if version < 0x0104:
             raise XMParseError(f"Unsupported XM version 0x{version:04x}.")
