@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -41,6 +41,7 @@ class VisualMetrics:
     tracker_pitch_centroid: float = 0.0
     tracker_transition: float = 0.0
     tracker_reprise: bool = False
+    tracker_channel_states: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_packet(
@@ -48,6 +49,7 @@ class VisualMetrics:
     ) -> "VisualMetrics":
         packet = packet or {}
         tracker = packet.get("tracker_cue") or {}
+        tracker_channel_states = list(tracker.get("channel_states") or [])
         raw_notes = tracker.get("notes")
         tracker_notes = np.asarray(
             raw_notes if raw_notes is not None else [], dtype=np.uint8
@@ -113,6 +115,7 @@ class VisualMetrics:
             "tracker_pitch_centroid": pitch_centroid,
             "tracker_transition": transition_envelope,
             "tracker_reprise": pattern_reprise,
+            "tracker_channel_states": tracker_channel_states,
         }
         tracker_energy = float(
             np.clip(
@@ -1255,6 +1258,247 @@ class TrackerMatrix(VisualGenerator):
         return image
 
 
+class TrackerEnsemble(VisualGenerator):
+    """Compose every XM channel as a persistent, independently mapped visual voice."""
+
+    name = "TRACKER ENSEMBLE"
+
+    PALETTE = (
+        (112, 166, 202),
+        (198, 172, 112),
+        (166, 143, 190),
+        (184, 194, 199),
+        (127, 174, 159),
+        (202, 136, 119),
+    )
+
+    def render(self, metrics, seconds, size, settings):
+        width, height = size
+        image = self._blank(size)
+        draw = ImageDraw.Draw(image)
+        channels = metrics.tracker_channel_states
+        if not channels:
+            return image
+
+        count = len(channels)
+        cx, cy = width * 0.5, height * 0.5
+        orbit_x = width * 0.335
+        orbit_y = height * 0.285
+        min_dimension = min(width, height)
+        animation = seconds * (0.035 + settings.speed * 0.18)
+        pattern_phase = metrics.tracker_progress * math.tau
+        reprise = metrics.tracker_reprise
+        transition = metrics.tracker_transition
+        detail = float(np.clip(settings.density, 0.05, 1.0))
+        ring_alpha = int(16 + 24 * detail)
+
+        # Stable shared orbit; each XM channel owns a persistent node and voice.
+        draw.ellipse(
+            (
+                int(cx - orbit_x),
+                int(cy - orbit_y),
+                int(cx + orbit_x),
+                int(cy + orbit_y),
+            ),
+            outline=(145, 153, 163, ring_alpha),
+            width=1,
+        )
+        if transition > 0.015:
+            transition_radius = min_dimension * (0.08 + transition * 0.18)
+            draw.ellipse(
+                (
+                    int(cx - transition_radius),
+                    int(cy - transition_radius),
+                    int(cx + transition_radius),
+                    int(cy + transition_radius),
+                ),
+                outline=(208, 209, 203, int(transition * 75)),
+                width=1,
+            )
+
+        for index, channel in enumerate(channels):
+            channel_number = int(channel.get("channel", index + 1))
+            angle = math.tau * index / max(1, count) - math.pi * 0.5
+            anchor_x = cx + math.cos(angle) * orbit_x
+            anchor_y = cy + math.sin(angle) * orbit_y
+
+            instrument = max(0, int(channel.get("instrument_id", 0)))
+            note = int(channel.get("held_note", 0))
+            pitch = float(np.clip(channel.get("pitch", 0.0), 0.0, 1.0))
+            activity = float(np.clip(channel.get("activity", 0.0), 0.0, 1.0))
+            density = float(np.clip(channel.get("note_density", 0.0), 0.0, 1.0))
+            trigger = float(np.clip(channel.get("trigger", 0.0), 0.0, 1.0))
+            volume = float(np.clip(channel.get("volume", 0.82), 0.0, 1.0))
+            pan = float(np.clip(channel.get("pan", 0.5), 0.0, 1.0))
+            effect = int(channel.get("effect", 0))
+            parameter = int(channel.get("parameter", 0))
+            sample_name = str(channel.get("sample_name", ""))
+
+            # Panning is a local displacement, clamped to the channel sector.
+            sector_width = math.tau / max(1, count)
+            pan_offset = (pan - 0.5) * sector_width * orbit_x * 0.34
+            anchor_x += -math.sin(angle) * pan_offset
+            anchor_y += math.cos(angle) * pan_offset
+
+            pitch_shift = (pitch - 0.5) * min_dimension * 0.045 if note else 0.0
+            base_radius = min_dimension * (
+                0.010 + activity * 0.036 + density * 0.010
+            )
+            base_radius = max(1.0, base_radius)
+            lobes = 2 + ((instrument * 3 + channel_number) % 5)
+            if effect == 0x00:
+                lobes = 3 + (parameter % 4)
+            vibrato = parameter / 255.0 if effect in (0x04, 0x06) else 0.0
+            tremolo = parameter / 255.0 if effect in (0x07, 0x05) else 0.0
+            glide = parameter / 255.0 if effect in (0x01, 0x02, 0x03) else 0.0
+            sample_offset = parameter / 255.0 if effect == 0x09 else 0.0
+            phase = (
+                animation * (0.55 + activity * 1.8)
+                + pattern_phase * (0.12 + density)
+                + index * 0.47
+                + instrument * 0.19
+                + glide * 0.8
+                + sample_offset * 0.65
+            )
+
+            # Instrument identity selects a stable geometry grammar.
+            family = (instrument + channel_number * 2) % 4
+            point_count = 24 + int(24 * detail)
+            points = []
+            for point_index in range(point_count + 1):
+                theta = math.tau * point_index / point_count
+                wobble = math.sin(theta * (lobes + 1) + phase * 1.7)
+                pulse = 1.0 + tremolo * 0.22 * math.sin(
+                    theta * 2.0 + seconds * 8.0 + index
+                )
+                radius = base_radius * pulse * (
+                    0.72
+                    + 0.20 * math.sin(theta * lobes + phase)
+                    + 0.08 * wobble * (1.0 + vibrato)
+                )
+                if family == 0:
+                    local_x = math.cos(theta + phase) * radius * 1.30
+                    local_y = math.sin(theta * lobes + phase) * radius * 0.82
+                elif family == 1:
+                    local_x = math.cos(theta * lobes + phase) * radius
+                    local_y = math.sin(theta + phase) * radius * 1.18
+                elif family == 2:
+                    local_x = math.cos(theta + phase) * radius * (
+                        0.56 + 0.44 * abs(math.cos(theta * 2.0))
+                    )
+                    local_y = math.sin(theta + phase) * radius * 0.78
+                else:
+                    local_x = math.cos(theta * lobes + phase) * radius * 0.78
+                    local_y = math.sin(theta * lobes + phase) * radius * (
+                        0.54 + 0.46 * abs(math.sin(theta * 2.0))
+                    )
+                drift = glide * min_dimension * 0.018 * math.sin(theta + phase)
+                x = anchor_x + local_x + math.cos(angle) * pitch_shift + drift
+                y = anchor_y + local_y + math.sin(angle) * pitch_shift
+                points.append((int(x), int(y)))
+
+            base_colour = self.PALETTE[(max(1, instrument) - 1) % len(self.PALETTE)]
+            alpha = int(np.clip(24 + activity * 188 + density * 34, 18, 225))
+            draw.line(
+                points,
+                fill=(*base_colour, alpha),
+                width=1 + int(activity * 1.6),
+                joint="curve",
+            )
+
+            # Quiet/empty voices remain present as low-salience latent channels.
+            node_radius = max(1, int(1 + activity * 4 + density * 2))
+            draw.ellipse(
+                (
+                    int(anchor_x - node_radius),
+                    int(anchor_y - node_radius),
+                    int(anchor_x + node_radius),
+                    int(anchor_y + node_radius),
+                ),
+                outline=(*base_colour, int(28 + activity * 205)),
+                width=1,
+            )
+
+            if trigger > 0.0:
+                pulse_radius = min_dimension * (0.018 + pitch * 0.022)
+                draw.ellipse(
+                    (
+                        int(anchor_x - pulse_radius),
+                        int(anchor_y - pulse_radius),
+                        int(anchor_x + pulse_radius),
+                        int(anchor_y + pulse_radius),
+                    ),
+                    outline=(*base_colour, int(120 + trigger * 110)),
+                    width=1 + int(volume * 2),
+                )
+                vector_length = min_dimension * (0.025 + activity * 0.055)
+                end_x = anchor_x + math.cos(angle + phase) * vector_length
+                end_y = anchor_y + math.sin(angle + phase) * vector_length
+                draw.line(
+                    (int(anchor_x), int(anchor_y), int(end_x), int(end_y)),
+                    fill=(*base_colour, int(90 + volume * 130)),
+                    width=1 + int(activity * 2),
+                )
+
+            if effect == 0x04 and activity > 0.02:
+                offset = min_dimension * (0.004 + vibrato * 0.018)
+                for side in (-1.0, 1.0):
+                    shifted = [
+                        (
+                            int(x + math.cos(angle + math.pi / 2) * offset * side),
+                            int(y + math.sin(angle + math.pi / 2) * offset * side),
+                        )
+                        for x, y in points[::3]
+                    ]
+                    if len(shifted) > 1:
+                        draw.line(
+                            shifted,
+                            fill=(*base_colour, int(24 + activity * 65)),
+                            width=1,
+                        )
+
+            if effect == 0x07 and activity > 0.02:
+                echo_radius = base_radius * (0.28 + tremolo * 0.7)
+                draw.ellipse(
+                    (
+                        int(anchor_x - echo_radius),
+                        int(anchor_y - echo_radius),
+                        int(anchor_x + echo_radius),
+                        int(anchor_y + echo_radius),
+                    ),
+                    outline=(*base_colour, int(22 + activity * 70)),
+                    width=1,
+                )
+
+            label_y = anchor_y + base_radius + min_dimension * 0.012
+            draw.text(
+                (int(anchor_x - 8), int(label_y)),
+                f"{channel_number:02d}",
+                fill=(215, 218, 216, int(48 + activity * 130)),
+            )
+            if sample_name and width >= 640:
+                draw.text(
+                    (int(anchor_x - 24), int(label_y + 10)),
+                    sample_name[:11],
+                    fill=(180, 184, 183, int(35 + activity * 75)),
+                )
+
+        # A repeated pattern leaves a low-opacity echo of the channel orbit.
+        if reprise:
+            echo = min_dimension * 0.012
+            draw.ellipse(
+                (
+                    int(cx - orbit_x - echo),
+                    int(cy - orbit_y - echo),
+                    int(cx + orbit_x + echo),
+                    int(cy + orbit_y + echo),
+                ),
+                outline=(164, 153, 183, 34),
+                width=1,
+            )
+        return image
+
+
 class GeneratorBank:
     def __init__(self):
         self._generators: dict[str, VisualGenerator] = {}
@@ -1278,6 +1522,7 @@ class GeneratorBank:
             AxonometricField(),
             PolyhedralField(),
             TrackerMatrix(),
+            TrackerEnsemble(),
         ):
             self._generators[generator.name] = generator
             self._generator_types[generator.name] = type(generator)
