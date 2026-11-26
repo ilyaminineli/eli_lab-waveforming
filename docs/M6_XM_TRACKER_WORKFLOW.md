@@ -141,4 +141,4 @@ The lower-resolution modes reduce Python/Pillow generator and compositor pixel w
 - Persistent VisualScene/VisualObject state and cue/phrase transitions.
 - GPU-native tracker ensemble and measured static-layer/simulation caching.
 
-See [WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md](WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md) for the broader architecture.
+See [WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md](Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md) for the broader architecture.
