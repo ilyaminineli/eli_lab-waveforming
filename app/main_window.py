@@ -413,8 +413,8 @@ class MainWindow(QMainWindow):
         self.transition_family.addItems(sorted(TRANSITION_FAMILIES))
         self.transition_family.setCurrentText("dissolve")
         self.transition_family.setToolTip(
-            "DISSOLVE is a real outgoing/incoming crossfade in preview and export. "
-            "CUT switches at completion. Other families remain lifecycle-only until implemented."
+            "DISSOLVE crossfades complete frames. MORPH interpolates matched VisualObjects "
+            "and fades unmatched objects. CUT switches at completion; other families are staged."
         )
         self.transition_duration = QDoubleSpinBox()
         self.transition_duration.setRange(0.0, 120.0)
@@ -425,8 +425,8 @@ class MainWindow(QMainWindow):
         scene_form.addRow("DURATION (S)", self.transition_duration)
         self.scene_transition_button = QPushButton("COMMIT TRANSITION")
         self.scene_transition_button.setToolTip(
-            "Commit through M12. DISSOLVE blends the outgoing and incoming scenes; "
-            "future transition families retain lifecycle-only rendering for now."
+            "Commit through M12. DISSOLVE blends frames; MORPH interpolates matched "
+            "VisualObjects. Other transition families retain lifecycle-only rendering for now."
         )
         self.cue_route_button = QPushButton("ROUTE CURRENT XM CUE")
         scene_form.addRow(self.scene_transition_button)
@@ -913,6 +913,7 @@ class MainWindow(QMainWindow):
             easing=str(route.get("easing", "smoothstep")),
             interruption_policy=str(route.get("interruption_policy", "cancel")),
             outgoing_policy=str(route.get("outgoing_policy", "archive")),
+            object_correspondence=list(route.get("object_correspondence", [])),
             trigger=dict(trigger or {"type": "manual"}),
         )
 

@@ -243,6 +243,7 @@ class VisualProject:
         easing: str = "smoothstep",
         interruption_policy: str = "cancel",
         outgoing_policy: str = "archive",
+        object_correspondence: list[dict] | None = None,
     ) -> dict:
         cue_id = str(cue_id)
         source_id = str(source_scene_id or self.active_scene_id)
@@ -262,6 +263,7 @@ class VisualProject:
             easing=easing,
             interruption_policy=interruption_policy,
             outgoing_policy=outgoing_policy,
+            object_correspondence=list(object_correspondence or []),
             trigger={"type": "tracker_cue", "cue_id": cue_id},
         )
         route = {
@@ -273,6 +275,7 @@ class VisualProject:
             "easing": contract.easing,
             "interruption_policy": contract.interruption_policy,
             "outgoing_policy": contract.outgoing_policy,
+            "object_correspondence": [dict(item) for item in contract.object_correspondence],
         }
         self.cue_routes = [
             item for item in self.cue_routes

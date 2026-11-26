@@ -57,6 +57,7 @@ class SceneTransition:
     transformation_fraction: float = 0.70
     preserved_object_ids: list[str] = field(default_factory=list)
     discarded_object_ids: list[str] = field(default_factory=list)
+    object_correspondence: list[dict] = field(default_factory=list)
     interruption_policy: str = "reject"
     outgoing_policy: str = "archive"
     seed: int = 0
@@ -97,6 +98,25 @@ class SceneTransition:
         self.metadata = _dict(self.metadata)
         self.preserved_object_ids = list(dict.fromkeys(_strings(self.preserved_object_ids)))
         self.discarded_object_ids = list(dict.fromkeys(_strings(self.discarded_object_ids)))
+        correspondence = []
+        source_seen, target_seen = set(), set()
+        for item in self.object_correspondence if isinstance(self.object_correspondence, list) else []:
+            if not isinstance(item, dict):
+                raise ValueError("Object correspondence entries must be mappings.")
+            source_id = str(item.get("source_object_id", item.get("source_id", ""))).strip()
+            target_id = str(item.get("target_object_id", item.get("target_id", ""))).strip()
+            if not source_id or not target_id:
+                raise ValueError("Every object correspondence requires source and target object IDs.")
+            if source_id in source_seen or target_id in target_seen:
+                raise ValueError("Object correspondence must be one-to-one on both scene sides.")
+            source_seen.add(source_id)
+            target_seen.add(target_id)
+            correspondence.append({
+                "source_object_id": source_id,
+                "target_object_id": target_id,
+                "kind": "explicit",
+            })
+        self.object_correspondence = correspondence
         overlap = set(self.preserved_object_ids) & set(self.discarded_object_ids)
         if overlap:
             raise ValueError(
@@ -152,6 +172,7 @@ class SceneTransition:
             "outgoing_weight": 1.0 - eased,
             "incoming_weight": eased,
             "completed": raw >= 1.0,
+            "object_correspondence": [dict(item) for item in self.object_correspondence],
         }
 
     def to_dict(self) -> dict:
@@ -257,6 +278,20 @@ class SceneTransitionController:
                 "Transition references unknown visual objects: "
                 + ", ".join(sorted(unknown))
             )
+
+        source_object_ids = {item.object_id for item in source.objects}
+        target_object_ids = {item.object_id for item in target.objects}
+        for pair in transition.object_correspondence:
+            if pair["source_object_id"] not in source_object_ids:
+                raise ValueError(
+                    "Object correspondence source is not in the outgoing scene: "
+                    + pair["source_object_id"]
+                )
+            if pair["target_object_id"] not in target_object_ids:
+                raise ValueError(
+                    "Object correspondence target is not in the incoming scene: "
+                    + pair["target_object_id"]
+                )
 
         proposal = SceneTransitionProposal(
             transition=transition,
