@@ -1451,11 +1451,39 @@ class MainWindow(QMainWindow):
         )
 
     def _preview_tick(self) -> None:
-        """Advance the visual clock independently of the audio transport."""
+        """Advance render time and, when audio is absent, the XM score transport."""
         now = monotonic()
         elapsed = max(0.0, min(0.5, now - self._last_preview_tick))
         self._last_preview_tick = now
         self._preview_animation_seconds += elapsed
+
+        if self._tracker_playing and not self.audio.is_playing:
+            duration = max(0.0, float(self._tracker_duration))
+            target = self._tracker_clock_origin + max(
+                0.0, now - self._tracker_clock_started
+            )
+            if duration > 0.0 and target >= duration:
+                if self.loop_check.isChecked():
+                    target = target % duration
+                    self._tracker_clock_origin = target
+                    self._tracker_clock_started = now
+                    self.preview_worker.request_reset()
+                else:
+                    target = duration
+                    self._tracker_playing = False
+                    self._render_timer.stop()
+                    self.play_button.setText("▶  PLAY")
+            self._last_position = target
+            if hasattr(self, "timeline_widget"):
+                self.timeline_widget.set_position(target)
+            self._update_time_label()
+            seek_duration = max(float(self.audio.duration), duration)
+            if seek_duration > 0 and not self.seek.isSliderDown():
+                self.seek.blockSignals(True)
+                self.seek.setValue(
+                    int(clamp(target / seek_duration, 0.0, 1.0) * 10000)
+                )
+                self.seek.blockSignals(False)
         self._render_frame()
 
     def _render_frame(self, *_args) -> None:
@@ -1599,8 +1627,10 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def _on_playback_state(self, playing: bool) -> None:
-        self.play_button.setText("Ⅱ  PAUSE" if playing else "▶  PLAY")
-        if playing:
+        active = bool(playing or self._tracker_playing)
+        self.play_button.setText("Ⅱ  PAUSE" if active else "▶  PLAY")
+        if active:
+            self._last_preview_tick = monotonic()
             self._render_timer.start()
             if self.auto_variation_check.isChecked():
                 self._variation_timer.start()
@@ -1620,14 +1650,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, "timeline_widget"):
             self.timeline_widget.set_position(seconds)
         self._update_time_label()
-        duration = self.audio.duration
+        duration = max(float(self.audio.duration), float(self._tracker_duration))
         if duration > 0 and not self.seek.isSliderDown():
             self.seek.blockSignals(True)
             self.seek.setValue(int(clamp(seconds / duration, 0.0, 1.0) * 10000))
             self.seek.blockSignals(False)
 
     def _seek_from_slider(self) -> None:
-        duration = self.audio.duration
+        duration = max(float(self.audio.duration), float(self._tracker_duration))
         if duration > 0:
             self._seek_to_time((self.seek.value() / 10000.0) * duration)
 
@@ -1648,6 +1678,9 @@ class MainWindow(QMainWindow):
             self._last_position = target
             self.timeline_widget.set_position(target)
             self._update_time_label()
+        if self._tracker_playing:
+            self._tracker_clock_origin = self._last_position
+            self._tracker_clock_started = monotonic()
         self.preview_worker.request_reset()
         self._render_frame()
 
@@ -1698,7 +1731,7 @@ class MainWindow(QMainWindow):
         count = len(self.sources)
         state = (
             "PLAYING"
-            if self.audio.is_playing
+            if self.audio.is_playing or self._tracker_playing
             else "PAUSED" if self._last_position > 0 else "READY"
         )
         if count:
@@ -1706,14 +1739,28 @@ class MainWindow(QMainWindow):
                 f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
             )
         elif self._tracker_data:
-            self.status.setText("TRACKER LOADED  ·  NO AUDIO SOURCES")
+            self.status.setText(
+                f"{state}  ·  XM TRACKER  ·  {int(self._tracker_data.get('channels', 0)):02d} CHANNELS"
+            )
         else:
             self.status.setText("NO AUDIO LOADED")
+
+    def _loop_changed(self, enabled: bool) -> None:
+        self.audio.set_loop(bool(enabled))
 
     def toggle_playback(self) -> None:
         if self.audio.is_playing:
             self.audio.pause()
-        else:
+            return
+        if self._tracker_playing:
+            self._tracker_playing = False
+            self._render_timer.stop()
+            self._variation_timer.stop()
+            self.play_button.setText("▶  PLAY")
+            self._update_status()
+            return
+
+        if self.sources:
             if (
                 self.audio.duration > 0
                 and self.audio.position >= self.audio.duration - 0.03
@@ -1722,8 +1769,28 @@ class MainWindow(QMainWindow):
                 self._last_position = 0.0
                 self.preview_worker.request_reset()
             self.audio.play()
+            return
+
+        if self._tracker_data:
+            duration = float(self._tracker_duration)
+            if duration <= 0.0:
+                return
+            if self._last_position >= duration - 0.03:
+                self._last_position = 0.0
+                self.preview_worker.request_reset()
+            self._tracker_clock_origin = self._last_position
+            self._tracker_clock_started = monotonic()
+            self._last_preview_tick = self._tracker_clock_started
+            self._tracker_playing = True
+            self.play_button.setText("Ⅱ  PAUSE")
+            self._render_timer.start()
+            if self.auto_variation_check.isChecked():
+                self._variation_timer.start()
+            self._update_status()
+            self._render_frame()
 
     def stop_playback(self) -> None:
+        self._tracker_playing = False
         self.audio.stop()
         self.feature_bus.reset()
         self.director.reset()
