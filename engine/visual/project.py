@@ -86,6 +86,12 @@ class VisualProject:
                 scene.state = "ACTIVE"
             elif scene.state == "ACTIVE":
                 scene.state = "INACTIVE"
+            elif scene.state == "EXITING":
+                # Runtime transitions are not resumed on load without a clock
+                # snapshot: retain the outgoing scene as a stable held scene.
+                scene.state = "HELD"
+            elif scene.state == "ENTERING":
+                scene.state = "PREPARED"
 
     @property
     def active_scene(self) -> VisualScene:
