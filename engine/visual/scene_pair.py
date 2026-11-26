@@ -625,7 +625,7 @@ def blend_scene_pair_frames(
         )
     outgoing = outgoing_frame.convert("RGBA")
     incoming = incoming_frame.convert("RGBA")
-    if resolved.render_mode == "crossfade":
+    if resolved.render_mode in ("crossfade", "temporal_echo"):
         return Image.blend(
             outgoing, incoming, resolved.incoming_weight
         )
