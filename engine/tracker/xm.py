@@ -217,7 +217,11 @@ def load_xm(path: str | Path) -> XMModule:
         header = _read_exact(stream, 80, "XM module header")
         if header[:17] != b"Extended Module: " or header[37] != 0x1A:
             raise XMParseError("Not a valid XM module.")
-        title = header[17:37].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
+        title = (
+            header[17:37].split(b"\0", 1)[0]
+            .decode("latin-1", "replace").strip()
+            or Path(path).stem
+        )
         tracker = header[38:58].split(b"\0", 1)[0].decode("latin-1", "replace").strip()
         version = _u16(header, 58)
         if version < 0x0104:
