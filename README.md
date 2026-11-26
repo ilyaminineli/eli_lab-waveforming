@@ -205,12 +205,12 @@ See [docs/M13_MULTI_SCENE_PROJECT_SCORE_CUES.md](docs/M13_MULTI_SCENE_PROJECT_SC
 - Adds a serializable `ScenePairRenderContract` with outgoing/incoming scene graphs, their independent layer snapshots, transition phase/progress/weights and resolved project metadata.
 - A single `ScenePairRenderContract` is built from the M12 controller sample and reused by live preview and offline export.
 - `VisualCompositor.render_scene_pair()` renders each scene with the same score packet, show time, generator settings and screen guide, then blends the two RGBA frames using the incoming weight.
-- `dissolve` now performs a real deterministic pixel crossfade; `cut` switches at completion. Other transition families retain lifecycle-only hold behavior until their renderer implementations are ready.
+- `dissolve` performs a deterministic pixel crossfade; `cut` switches at completion; `morph` interpolates explicitly-corresponding `VisualObject` transforms/material values and fades unmatched objects independently. Assembly, erosion and other families remain lifecycle-only until implemented.
 - Temporal feedback is applied once to the final blended frame. The pair-render profile records both scene render timings and transition weights.
 - Live preview retains generator state for both scene layer sets and sends a completed CPU frame to the canvas while a pair is active. The normal OpenGL single-scene path resumes after transition completion.
 - Offline export uses the same pair contract and blend function, keeping score-cue transition output aligned with the live render path.
 
-M14 currently implements the scene-pair contract and dissolve/cut modes; object-aware morphing, assembly, erosion, mask reveal, displacement and temporal echo are still future effects.
+M14 currently implements dissolve/cut plus the first object-aware morph slice. Morph uses one-to-one object correspondence, interpolated transforms/material values and independent unmatched-object fades; topology-aware generator geometry, assembly, erosion, mask reveal, displacement and temporal echo remain future effects.
 
 See [docs/M14_RENDERER_SCENE_PAIR_CROSSFADE.md](docs/M14_RENDERER_SCENE_PAIR_CROSSFADE.md).
 ## Canvas and performance

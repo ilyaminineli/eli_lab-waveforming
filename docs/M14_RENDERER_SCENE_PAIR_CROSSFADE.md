@@ -1,11 +1,11 @@
 # M14 — Renderer-side scene-pair transitions
 
-**Status:** First renderer increment implemented  
+**Status:** Scene-pair dissolve/cut and first object-aware morph increment implemented  
 **Depends on:** M11 VisualScene/VisualScore, M12 transition controller, M13 VisualProject
 
 ## 1. Goal
 
-M14 introduces a shared outgoing/incoming render contract and uses the M12 transition sample to produce an actual image transition. The first supported effect is a deterministic dissolve/crossfade. The same pair snapshot and blend implementation are used by live preview and offline export.
+M14 introduces a shared outgoing/incoming render contract and uses the M12 transition sample to produce an actual image transition. The scene-pair renderer supports deterministic dissolve/crossfade, cut, and an initial object-aware morph. The same pair snapshot and compositor path are used by live preview and offline export.
 
 Transition policy remains owned by `SceneTransitionController`. The renderer receives two scene snapshots and a resolved sample; it does not select targets, commit transitions or reinterpret musical cues.
 
@@ -28,11 +28,20 @@ Renderer modes in this increment:
 | --- | --- |
 | `dissolve` | Real pixel crossfade using incoming weight |
 | `cut` | Outgoing image until completion, then incoming |
-| Morph, assembly, erosion, mask reveal, displacement, temporal echo and other future families | Lifecycle-only hold; no fake dissolve |
+| `morph` | Matched VisualObjects interpolate transforms/material values; unmatched objects fade independently |
+| Assembly, erosion, mask reveal, displacement, temporal echo and other future families | Lifecycle-only hold; no fake dissolve |
 
 `blend_scene_pair_frames()` is the shared pixel-level blend function. It validates identical frame dimensions and always works in RGBA.
 
-## 3. Compositor
+## 3. VisualObject correspondence and morph composition
+
+M14 adds a one-to-one correspondence list to `SceneTransition`. Each entry identifies a `source_object_id` in the outgoing scene and a `target_object_id` in the incoming scene. The controller rejects mappings that reference an object on the wrong side, duplicate source IDs or duplicate target IDs. Exact IDs present in both scenes are recorded as identity matches; no name-based or fuzzy matching is attempted.
+
+`ScenePairRenderContract` snapshots the resolved correspondence. A matched pair becomes one intermediate `VisualObject` and one renderer layer. Position, scale, shortest-path rotation, opacity, pass strength, salience and numeric geometry/material values interpolate using the controller's eased progress. Categorical generator/material modes switch at the midpoint, while the outgoing layer ID remains the generator simulation key for the duration of the morph.
+
+Unmatched outgoing objects fade by the outgoing weight; unmatched incoming objects fade by the incoming weight. The compositor renders this single intermediate scene, so the screen guide and paper-grain background are drawn once rather than crossfading two complete textured frames. Layer order follows the outgoing scene before the midpoint and the incoming scene after it.
+
+## 4. Compositor
 
 `VisualCompositor.render_scene_pair()` renders both scene snapshots independently using the same:
 
@@ -45,7 +54,7 @@ Each side uses its own canonical scene layer order and independent layer IDs, so
 
 The resulting profile reports the transition ID/family/mode/phase/progress, source and target scene IDs, both weights, total timing and both scenes' layer timings.
 
-## 4. Live preview
+## 5. Live preview
 
 The application snapshots the active M12 transition sample into a `ScenePairRenderContract` and passes it to `PreviewRenderWorker`.
 
@@ -58,13 +67,13 @@ While a pair is active the worker:
 
 The pair path uses CPU composition, including when OpenGL preview is otherwise available. This is deliberate for the first correctness-focused implementation: the existing GPU path composites one scene's layer descriptors and does not yet have a two-scene transition shader. Normal GPU preview resumes after the transition completes.
 
-## 5. Offline export
+## 6. Offline export
 
 Offline export builds the same pair contract from the project and the current M12 sample, then calls `render_scene_pair()`. Cue-triggered transitions therefore use identical frame blending and easing values in preview and export. A fixed project, score, transition and frame time resolve to the same pair weights and output composition.
 
 Manual transition replay remains outside the current offline scope; M13 already records manual contracts, but only score-cue routes are replayed on the offline score clock.
 
-## 6. Validation
+## 7. Validation
 
 The CI smoke path checks:
 
@@ -77,14 +86,15 @@ The CI smoke path checks:
 - the existing XM, M11, M12 and M13 smoke coverage;
 - Python compile and GLSL shader validation.
 
-## 7. Current limitations and next steps
+## 8. Current limitations and next steps
 
 This first M14 increment implements the pair-rendering architecture and dissolve, not all transition families.
 
 - Scene-pair rendering is CPU-side; a future GPU-native pair compositor can optimize it.
-- `morph`, `assembly`, `erosion`, `mask_reveal`, `displacement` and `temporal_echo` currently hold the outgoing frame until lifecycle completion.
-- Object preservation lists are still controller metadata; actual object transfer/merge and identity-aware correspondence are not implemented.
+- `assembly`, `erosion`, `mask_reveal`, `displacement` and `temporal_echo` currently hold the outgoing frame until lifecycle completion.
+- Morph currently interpolates object-level transforms and numeric geometry/material fields; topology-aware vector/path deformation and generator-specific shape correspondence are not implemented yet.
+- Correspondence is one-to-one. Split/merge mapping and explicit object transfer/merge policies remain future work.
 - There is no independent preparation or establishment image treatment yet; the M12 phase sample is exposed to the compositor.
 - Runtime transition checkpoints and replay of manually authored transitions in offline export are not implemented.
 
-**Next M14 slices:** add real morphing using explicit VisualObject correspondence; implement assembly and erosion as deterministic object lifecycle operations; then introduce temporal echo as a transition-local history buffer. Keep each effect behind the same scene-pair contract so live and offline rendering stay aligned.
+**Next M14 slices:** extend morphing with generator-specific geometry/path interpolation; implement assembly and erosion as deterministic object lifecycle operations; then introduce temporal echo as a transition-local history buffer. Keep each effect behind the same scene-pair contract so live and offline rendering stay aligned.

@@ -47,12 +47,13 @@ jobs:
           from engine.visual.layers import VisualLayer
           from engine.visual.compositor import VisualCompositor
           from engine.visual.scene import (
-              VisualRelationship, VisualScene, VisualScore, VisualScoreCue,
+              VisualObject, VisualRelationship, VisualScene, VisualScore, VisualScoreCue,
               crossed_score_cues,
           )
           from engine.visual.project import VisualProject
           from engine.visual.scene_pair import (
               ScenePairRenderContract, blend_scene_pair_frames,
+              build_object_morph_state,
           )
           from engine.visual.transitions import (
               SceneTransition, SceneTransitionController,
@@ -474,18 +475,126 @@ jobs:
               )
               assert rendered_scene_ids == ["pair-out", "pair-in"]
 
-              # Future transition families retain lifecycle-only rendering and
-              # must not pay to render a hidden incoming scene.
-              morph_contract = ScenePairRenderContract.from_dict({
-                  **pair_contract.to_dict(), "family": "morph",
+              # M14 object-aware morph: explicit identity correspondence yields
+              # one interpolated renderer object; unmatched objects fade separately.
+              morph_out_layer = VisualLayer(
+                  name="MORPH OUT", generator="GEOMETRIC PLATE",
+                  x_offset=-0.5, scale=0.8, rotation=350.0, opacity=1.0,
+              )
+              morph_in_layer = VisualLayer(
+                  name="MORPH IN", generator="GEOMETRIC PLATE",
+                  x_offset=0.5, scale=1.2, rotation=10.0, opacity=0.6,
+              )
+              source_only_layer = VisualLayer(
+                  name="SOURCE ONLY", generator="GEOMETRIC PLATE", opacity=0.6,
+              )
+              target_only_layer = VisualLayer(
+                  name="TARGET ONLY", generator="GEOMETRIC PLATE", opacity=0.8,
+              )
+              morph_out_object = VisualObject.from_layer(morph_out_layer)
+              morph_in_object = VisualObject.from_layer(morph_in_layer)
+              source_only_object = VisualObject.from_layer(source_only_layer)
+              target_only_object = VisualObject.from_layer(target_only_layer)
+              morph_out_scene = VisualScene(
+                  scene_id="morph-out", name="MORPH OUT",
+                  objects=[morph_out_object, source_only_object],
+                  layer_order=[morph_out_layer.layer_id, source_only_layer.layer_id],
+              )
+              morph_in_scene = VisualScene(
+                  scene_id="morph-in", name="MORPH IN",
+                  objects=[morph_in_object, target_only_object],
+                  layer_order=[morph_in_layer.layer_id, target_only_layer.layer_id],
+              )
+              morph_mapping = [{
+                  "source_object_id": morph_out_object.object_id,
+                  "target_object_id": morph_in_object.object_id,
+              }]
+              morph_project = VisualProject(
+                  scenes=[morph_out_scene, morph_in_scene],
+                  active_scene_id=morph_out_scene.scene_id,
+                  layer_snapshots={
+                      morph_out_scene.scene_id: [
+                          morph_out_layer.to_dict(), source_only_layer.to_dict(),
+                      ],
+                      morph_in_scene.scene_id: [
+                          morph_in_layer.to_dict(), target_only_layer.to_dict(),
+                      ],
+                  },
+              )
+              morph_sample = {
+                  **pair_sample,
+                  "transition_id": "transition-object-morph",
+                  "source_scene_id": morph_out_scene.scene_id,
+                  "target_scene_id": morph_in_scene.scene_id,
+                  "family": "morph",
+                  "object_correspondence": morph_mapping,
+              }
+              morph_contract = ScenePairRenderContract.from_project(
+                  morph_project, morph_sample
+              )
+              assert morph_contract.render_mode == "object_morph"
+              assert morph_contract.object_correspondence[0]["kind"] == "explicit"
+              morph_scene, morph_records = build_object_morph_state(morph_contract)
+              morph_by_id = {item["layer_id"]: item for item in morph_records}
+              matched = morph_by_id[morph_out_layer.layer_id]
+              assert abs(matched["x_offset"]) < 1e-6
+              assert abs(matched["scale"] - 1.0) < 1e-6
+              assert abs(matched["rotation"] - 360.0) < 1e-6
+              assert abs(matched["opacity"] - 0.8) < 1e-6
+              assert morph_in_layer.layer_id not in morph_by_id
+              assert abs(morph_by_id[source_only_layer.layer_id]["opacity"] - 0.3) < 1e-6
+              assert abs(morph_by_id[target_only_layer.layer_id]["opacity"] - 0.4) < 1e-6
+              assert morph_scene["scene_id"] == "morph:morph-out:morph-in"
+              assert set(morph_scene["layer_order"]) == set(morph_by_id)
+
+              rendered_scene_ids.clear()
+              morph_rendered = pair_compositor.render_scene_pair(
+                  packet={}, seconds=1.0, scene_pair=morph_contract
+              )
+              assert morph_rendered.size == (4, 4)
+              assert rendered_scene_ids == ["morph:morph-out:morph-in"]
+
+              # Shared object IDs are unambiguous identity matches even when
+              # no explicit pair list was supplied.
+              shared_out = VisualObject.from_layer(morph_out_layer)
+              shared_in = VisualObject.from_layer(morph_in_layer)
+              shared_in.object_id = shared_out.object_id
+              identity_contract = ScenePairRenderContract.from_dict({
+                  **morph_contract.to_dict(),
+                  "outgoing": {
+                      **morph_contract.outgoing,
+                      "scene": {
+                          **morph_contract.outgoing["scene"],
+                          "objects": [shared_out.to_dict()],
+                      },
+                  },
+                  "incoming": {
+                      **morph_contract.incoming,
+                      "scene": {
+                          **morph_contract.incoming["scene"],
+                          "objects": [shared_in.to_dict()],
+                      },
+                  },
+                  "object_correspondence": [],
               })
-              assert morph_contract.render_mode == "hold"
+              assert identity_contract.object_correspondence == [{
+                  "source_object_id": shared_out.object_id,
+                  "target_object_id": shared_out.object_id,
+                  "kind": "identity",
+              }]
+
+              # Other future families retain lifecycle-only rendering and skip
+              # the hidden incoming scene.
+              hold_contract = ScenePairRenderContract.from_dict({
+                  **pair_contract.to_dict(), "family": "erosion",
+              })
+              assert hold_contract.render_mode == "hold"
               assert blend_scene_pair_frames(
-                  black, white, morph_contract
+                  black, white, hold_contract
               ).getpixel((0, 0)) == (0, 0, 0, 255)
               rendered_scene_ids.clear()
               held_pair = pair_compositor.render_scene_pair(
-                  packet={}, seconds=1.25, scene_pair=morph_contract
+                  packet={}, seconds=1.25, scene_pair=hold_contract
               )
               assert held_pair.getpixel((0, 0)) == (0, 0, 0, 255)
               assert rendered_scene_ids == ["pair-out"]
