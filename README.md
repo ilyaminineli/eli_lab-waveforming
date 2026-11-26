@@ -137,6 +137,7 @@ See [docs/M6_XM_TRACKER_WORKFLOW.md](docs/M6_XM_TRACKER_WORKFLOW.md).
 
 - Default preview is BALANCED at **480×360 / 8 FPS**, with ECO and LOW profiles retained.
 - The preview header displays measured scene/frame time; hover to inspect individual layer costs.
+- Screen artwork is composited behind generated layers in live CPU preview, GPU preview and offline export.
 - Generator feature metrics are cached per frame and source route, avoiding repeated aggregation when multiple layers share the same audio feature packet.
 - Profiling distinguishes CPU scene preparation from final CPU composition. The OpenGL profile currently measures scene preparation, not completed GPU draw time.
 - These measurements are intended to guide further optimisation; no universal FPS guarantee is implied.
