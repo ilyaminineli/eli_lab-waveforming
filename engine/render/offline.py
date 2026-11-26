@@ -15,6 +15,7 @@ from engine.audio.analyzer import AudioAnalyzer
 from engine.audio.feature_bus import FeatureBus
 from engine.render.ffmpeg import resolve_ffmpeg
 from engine.timeline import Timeline
+from engine.tracker.xm import tracker_packet_at
 from engine.visual.assets import AssetCatalog
 from engine.visual.composition_director import CompositionDirector, vary_composition
 from engine.visual.compositor import PROJECT_SIZE, VisualCompositor
@@ -47,6 +48,7 @@ class OfflineRenderWorker(QThread):
             resolution: tuple[int, int] = PROJECT_SIZE,
             feedback: dict | None = None,
             director_mode: str = "SEMI-AUTO",
+            tracker_data: dict | None = None,
             parent=None,
     ):
         super().__init__(parent)
@@ -82,6 +84,7 @@ class OfflineRenderWorker(QThread):
             max(2, int(resolution[1]) // 2 * 2),
         )
         self.feedback = dict(feedback or {})
+        self.tracker_data = dict(tracker_data or {})
         self.director_mode = director_mode if director_mode in CompositionDirector.MODES else "SEMI-AUTO"
         self._cancel_event = threading.Event()
 
@@ -261,6 +264,9 @@ class OfflineRenderWorker(QThread):
                             cached_packet = feature_bus.update(raw_packet, source_groups)
                         packet = dict(cached_packet)
                         packet["position"] = seconds
+                        tracker_cue = tracker_packet_at(self.tracker_data, seconds)
+                        if tracker_cue is not None:
+                            packet["tracker_cue"] = tracker_cue
                         director_output = director.update(packet, seconds)
                         packet["director_output"] = {
                             "glitch_amount": director_output.glitch_amount,
