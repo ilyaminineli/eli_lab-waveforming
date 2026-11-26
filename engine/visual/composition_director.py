@@ -181,7 +181,7 @@ def is_default_placeholder_composition(layers: list[VisualLayer]) -> bool:
             layer.name == "PHASE LATTICE 01"
             and layer.generator == "PHASE LATTICE"
             and not layer.source_id
-            and layer.pass_mode == "PAPER RELIEF"
+            and layer.pass_mode in ("PAPER RELIEF", "NONE")
             and layer.pass_map == "DISPLACEMENT"
             and abs(layer.x_offset) < 1e-9
             and abs(layer.y_offset) < 1e-9
