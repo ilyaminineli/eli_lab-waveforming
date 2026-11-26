@@ -145,7 +145,7 @@ See [docs/M7_RENDER_PROFILE.md](docs/M7_RENDER_PROFILE.md).
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
-- Interactive preview defaults to **320 × 240** (ECO), with **360 × 270** (LOW) and **480 × 360** (BALANCED) options; all are scaled into the application window without changing the 4:3 project aspect ratio.
+- Interactive preview defaults to **480 × 360** (BALANCED, 8 FPS), with **320 × 240** (ECO, 5 FPS) and **360 × 270** (LOW, 6 FPS) options; all are scaled into the application window without changing the 4:3 project aspect ratio.
 - Generator simulation and paper-relief preparation remain CPU-side; OpenGL handles per-layer preview blending when available, with a CPU compositor fallback. This is not yet a fully GPU-native generator pipeline.
 - Offline rendering uses FFmpeg from PATH; the preview remains CPU/Pillow/NumPy based. Printable-area masks scale with the selected render size, and completed MP4s replace the destination atomically.
 
