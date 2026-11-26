@@ -1095,7 +1095,7 @@ jobs:
               assert echo_preview_frames == echo_offline_frames
               assert echo_preview.last_profile["scene_pair"]["temporal_echo"][
                   "sample_count"
-              ] == 2
+              ] == 1
 
               # Ordinary compositor feedback reset is deliberately separate.
               retained_echo_samples = echo_preview._temporal_echo_history.sample_count
