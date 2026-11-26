@@ -41,6 +41,13 @@ generators, per-layer processing, cache misses, memory traffic and encoding may
 dominate differently on different computers. The profile choice therefore remains
 explicit, with FULL available when native-resolution detail is required.
 
+Frame rate is a separate control from internal render resolution. For the 133.18 s
+`total fvckery.xm` score, 30 FPS requires approximately 3,996 rendered frames;
+15 FPS requires approximately 1,998 frames. Selecting 15 FPS therefore halves the
+number of visual evaluations, while PERFORMANCE/BALANCED reduces pixel work per
+evaluation. Use 15 FPS for quick drafts and motion checks, 24 FPS for general MV
+review, and 30 FPS only where the extra temporal resolution is useful.
+
 ## Tracker-only export
 
 - XM visual sessions can be exported without any audio sources.
