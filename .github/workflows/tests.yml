@@ -341,17 +341,34 @@ jobs:
               )
               assert empty_round_trip.layers_for_scene(empty_scene.scene_id) == []
 
+              route_source_object = restored_scene.objects[0]
+              route_target_object = duplicate.objects[0]
               route = visual_project.set_cue_route(
                   visual_score.cues[0].cue_id,
                   duplicate.scene_id,
                   source_scene_id=restored_scene.scene_id,
-                  family="dissolve",
+                  family="morph",
                   duration_seconds=1.25,
+                  path_correspondence=[{
+                      "source_object_id": route_source_object.object_id,
+                      "target_object_id": route_target_object.object_id,
+                      "source_path_ids": ["field:ring:0"],
+                      "target_path_ids": ["field:ring:1"],
+                      "anchors": [
+                          {"source_t": 0.0, "target_t": 0.0},
+                          {"source_t": 0.5, "target_t": 0.65},
+                          {"source_t": 1.0, "target_t": 1.0},
+                      ],
+                  }],
               )
               assert route["target_scene_id"] == duplicate.scene_id
+              assert route["object_correspondence"][0]["kind"] == "path_map"
+              assert route["path_correspondence"][0]["anchors"][1] == {
+                  "source_t": 0.5, "target_t": 0.65,
+              }
               assert visual_project.route_for_cue(
                   visual_score.cues[0].cue_id
-              )["family"] == "dissolve"
+              )["family"] == "morph"
 
               project_round_trip = VisualProject.from_dict(
                   json.loads(json.dumps(visual_project.to_dict()))
@@ -364,6 +381,9 @@ jobs:
               assert project_round_trip.route_for_cue(
                   visual_score.cues[0].cue_id
               )["target_scene_id"] == duplicate.scene_id
+              assert project_round_trip.route_for_cue(
+                  visual_score.cues[0].cue_id
+              )["path_correspondence"] == route["path_correspondence"]
 
               selected = project_round_trip.select_scene(duplicate.scene_id)
               assert selected.state == "ACTIVE"
