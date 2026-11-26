@@ -1,6 +1,6 @@
 import numpy as np
 from engine.audio.analyzer import AudioAnalyzer
-from engine.visual.generators import GeneratorBank, GeneratorSettings
+from engine.visual.generators import GeneratorBank, GeneratorSettings, VisualMetrics
 
 
 def make_packet():
@@ -197,9 +197,7 @@ def test_audio_and_tracker_events_share_visual_metrics():
         "row_note_counts": [2, 0],
     }
 
-    metrics = __import__(
-        "engine.visual.generators", fromlist=["VisualMetrics"]
-    ).VisualMetrics.from_packet(packet)
+    metrics = VisualMetrics.from_packet(packet)
 
     assert metrics.source_count == 2
     assert metrics.tracker_row_note_count == 2
