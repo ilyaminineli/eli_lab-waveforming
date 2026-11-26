@@ -102,51 +102,210 @@ def build_generator_vector_paths(name,metrics,seconds,size,settings):
   return out
  return None
 
-def _resample(points,count,closed):
+def _resample_at(points, fractions, closed):
  p=np.asarray(points,dtype=np.float64)
- if p.ndim!=2 or len(p)<2 or p.shape[1]!=2:return None
- if closed:p=np.vstack((p,p[0]))
- lengths=np.sqrt(np.sum(np.diff(p,axis=0)**2,axis=1));cum=np.r_[0.,np.cumsum(lengths)];total=float(cum[-1])
- if total<=1e-8:return np.repeat(p[:1],count,axis=0)
- s=np.linspace(0,total,count,endpoint=not closed)
- return np.column_stack((np.interp(s,cum,p[:,0]),np.interp(s,cum,p[:,1])))
+ if p.ndim!=2 or len(p)<2 or p.shape[1]!=2:
+  return None
+ if closed:
+  p=np.vstack((p,p[0]))
+ lengths=np.sqrt(np.sum(np.diff(p,axis=0)**2,axis=1))
+ cumulative=np.r_[0.,np.cumsum(lengths)]
+ total=float(cumulative[-1])
+ if total<=1e-8:
+  return np.repeat(p[:1],len(fractions),axis=0)
+ distances=np.clip(np.asarray(fractions,dtype=np.float64),0,1)*total
+ return np.column_stack((
+  np.interp(distances,cumulative,p[:,0]),
+  np.interp(distances,cumulative,p[:,1]),
+ ))
+
+def _resample(points,count,closed):
+ return _resample_at(points,np.linspace(0,1,count,endpoint=not closed),closed)
 
 def _align(a,b,closed):
- if not closed:return b if np.linalg.norm(a[0]-b[0])+np.linalg.norm(a[-1]-b[-1])<=np.linalg.norm(a[0]-b[-1])+np.linalg.norm(a[-1]-b[0]) else b[::-1]
+ if not closed:
+  direct=np.linalg.norm(a[0]-b[0])+np.linalg.norm(a[-1]-b[-1])
+  reverse=np.linalg.norm(a[0]-b[-1])+np.linalg.norm(a[-1]-b[0])
+  return b if direct<=reverse else b[::-1]
  best,cost=b,float("inf")
- for q in (b,b[::-1]):
-  r=np.roll(q,-int(np.argmin(np.sum((q-a[0])**2,axis=1))),axis=0);v=float(np.mean(np.sum((r-a)**2,axis=1)))
-  if v<cost:best,cost=r,v
+ for candidate in (b,b[::-1]):
+  offset=int(np.argmin(np.sum((candidate-a[0])**2,axis=1)))
+  rolled=np.roll(candidate,-offset,axis=0)
+  error=float(np.mean(np.sum((rolled-a)**2,axis=1)))
+  if error<cost:
+   best,cost=rolled,error
  return best
 
-def _center(p):
- q=np.asarray(p.get("points") or [],dtype=np.float64)
- return np.mean(q,axis=0) if q.ndim==2 and len(q) else np.zeros(2)
+def _center(path):
+ points=np.asarray(path.get("points") or [],dtype=np.float64)
+ return np.mean(points,axis=0) if points.ndim==2 and len(points) else np.zeros(2)
 
-def interpolate_vector_paths(source,target,progress):
- t=float(np.clip(progress,0,1));a=list(source or []);b=list(target or []);amap={str(p["path_id"]):p for p in a};bmap={str(p["path_id"]):p for p in b};pairs=[];used_a=set();used_b=set()
- for key in sorted(set(amap)&set(bmap)):
-  pa,pb=amap[key],bmap[key]
-  if pa.get("group")==pb.get("group") and bool(pa.get("closed"))==bool(pb.get("closed")):pairs.append((pa,pb));used_a.add(key);used_b.add(key)
- candidates=[]
- for ka,pa in amap.items():
-  if ka in used_a:continue
-  for kb,pb in bmap.items():
-   if kb in used_b or pa.get("group")!=pb.get("group") or bool(pa.get("closed"))!=bool(pb.get("closed")):continue
-   candidates.append((float(np.linalg.norm(_center(pa)-_center(pb))),ka,kb))
- for _,ka,kb in sorted(candidates):
-  if ka in used_a or kb in used_b:continue
-  used_a.add(ka);used_b.add(kb);pairs.append((amap[ka],bmap[kb]))
+def _sample_anchored_pair(source_path,target_path,count,anchors):
+ """Sample both paths through paired arc-length landmarks."""
+ source_t=np.asarray([item["source_t"] for item in anchors],dtype=np.float64)
+ target_t=np.asarray([item["target_t"] for item in anchors],dtype=np.float64)
+ mean_segments=(np.diff(source_t)+np.diff(target_t))*0.5
+ cumulative=np.r_[0.,np.cumsum(mean_segments)]
+ if cumulative[-1]<=1e-9:
+  u_knots=np.linspace(0,1,len(anchors))
+ else:
+  u_knots=cumulative/cumulative[-1]
+ u_samples=np.unique(np.r_[np.linspace(0,1,count),u_knots])
+ src_samples=np.interp(u_samples,u_knots,source_t)
+ tgt_samples=np.interp(u_samples,u_knots,target_t)
+ source_points=_resample_at(
+  source_path["points"],src_samples,bool(source_path.get("closed"))
+ )
+ target_points=_resample_at(
+  target_path["points"],tgt_samples,bool(target_path.get("closed"))
+ )
+ return source_points,target_points
+
+def _morph_pair(source,target,progress,anchors=None,
+                source_alpha_scale=1.0,target_alpha_scale=1.0,
+                path_id=None,mode="pair"):
+ closed_source=bool(source.get("closed"))
+ closed_target=bool(target.get("closed"))
+ if closed_source!=closed_target:
+  raise ValueError(
+   "Authored path correspondence cannot pair open and closed paths yet."
+  )
+ count=max(16,min(128,max(
+  len(source.get("points") or []),len(target.get("points") or [])
+ )))
+ if anchors:
+  a,b=_sample_anchored_pair(source,target,count,anchors)
+ else:
+  a=_resample(source.get("points") or [],count,closed_source)
+  b=_resample(target.get("points") or [],count,closed_target)
+  if a is not None and b is not None:
+   b=_align(a,b,closed_source)
+ if a is None or b is None:
+  return None
+ t=float(np.clip(progress,0,1))
+ source_color=np.asarray(source.get("color",[238,238,234]),dtype=np.float64)
+ target_color=np.asarray(target.get("color",[238,238,234]),dtype=np.float64)
+ color=source_color*(1-t)+target_color*t
+ source_alpha=float(source.get("alpha",180))*float(source.get("opacity",1))*source_alpha_scale
+ target_alpha=float(target.get("alpha",180))*float(target.get("opacity",1))*target_alpha_scale
+ return {
+  "path_id":path_id or f"morph:{source['path_id']}:{target['path_id']}",
+  "group":source.get("group",target.get("group","stroke")),
+  "closed":closed_source,
+  "points":(a*(1-t)+b*t).tolist(),
+  "width":float(source.get("width",1))*(1-t)+float(target.get("width",1))*t,
+  "color":np.clip(color,0,255).tolist(),
+  "alpha":source_alpha*(1-t)+target_alpha*t,
+  "opacity":1.0,
+  "correspondence_mode":mode,
+ }
+
+def interpolate_vector_paths(source,target,progress,path_correspondence=None):
+ """Morph paths using authored pair/split/merge maps, then automatic matching.
+
+ Authored path maps consume their IDs before the deterministic fallback matcher
+ sees the remaining paths. Split duplicates one source contour and fans it out;
+ merge converges source contours onto a shared target with distributed ink weight.
+ """
+ t=float(np.clip(progress,0,1))
+ source_paths=list(source or [])
+ target_paths=list(target or [])
+ source_map={str(path["path_id"]):path for path in source_paths}
+ target_map={str(path["path_id"]):path for path in target_paths}
+ used_source=set()
+ used_target=set()
  result=[]
- for pa,pb in pairs:
-  closed=bool(pa.get("closed"));n=max(16,min(128,max(len(pa["points"]),len(pb["points"]))));x,y=_resample(pa["points"],n,closed),_resample(pb["points"],n,closed)
-  if x is None or y is None:continue
-  y=_align(x,y,closed);col=np.asarray(pa.get("color",[238,238,234]))*(1-t)+np.asarray(pb.get("color",[238,238,234]))*t
-  result.append({"path_id":f"morph:{pa['path_id']}:{pb['path_id']}","group":pa.get("group","stroke"),"closed":closed,"points":(x*(1-t)+y*t).tolist(),"width":float(pa.get("width",1))*(1-t)+float(pb.get("width",1))*t,"color":np.clip(col,0,255).tolist(),"alpha":float(pa.get("alpha",180))*float(pa.get("opacity",1))*(1-t)+float(pb.get("alpha",180))*float(pb.get("opacity",1))*t,"opacity":1.})
- for p in a:
-  if str(p["path_id"]) not in used_a:q=dict(p);q["opacity"]=float(q.get("opacity",1))*(1-t);result.append(q)
- for p in b:
-  if str(p["path_id"]) not in used_b:q=dict(p);q["opacity"]=float(q.get("opacity",1))*t;result.append(q)
+
+ for mapping_index,mapping in enumerate(path_correspondence or []):
+  source_ids=list(mapping["source_path_ids"])
+  target_ids=list(mapping["target_path_ids"])
+  missing_source=[item for item in source_ids if item not in source_map]
+  missing_target=[item for item in target_ids if item not in target_map]
+  if missing_source or missing_target:
+   raise ValueError(
+    "Authored path map references unavailable path IDs: "
+    + ", ".join([*missing_source,*missing_target])
+   )
+  if any(item in used_source for item in source_ids):
+   raise ValueError("Authored path maps reuse an outgoing path ID.")
+  if any(item in used_target for item in target_ids):
+   raise ValueError("Authored path maps reuse an incoming path ID.")
+  mode=str(mapping.get("mode","pair")).lower()
+  anchors=list(mapping.get("anchors") or [])
+  if mode=="pair":
+   pairs=[(source_ids[0],target_ids[0],1.0,1.0)]
+  elif mode=="split":
+   divisor=float(len(target_ids))
+   pairs=[(source_ids[0],target_id,1.0/divisor,1.0) for target_id in target_ids]
+  elif mode=="merge":
+   divisor=float(len(source_ids))
+   pairs=[(source_id,target_ids[0],1.0,1.0/divisor) for source_id in source_ids]
+  else:
+   raise ValueError(f"Unsupported authored path mapping mode: {mode}")
+  for pair_index,(source_id,target_id,source_scale,target_scale) in enumerate(pairs):
+   item=_morph_pair(
+    source_map[source_id],target_map[target_id],t,
+    anchors=anchors,
+    source_alpha_scale=source_scale,
+    target_alpha_scale=target_scale,
+    path_id=f"authored:{mapping_index}:{pair_index}:{source_id}:{target_id}",
+    mode=mode,
+   )
+   if item is not None:
+    result.append(item)
+  used_source.update(source_ids)
+  used_target.update(target_ids)
+
+ # Keep the existing stable-ID + compatible-group nearest-centroid matcher
+ # for every path that has not been authored explicitly.
+ remaining_source=[path for path in source_paths if str(path["path_id"]) not in used_source]
+ remaining_target=[path for path in target_paths if str(path["path_id"]) not in used_target]
+ source_by_id={str(path["path_id"]):path for path in remaining_source}
+ target_by_id={str(path["path_id"]):path for path in remaining_target}
+ auto_pairs=[]
+ for path_id in sorted(set(source_by_id)&set(target_by_id)):
+  a,b=source_by_id[path_id],target_by_id[path_id]
+  if a.get("group")==b.get("group") and bool(a.get("closed"))==bool(b.get("closed")):
+   auto_pairs.append((path_id,path_id))
+   used_source.add(path_id)
+   used_target.add(path_id)
+ candidates=[]
+ for source_id,a in source_by_id.items():
+  if source_id in used_source:continue
+  for target_id,b in target_by_id.items():
+   if target_id in used_target:continue
+   if a.get("group")!=b.get("group") or bool(a.get("closed"))!=bool(b.get("closed")):
+    continue
+   count_penalty=abs(np.log(
+    max(1,len(a.get("points") or []))/max(1,len(b.get("points") or []))
+   ))*.04
+   distance=float(np.linalg.norm(_center(a)-_center(b)))+float(count_penalty)
+   candidates.append((distance,source_id,target_id))
+ for _,source_id,target_id in sorted(candidates):
+  if source_id in used_source or target_id in used_target:continue
+  auto_pairs.append((source_id,target_id))
+  used_source.add(source_id)
+  used_target.add(target_id)
+ for source_id,target_id in auto_pairs:
+  item=_morph_pair(
+   source_by_id[source_id],target_by_id[target_id],t,
+   path_id=f"morph:{source_id}:{target_id}",
+   mode="automatic",
+  )
+  if item is not None:
+   result.append(item)
+ for path in source_paths:
+  path_id=str(path["path_id"])
+  if path_id not in used_source:
+   item=dict(path)
+   item["opacity"]=float(item.get("opacity",1.0))*(1.0-t)
+   result.append(item)
+ for path in target_paths:
+  path_id=str(path["path_id"])
+  if path_id not in used_target:
+   item=dict(path)
+   item["opacity"]=float(item.get("opacity",1.0))*t
+   result.append(item)
  return result
 
 def render_vector_paths(paths,size):
