@@ -165,6 +165,7 @@ class XMModule:
         cue_data = []
         seen_patterns: set[int] = set()
         previous: XMOrderCue | None = None
+        carried_instruments = [0] * self.channels
         for cue in self.cues:
             rows = self.patterns[cue.pattern]
             item = cue.to_dict(
@@ -176,6 +177,11 @@ class XMModule:
             item["instruments"] = [
                 [event.instrument for event in row] for row in rows
             ]
+            item["channel_initial_instruments"] = list(carried_instruments)
+            for row in rows:
+                for channel_index, event in enumerate(row):
+                    if event.instrument:
+                        carried_instruments[channel_index] = event.instrument
             item["volumes"] = [
                 [event.volume for event in row] for row in rows
             ]
@@ -285,6 +291,7 @@ def tracker_packet_at(
         for item in (data.get("instruments") or [])
     }
     instrument_rows = cue.get("instruments") or []
+    initial_instruments = cue.get("channel_initial_instruments") or []
     volume_rows = cue.get("volumes") or []
     effect_rows = cue.get("effects") or []
     parameter_rows = cue.get("parameters") or []
@@ -327,7 +334,10 @@ def tracker_packet_at(
 
         # Tracker instrument selection and note pitch persist until replaced.
         held_note = 0
-        held_instrument = 0
+        held_instrument = (
+            int(initial_instruments[channel_index])
+            if channel_index < len(initial_instruments) else 0
+        )
         note_age = row_total + 1
         recent_hits = 0
         volume = 0.82
