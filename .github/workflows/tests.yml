@@ -252,6 +252,39 @@ jobs:
                   for item in duplicate.objects
               )
 
+              # Archived objects without active layer records must also receive
+              # unique layer identities in a duplicated scene.
+              archived_scene = VisualScene(name="ARCHIVED SOURCE")
+              archived_scene.synchronize_layers(layers, score)
+              archived_layer_id = layers[0].layer_id
+              archived_scene.synchronize_layers(layers[1:], score)
+              archived_object = next(
+                  item for item in archived_scene.objects
+                  if item.layer_id == archived_layer_id
+              )
+              assert archived_object.lifecycle == "ARCHIVED"
+              archived_project = VisualProject.from_legacy(
+                  archived_scene, [layers[1].to_dict()]
+              )
+              archived_copy = archived_project.duplicate_scene()
+              archived_source_ids = {
+                  item.layer_id for item in archived_scene.objects
+              }
+              archived_copy_ids = {
+                  item.layer_id for item in archived_copy.objects
+              }
+              assert archived_source_ids.isdisjoint(archived_copy_ids)
+
+              # Empty layer snapshots remain empty across serialization.
+              empty_scene = VisualScene(
+                  scene_id="scene-empty", name="EMPTY", state="INACTIVE"
+              )
+              visual_project.register_scene(empty_scene, [])
+              empty_round_trip = VisualProject.from_dict(
+                  json.loads(json.dumps(visual_project.to_dict()))
+              )
+              assert empty_round_trip.layers_for_scene(empty_scene.scene_id) == []
+
               route = visual_project.set_cue_route(
                   visual_score.cues[0].cue_id,
                   duplicate.scene_id,
