@@ -66,8 +66,16 @@ class VisualMetrics:
         else:
             frames = list(frame_map.values())
             indices = list(range(len(frames)))
+        tracker_values = {
+            "tracker_notes": tracker_notes,
+            "tracker_instruments": tracker_instruments,
+            "tracker_progress": float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0)),
+            "tracker_order": int(tracker.get("order", -1)),
+            "tracker_pattern": int(tracker.get("pattern", -1)),
+            "tracker_density": float(np.clip(tracker.get("density", 0.0), 0.0, 1.0)),
+        }
         if not frames:
-            return cls()
+            return cls(**tracker_values)
 
         def mean(field: str) -> float:
             return float(np.mean([getattr(frame, field) for frame in frames]))
@@ -113,12 +121,7 @@ class VisualMetrics:
             energies=energies,
             correlation=corr,
             source_count=len(frames),
-            tracker_notes=tracker_notes,
-            tracker_instruments=tracker_instruments,
-            tracker_progress=float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0)),
-            tracker_order=int(tracker.get("order", -1)),
-            tracker_pattern=int(tracker.get("pattern", -1)),
-            tracker_density=float(np.clip(tracker.get("density", 0.0), 0.0, 1.0)),
+            **tracker_values,
         )
 
 
