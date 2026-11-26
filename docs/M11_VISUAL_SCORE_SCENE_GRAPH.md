@@ -136,4 +136,4 @@ Do not interpret the current schema containers as completed runtime features. Th
 - snapshots and deterministic scene recovery/fallback execution;
 - multi-scene authoring and rehearsal UI.
 
-The next step should be **M12 — Scene State Machine and Transition Contracts**. It should introduce an explicit, testable state machine before adding morph/dissolve/assembly effects. The compositor should continue receiving a resolved active scene rather than owning transition policy itself.
+**M12 — Scene State Machine and Transition Contracts** is now implemented as a deterministic model/controller foundation. See [M12_SCENE_STATE_MACHINE_TRANSITIONS.md](M12_SCENE_STATE_MACHINE_TRANSITIONS.md). The next step is M13 — Multi-scene project state and score-cue integration. The compositor should continue receiving resolved scene state rather than owning transition policy itself.
