@@ -53,22 +53,37 @@ jobs:
           header[38:58] = b"MilkyTracker".ljust(20, b"\0")
           struct.pack_into("<H", header, 58, 0x0104)
           struct.pack_into("<I", header, 60, 276)
-          struct.pack_into("<8H", header, 64, 1, 0, 2, 1, 0, 1, 6, 125)
+          struct.pack_into("<8H", header, 64, 1, 0, 2, 1, 1, 1, 6, 125)
           header[80] = 0
-          events = bytes((49, 0, 0, 0, 0, 0x80))
+          events = bytes((49, 1, 0, 0, 0, 0x80))
           pattern = struct.pack("<IBHH", 9, 0, 1, len(events)) + events
+          instrument = bytearray(33)
+          struct.pack_into("<I", instrument, 0, 33)
+          instrument[4:26] = b"Smoke Instrument".ljust(22, b"\\0")
+          struct.pack_into("<H", instrument, 27, 1)
+          struct.pack_into("<I", instrument, 29, 40)
+          sample_header = bytearray(40)
+          struct.pack_into("<I", sample_header, 0, 2)
+          sample_header[18:40] = b"smoke-sample.wav".ljust(22, b"\\0")
           with tempfile.TemporaryDirectory() as folder:
               module_path = Path(folder) / "smoke.xm"
-              module_path.write_bytes(bytes(header) + pattern)
+              module_path.write_bytes(
+                  bytes(header) + pattern + bytes(instrument)
+                  + bytes(sample_header) + b"\\0\\0"
+              )
               module = load_xm(module_path)
               score = module.visual_data()
               assert module.channels == 2
+              assert module.instrument_count == 1
+              assert module.instruments[0].sample_names == ("smoke-sample.wav",)
               assert len(score["channel_profiles"]) == 2
+              assert score["channel_profiles"][0]["sample_name"] == "smoke-sample.wav"
               assert score["channel_profiles"][0]["note_count"] == 1
               packet = tracker_packet_at(score, 0.0)
               assert packet is not None
               assert len(packet["channel_states"]) == 2
               assert packet["channel_states"][0]["held_note"] == 49
+              assert packet["channel_states"][0]["sample_name"] == "smoke-sample.wav"
               image = GeneratorBank().render(
                   "TRACKER ENSEMBLE",
                   {"tracker_cue": packet},
