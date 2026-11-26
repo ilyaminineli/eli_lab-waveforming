@@ -191,7 +191,7 @@ See [docs/M12_SCENE_STATE_MACHINE_TRANSITIONS.md](docs/M12_SCENE_STATE_MACHINE_T
 - Adds a persistent `VisualProject` collection containing multiple scene graphs, an active-scene ID, independent renderer-layer snapshots, transition contracts and explicit XM cue routes.
 - Scene selection restores its own layer stack. Scene duplication regenerates scene/layer/object identities, remaps graph relationships and retains source lineage.
 - The scene panel supports creating and duplicating scenes, selecting a transition target/family/duration, committing a manual M12 transition, and routing the current XM order/pattern cue to a target scene.
-- Only explicitly routed XM cues trigger scene changes. Cue crossings are queued while another transition is active, validated through the M12 proposal/commit controller, and sampled on the live show clock.
+- Only explicitly routed XM cues trigger scene changes. Cue crossings are queued while another transition is active, validated through the M12 proposal/commit controller, and sampled on the live show clock. Cue scanning also resets on audio/XM loop wraps, so routed opening cues are eligible on each pass.
 - Offline export also resolves cue routes against score time and uses the same transition controller for deterministic scene activation.
 - `.wfp` format version 3 persists the scene collection. Existing M11/M12 single-scene projects migrate from their saved `visual_scene` and `layers` records.
 - Live/offline compositor results receive resolved project and lifecycle metadata, including active scene, transition sample and queued cues.
