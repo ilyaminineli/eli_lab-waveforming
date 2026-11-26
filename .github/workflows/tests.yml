@@ -930,10 +930,10 @@ jobs:
                       json.loads(json.dumps(lifecycle_contract.to_dict()))
                   ).metadata["seed"] == 17
 
-              # Other future families retain lifecycle-only rendering and skip
-              # the hidden incoming scene.
+              # Unimplemented families remain explicit hold modes; lifecycle
+              # families above use their dedicated derived-render paths.
               hold_contract = ScenePairRenderContract.from_dict({
-                  **pair_contract.to_dict(), "family": "erosion",
+                  **pair_contract.to_dict(), "family": "mask_reveal",
               })
               assert hold_contract.render_mode == "hold"
               assert blend_scene_pair_frames(
