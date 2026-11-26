@@ -323,6 +323,18 @@ class MainWindow(QMainWindow):
         self.source_scroll.setWidget(source_panel)
         left.addWidget(self.source_scroll)
 
+        self.tracker_voice_box = QGroupBox("XM TRACKER VOICES")
+        tracker_voice_layout = QVBoxLayout(self.tracker_voice_box)
+        tracker_voice_layout.setContentsMargins(3, 3, 3, 3)
+        self.tracker_voice_list = QListWidget()
+        self.tracker_voice_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
+        self.tracker_voice_list.setMaximumHeight(126)
+        tracker_voice_layout.addWidget(self.tracker_voice_list)
+        self.tracker_voice_box.setVisible(False)
+        left.addWidget(self.tracker_voice_box)
+
         analysis_box = QGroupBox("ANALYSIS FIELD")
         analysis_form = QFormLayout(analysis_box)
         self.fft = QComboBox()
@@ -888,6 +900,7 @@ class MainWindow(QMainWindow):
 
         self._tracker_data = tracker_data
         self._tracker_duration = module.duration
+        self._refresh_tracker_voices()
         self.timeline.markers = [
             marker
             for marker in self.timeline.markers
@@ -926,6 +939,44 @@ class MainWindow(QMainWindow):
             f"{module.flow_control_effect_count} order/loop flow commands."
         )
         return True, ""
+
+    def _refresh_tracker_voices(self) -> None:
+        if not hasattr(self, "tracker_voice_list"):
+            return
+        self.tracker_voice_list.clear()
+        profiles = self._tracker_data.get("channel_profiles") or []
+        instruments = self._tracker_data.get("instruments") or []
+        instrument_map = {
+            int(item.get("index", 0)): item.get("name", "")
+            for item in instruments
+        }
+        for profile in profiles:
+            channel = int(profile.get("channel", 0))
+            instrument_id = int(profile.get("instrument_id", 0))
+            sample_name = str(
+                profile.get("sample_name")
+                or instrument_map.get(instrument_id, "")
+                or "UNASSIGNED"
+            )
+            silent = bool(profile.get("silent", False))
+            note_count = int(profile.get("note_count", 0))
+            state = "SILENT" if silent else f"{note_count} NOTES"
+            item = QListWidgetItem(
+                f"CH {channel:02d}  ·  {sample_name[:24]}  ·  {state}"
+            )
+            item.setToolTip(
+                f"Voice ID: {profile.get('voice_id', '')}\n"
+                f"Instrument: {instrument_id:02d}\n"
+                f"Pitch range: {profile.get('pitch_min', 0)}–{profile.get('pitch_max', 0)}\n"
+                f"Patterns: {', '.join(str(value) for value in profile.get('active_patterns', [])) or 'none'}"
+            )
+            self.tracker_voice_list.addItem(item)
+        channel_count = int(self._tracker_data.get("channels", len(profiles)))
+        active_count = sum(1 for item in profiles if not item.get("silent", False))
+        self.tracker_voice_box.setTitle(
+            f"XM TRACKER VOICES  ·  {active_count}/{channel_count} ACTIVE"
+        )
+        self.tracker_voice_box.setVisible(bool(profiles))
 
     def import_audio(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -1222,6 +1273,7 @@ class MainWindow(QMainWindow):
         self._tracker_duration = max(
             0.0, float(self._tracker_data.get("duration", 0.0))
         )
+        self._refresh_tracker_voices()
         self._settings = GeneratorSettings(**data.get("settings", {}))
         self.complexity.setValue(int(self._settings.complexity))
         self.motion.setValue(int(self._settings.motion))
