@@ -1075,6 +1075,13 @@ class MainWindow(QMainWindow):
                 + (f"\n…and {len(errors) - 10} more." if len(errors) > 10 else ""),
             )
         if imported:
+            # Switching from tracker-only transport to audio-backed transport
+            # should not leave two play clocks competing for the same playhead.
+            if self._tracker_playing:
+                self._tracker_playing = False
+                self._render_timer.stop()
+                self._variation_timer.stop()
+                self.play_button.setText("▶  PLAY")
             self._replace_feature_bus()
             self._last_packet = {}
             self._refresh_source_options()
@@ -1228,6 +1235,9 @@ class MainWindow(QMainWindow):
             return
 
         self._loading_project = True
+        self._tracker_playing = False
+        self._render_timer.stop()
+        self._variation_timer.stop()
         self.audio.stop()
         for track_id in list(self.sources):
             self.audio.remove_source(track_id)
@@ -1314,6 +1324,8 @@ class MainWindow(QMainWindow):
         self.feedback_shift.setValue(int(feedback.get("shift", 0)))
         self._last_packet = {}
         self._last_position = 0.0
+        self._tracker_clock_origin = 0.0
+        self._tracker_clock_started = 0.0
         self.audio.seek(0.0)
         self._refresh_source_options()
         selected = (
