@@ -1009,6 +1009,16 @@ jobs:
                   cadence_flags.append(cadence_metrics["sampled_current_frame"])
               assert cadence_flags == [True, False, False, True]
               assert cadence_buffer.sample_count == 2
+              disabled_settings = TemporalEchoSettings.from_mapping({"enabled": False})
+              disabled_overlays, disabled_metrics = cadence_buffer.prepare(
+                  Image.new("RGBA", (16, 12), (20, 20, 20, 255)),
+                  timestamp=0.25,
+                  transition_id="echo-cadence",
+                  settings=disabled_settings,
+              )
+              assert disabled_overlays == []
+              assert disabled_metrics["reset_reason"] == "disabled"
+              assert cadence_buffer.sample_count == 0
 
               seek_overlays, seek_metrics = echo_history_a.prepare(
                   Image.new("RGBA", (32, 24), (0, 0, 0, 0)),
