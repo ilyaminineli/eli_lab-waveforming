@@ -16,6 +16,7 @@ RENDERED_TRANSITION_MODES = {
     "morph": "object_morph",
     "assembly": "assembly",
     "erosion": "erosion",
+    "temporal_echo": "temporal_echo",
 }
 
 
