@@ -541,6 +541,14 @@ jobs:
               assert abs(matched["scale"] - 1.0) < 1e-6
               assert abs(matched["rotation"] - 360.0) < 1e-6
               assert abs(matched["opacity"] - 0.8) < 1e-6
+              print(
+                  "MORPH DEBUG",
+                  morph_contract.object_correspondence,
+                  [(item.get("object_id"), item.get("layer_id")) for item in morph_contract.outgoing["scene"].get("objects", [])],
+                  [(item.get("object_id"), item.get("layer_id")) for item in morph_contract.incoming["scene"].get("objects", [])],
+                  morph_in_layer.layer_id,
+                  list(morph_by_id),
+              )
               assert morph_in_layer.layer_id not in morph_by_id
               assert abs(morph_by_id[source_only_layer.layer_id]["opacity"] - 0.3) < 1e-6
               assert abs(morph_by_id[target_only_layer.layer_id]["opacity"] - 0.4) < 1e-6
