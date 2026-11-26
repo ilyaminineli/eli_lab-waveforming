@@ -309,6 +309,9 @@ class ScenePairRenderContract:
             metadata={
                 "trigger": deepcopy(transition_record.get("trigger", {})),
                 "seed": int(transition_record.get("seed", sample_data.get("seed", 0))),
+                "transition_metadata": deepcopy(
+                    transition_record.get("metadata", sample_data.get("metadata", {}))
+                ),
             },
         )
 
