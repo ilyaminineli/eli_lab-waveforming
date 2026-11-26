@@ -541,14 +541,6 @@ jobs:
               assert abs(matched["scale"] - 1.0) < 1e-6
               assert abs(matched["rotation"] - 360.0) < 1e-6
               assert abs(matched["opacity"] - 0.8) < 1e-6
-              print(
-                  "MORPH DEBUG",
-                  morph_contract.object_correspondence,
-                  [(item.get("object_id"), item.get("layer_id")) for item in morph_contract.outgoing["scene"].get("objects", [])],
-                  [(item.get("object_id"), item.get("layer_id")) for item in morph_contract.incoming["scene"].get("objects", [])],
-                  morph_in_layer.layer_id,
-                  list(morph_by_id),
-              )
               assert morph_in_layer.layer_id not in morph_by_id
               assert abs(morph_by_id[source_only_layer.layer_id]["opacity"] - 0.3) < 1e-6
               assert abs(morph_by_id[target_only_layer.layer_id]["opacity"] - 0.4) < 1e-6
@@ -589,6 +581,34 @@ jobs:
                   "source_object_id": shared_out.object_id,
                   "target_object_id": shared_out.object_id,
                   "kind": "identity",
+              }]
+
+              # Duplicated project scenes change object IDs but retain lineage.
+              lineage_source = VisualObject.from_layer(morph_out_layer)
+              lineage_target = VisualObject.from_layer(morph_in_layer)
+              lineage_target.lineage = [lineage_source.object_id]
+              lineage_contract = ScenePairRenderContract.from_dict({
+                  **morph_contract.to_dict(),
+                  "outgoing": {
+                      **morph_contract.outgoing,
+                      "scene": {
+                          **morph_contract.outgoing["scene"],
+                          "objects": [lineage_source.to_dict()],
+                      },
+                  },
+                  "incoming": {
+                      **morph_contract.incoming,
+                      "scene": {
+                          **morph_contract.incoming["scene"],
+                          "objects": [lineage_target.to_dict()],
+                      },
+                  },
+                  "object_correspondence": [],
+              })
+              assert lineage_contract.object_correspondence == [{
+                  "source_object_id": lineage_source.object_id,
+                  "target_object_id": lineage_target.object_id,
+                  "kind": "lineage",
               }]
 
               # Other future families retain lifecycle-only rendering and skip

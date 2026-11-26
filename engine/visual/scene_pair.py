@@ -521,10 +521,11 @@ def build_object_morph_state(
             layer_id, _fade_layer(layer, resolved.outgoing_weight)
         )
     for layer_id, layer in incoming_by_layer.items():
-        output_layers.setdefault(
-            layer_id, _fade_layer(layer, resolved.incoming_weight)
-        )
-        incoming_layer_map.setdefault(layer_id, layer_id)
+        if layer_id not in matched_target_layers:
+            output_layers.setdefault(
+                layer_id, _fade_layer(layer, resolved.incoming_weight)
+            )
+            incoming_layer_map.setdefault(layer_id, layer_id)
 
     source_order = [
         str(value) for value in outgoing_scene.get("layer_order", [])
