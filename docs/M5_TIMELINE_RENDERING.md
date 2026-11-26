@@ -67,7 +67,7 @@ The current target machine profile supplied for this milestone is:
 
 The renderer is CPU/Pillow/NumPy based; it does not currently use the Radeon GPU. M5 therefore reduces CPU work rather than introducing a GPU dependency:
 
-- Preview defaults to **320×240 at 5 fps (ECO)**; LOW (360×270 at 6 fps) and BALANCED (480×360 at 8 fps) can be selected. The project remains **1920×1440**.
+- M5 initially defaulted to **320×240 at 5 fps (ECO)**. M7 changes the application default to **480×360 at 8 fps (BALANCED)**; ECO and LOW (360×270 at 6 fps) remain selectable. The project remains **1920×1440**.
 - The selected preview profile is applied at a worker frame boundary; the Qt event loop never reconstructs or renders the compositor.
 - A dedicated preview thread owns the compositor. The UI sends immutable snapshots through a one-item latest-frame queue; obsolete pending renders are dropped.
 - Preview and live analysis threads are set to below-normal priority where supported, yielding CPU time to the Qt event loop and audio output.
