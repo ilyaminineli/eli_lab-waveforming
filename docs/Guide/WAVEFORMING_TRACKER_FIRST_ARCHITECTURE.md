@@ -253,6 +253,9 @@ The director should propose candidate scene changes separately from committing t
 - Explicit mapping from stable XM order/pattern cue IDs to target scenes and transition contracts. Eligible cue crossings are queued and proposed/committed through the M12 controller in live preview and offline export.
 - Scene collection and basic transition-authoring controls in the app.
 - Resolved project/scene lifecycle and transition samples passed to live/offline compositor results.
+- Shared `ScenePairRenderContract` with outgoing/incoming VisualScene graphs and independent layer snapshots.
+- Deterministic dissolve/crossfade and cut behavior using the M12 sample weights; same compositor path is used in live preview and offline export.
+- Scene-pair frames are blended after both scene stacks render, with temporal feedback applied once to the resolved pair. Live pair rendering is CPU-side while the normal single-scene OpenGL path resumes after completion.
 
 ### Still planned — do not treat as implemented
 
@@ -260,7 +263,7 @@ The director should propose candidate scene changes separately from committing t
 - General tracker formats beyond XM.
 - Editable VisualBrief and VisualIdentity models.
 - Multi-layer logical objects, authorable relationship graph and motif lineage tools.
-- Actual pixel-level dissolve/crossfade, morph, assembly, erosion, mask reveal, displacement and temporal-echo renderers; current M13 transitions update lifecycle and switch scenes on completion, without visual interpolation.
+- Object-aware morph, assembly, erosion, mask reveal, displacement and temporal-echo renderers; current M14 supports dissolve/crossfade and cut while future families retain lifecycle-only behavior.
 - Transfer/merge of preserved VisualObjects between scenes.
 - Automatic semantic candidate-generation from XM phrase/pattern meaning; current cue routing is explicitly authored.
 - Manual transition show-time checkpoints and offline replay; offline currently replays score-cue routes.
