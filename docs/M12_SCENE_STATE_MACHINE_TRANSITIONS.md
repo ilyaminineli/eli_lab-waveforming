@@ -130,14 +130,15 @@ The CI smoke test checks:
 - scene collection migration, scene/layer/object identity remapping, cue-route persistence and active-scene selection;
 - the XM → VisualScene → VisualScore path still passes.
 
-## 7. Explicitly not implemented yet
+## 7. Renderer boundary after M14
 
-- renderer-side dissolve/crossfade, morph, assembly, erosion, mask reveal, displacement or temporal-echo pixel effects;
-- simultaneous outgoing/incoming scene composition;
+M14 adds the shared outgoing/incoming `ScenePairRenderContract` and a real `dissolve` crossfade in live preview and offline export. `cut` switches at completion. Other transition families retain lifecycle-only hold behavior until their renderer implementations exist. See [M14_RENDERER_SCENE_PAIR_CROSSFADE.md](M14_RENDERER_SCENE_PAIR_CROSSFADE.md).
+
+Still not implemented:
+
+- morph, assembly, erosion, mask reveal, displacement and temporal-echo pixel effects;
 - transfer or merging of preserved VisualObjects between scenes;
 - automatic semantic candidate-generation from XM phrase/pattern meaning; cue routes are explicitly authored;
 - performer overrides, reverse transitions and runtime transition checkpoint/resume;
 - visual safety constraints during transition interpolation;
 - deterministic offline replay of manual transitions at their original show-time (score-cue routes are replayed).
-
-**Next: M14 — Renderer-side transition effects.** The first slice should add a shared outgoing/incoming scene-pair contract and a real dissolve/crossfade, then expand into object-aware morphing, assembly/erosion and temporal echo.
