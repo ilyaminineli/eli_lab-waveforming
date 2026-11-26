@@ -440,11 +440,15 @@ class OfflineRenderWorker(QThread):
                                             proposed_at=float(cue_data.get("time", seconds)),
                                             rationale="XM order/pattern cue route",
                                         )
-                                        transition_controller.commit(
+                                        commit_sample = transition_controller.commit(
                                             proposal.proposal_id,
                                             start_time=float(cue_data.get("time", seconds)),
                                         )
                                         project_model.add_transition(transition)
+                                        if commit_sample.get("completed"):
+                                            project_model.active_scene_id = (
+                                                transition_controller.active_scene_id
+                                            )
                                         break
                                     except (ValueError, RuntimeError):
                                         continue
