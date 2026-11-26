@@ -1,4 +1,7 @@
-from engine.visual.composition_director import create_auto_composition, vary_composition
+from engine.visual.composition_director import (
+    create_auto_composition, is_default_placeholder_composition, vary_composition,
+)
+from engine.visual.layers import VisualLayer
 
 
 def test_auto_composition_assigns_independent_source_channels():
@@ -33,3 +36,28 @@ def test_variation_keeps_layer_count_and_source_routing():
     assert all(0.0 <= layer.opacity <= 1.0 for layer in varied)
     assert all(0.1 <= layer.scale <= 3.0 for layer in varied)
     assert all(layer.rotation in (0, 90, 180, 270) for layer in varied)
+
+
+
+def test_lightweight_starter_layer_is_recognised_as_auto_compose_placeholder():
+    starter = VisualLayer(
+        name="PHASE LATTICE 01",
+        generator="PHASE LATTICE",
+        pass_mode="NONE",
+        pass_map="DISPLACEMENT",
+        pass_strength=0.0,
+    )
+
+    assert is_default_placeholder_composition([starter])
+
+
+def test_legacy_paper_relief_starter_layer_remains_recognised():
+    legacy_starter = VisualLayer(
+        name="PHASE LATTICE 01",
+        generator="PHASE LATTICE",
+        pass_mode="PAPER RELIEF",
+        pass_map="DISPLACEMENT",
+        pass_strength=0.55,
+    )
+
+    assert is_default_placeholder_composition([legacy_starter])
