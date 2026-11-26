@@ -162,6 +162,19 @@ The next architectural direction is a score/scene model based on the IDM Visual 
 
 See [docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md](docs/Guide/WAVEFORMING_TRACKER_FIRST_ARCHITECTURE.md).
 
+## M11 — VisualScore and persistent scene graph
+
+- Introduces typed `VisualObject`, `VisualScene`, `VisualRelationship`, `VisualScore` and timed `VisualScoreCue` records.
+- Existing renderer layers gain persistent object identities linked by `layer_id`; IDs survive layer property changes and reorder operations.
+- Removed layers archive their objects rather than silently reusing visual identity.
+- The scene stores attention roles, source bindings, XM channel relationships, relationships, spatial-environment placeholders and canonical layer order.
+- XM order/pattern boundaries become explicit `VisualScore` cues linked to the imported score and scene.
+- The scene's canonical order is consumed by live CPU/OpenGL preview and offline export.
+- Project format version 2 persists scene and score data. Version-1 projects migrate by rebuilding the scene from their existing layers and embedded tracker data.
+- `VisualLayer` remains the executable rendering unit; multi-layer logical objects, transition execution and MappingRule evaluation are later steps.
+
+See [docs/M11_VISUAL_SCORE_SCENE_GRAPH.md](docs/M11_VISUAL_SCORE_SCENE_GRAPH.md).
+
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
