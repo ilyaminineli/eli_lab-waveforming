@@ -79,6 +79,7 @@ class PreviewRenderWorker(threading.Thread):
         sequence: int,
         gpu_composite: bool = False,
         visual_scene: dict | None = None,
+        scene_pair: dict | None = None,
     ) -> None:
         # Snapshot UI-owned state. Audio feature packets are immutable after emit;
         # large NumPy arrays are shared read-only to avoid duplicating RAM.
@@ -97,6 +98,7 @@ class PreviewRenderWorker(threading.Thread):
             "sequence": int(sequence),
             "gpu_composite": bool(gpu_composite),
             "visual_scene": dict(visual_scene or {}),
+            "scene_pair": dict(scene_pair or {}),
         }
         try:
             self._queue.put_nowait(request)
@@ -166,13 +168,20 @@ class PreviewRenderWorker(threading.Thread):
                 elif reset_feedback:
                     self._compositor.reset_feedback(preserve_generators=True)
                 if self._compositor is not None and not reset_generators:
-                    self._compositor.generators.retain_layers(
-                        {
-                            layer.layer_id: layer.generator
-                            for layer in request["layers"]
-                            if layer.visible
-                        }
-                    )
+                    retained_layers = {
+                        layer.layer_id: layer.generator
+                        for layer in request["layers"]
+                        if layer.visible
+                    }
+                    pair = request.get("scene_pair") or {}
+                    for side_name in ("outgoing", "incoming"):
+                        side = pair.get(side_name) or {}
+                        for record in side.get("layers", []):
+                            if isinstance(record, dict) and record.get("visible", True):
+                                retained_layers[str(record["layer_id"])] = str(
+                                    record["generator"]
+                                )
+                    self._compositor.generators.retain_layers(retained_layers)
                 try:
                     render_args = {
                         "packet": request["packet"],
@@ -182,7 +191,22 @@ class PreviewRenderWorker(threading.Thread):
                         "screen": request["screen"],
                         "visual_scene": request["visual_scene"],
                     }
-                    if request["gpu_composite"] and not request["feedback_enabled"]:
+                    if request.get("scene_pair"):
+                        # Two scene snapshots require a CPU frame blend. The
+                        # canvas receives one finished image, never two partial
+                        # descriptors or an artificial single-scene substitute.
+                        image = self._compositor.render_scene_pair(
+                            packet=request["packet"],
+                            seconds=request["seconds"],
+                            scene_pair=request["scene_pair"],
+                            settings=request["settings"],
+                            screen=request["screen"],
+                            feedback_enabled=request["feedback_enabled"],
+                            feedback_amount=request["feedback_amount"],
+                            feedback_decay=request["feedback_decay"],
+                            feedback_shift=request["feedback_shift"],
+                        )
+                    elif request["gpu_composite"] and not request["feedback_enabled"]:
                         image = self._compositor.render_scene(
                             **render_args,
                             gpu_native=True,
