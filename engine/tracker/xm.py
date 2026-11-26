@@ -331,7 +331,7 @@ def load_xm(path: str | Path) -> XMModule:
             note_count=order_note_count,
             active_channels=tuple(sorted(active_channels)),
             instrument_ids=tuple(sorted(instruments)),
-            density=order_note_count / max(1, len(rows)),
+            density=order_note_count / max(1, len(rows) * channels),
             row_note_counts=tuple(row_counts),
             is_silent=order_note_count == 0,
         ))
