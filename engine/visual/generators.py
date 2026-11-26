@@ -1566,6 +1566,16 @@ class GeneratorBank:
             )
         return self._metrics_cache[key]
 
+    def vector_geometry(
+        self, name: str, packet: dict | None, seconds: float,
+        size: tuple[int, int], settings: GeneratorSettings,
+        source_id: str | None = None,
+    ):
+        """Build normalized vector paths for supported line/edge generators."""
+        from .vector_geometry import build_generator_vector_paths
+        metrics = self._metrics_for(packet, source_id)
+        return build_generator_vector_paths(name, metrics, seconds, size, settings)
+
     def render(
         self,
         name: str,

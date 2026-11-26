@@ -12,6 +12,7 @@ from .scene_pair import (
     blend_scene_pair_frames,
     build_object_morph_state,
 )
+from .vector_geometry import interpolate_vector_paths, render_vector_paths
 
 # Native project/export geometry stays 1920x1440. Preview is a lighter 4:3
 # working surface; the UI refreshes it at about 15 fps to avoid saturating CPUs.
@@ -505,6 +506,7 @@ class VisualCompositor:
         settings: GeneratorSettings,
         screen: str,
         frame_box: tuple[int, int, int, int],
+        vector_paths: list[dict] | None = None,
     ) -> tuple[Image.Image, tuple[int, int]] | None:
         w, h = self.size
         if layer.mask_mode == "FULL":
@@ -514,14 +516,13 @@ class VisualCompositor:
         x0, y0, x1, y1 = target_box
         local_size = (max(1, x1 - x0), max(1, y1 - y0))
 
-        visual = self.generators.render(
-            layer.generator,
-            packet,
-            seconds,
-            local_size,
-            settings,
-            state_key=layer.layer_id,
-            source_id=layer.source_id or None,
+        visual = (
+            render_vector_paths(vector_paths, local_size)
+            if vector_paths is not None
+            else self.generators.render(
+                layer.generator, packet, seconds, local_size, settings,
+                state_key=layer.layer_id, source_id=layer.source_id or None,
+            )
         )
         visual = self._apply_director_effects(visual, packet, seconds, layer.layer_id)
         visual = self._apply_pass_mode(
@@ -974,19 +975,41 @@ class VisualCompositor:
 
         if contract.render_mode == "object_morph":
             morph_scene, morph_records = build_object_morph_state(contract)
-            morph_layers = [
-                VisualLayer.from_dict(item)
-                for item in morph_records
-                if isinstance(item, dict)
-            ]
+            morph_layers = [VisualLayer.from_dict(item) for item in morph_records if isinstance(item, dict)]
+            frame_box = self._frame_box(screen)
+            vector_size = (
+                (self.size[0], self.size[1])
+                if any(layer.mask_mode == "FULL" for layer in morph_layers)
+                else (max(1, frame_box[2] - frame_box[0]), max(1, frame_box[3] - frame_box[1]))
+            )
+            outgoing_objects = {str(item.get("object_id","")): item for item in contract.outgoing["scene"].get("objects", [])}
+            incoming_objects = {str(item.get("object_id","")): item for item in contract.incoming["scene"].get("objects", [])}
+            outgoing_records = {str(item.get("layer_id","")): item for item in contract.outgoing.get("layers", [])}
+            incoming_records = {str(item.get("layer_id","")): item for item in contract.incoming.get("layers", [])}
+            vector_overrides, vector_path_counts = {}, []
+            for correspondence in contract.object_correspondence:
+                source_object = outgoing_objects.get(correspondence["source_object_id"], {})
+                target_object = incoming_objects.get(correspondence["target_object_id"], {})
+                source_record = outgoing_records.get(str(source_object.get("layer_id","")), {})
+                target_record = incoming_records.get(str(target_object.get("layer_id","")), {})
+                if not source_record or not target_record: continue
+                source_paths = self.generators.vector_geometry(
+                    str(source_record.get("generator","")), packet, seconds, vector_size, settings,
+                    source_id=str(source_record.get("source_id","")) or None,
+                )
+                target_paths = self.generators.vector_geometry(
+                    str(target_record.get("generator","")), packet, seconds, vector_size, settings,
+                    source_id=str(target_record.get("source_id","")) or None,
+                )
+                # Raster-only generators keep the object-transform fallback.
+                if source_paths is None or target_paths is None: continue
+                layer_id = str(source_record.get("layer_id",""))
+                vector_overrides[layer_id] = interpolate_vector_paths(source_paths, target_paths, contract.eased_progress)
+                vector_path_counts.append(len(vector_overrides[layer_id]))
             frame = self.render(
-                packet=packet,
-                seconds=seconds,
-                layers=morph_layers,
-                settings=settings,
-                screen=screen,
-                feedback_enabled=False,
-                visual_scene=morph_scene,
+                packet=packet, seconds=seconds, layers=morph_layers, settings=settings,
+                screen=screen, feedback_enabled=False, visual_scene=morph_scene,
+                vector_overrides=vector_overrides,
             )
             profiles = (dict(self.last_profile),)
         elif contract.render_mode == "crossfade":
@@ -1105,6 +1128,8 @@ class VisualCompositor:
                     len(contract.object_correspondence)
                     if contract.render_mode == "object_morph" else 0
                 ),
+                "vector_morph_object_count": len(vector_path_counts) if contract.render_mode == "object_morph" else 0,
+                "vector_morph_path_count": sum(vector_path_counts) if contract.render_mode == "object_morph" else 0,
             },
         }
         return frame
@@ -1121,6 +1146,7 @@ class VisualCompositor:
         feedback_decay: float = 0.90,
         feedback_shift: float = 0.0,
         visual_scene: dict | None = None,
+        vector_overrides: dict[str, list[dict]] | None = None,
     ) -> Image.Image:
         settings = settings or GeneratorSettings()
         layers = self._order_layers_from_scene(layers or [], visual_scene)
@@ -1137,7 +1163,8 @@ class VisualCompositor:
             if not layer.visible:
                 continue
             rendered = self._render_layer(
-                layer, packet, seconds, settings, screen, frame_box
+                layer, packet, seconds, settings, screen, frame_box,
+                vector_paths=(vector_overrides or {}).get(layer.layer_id),
             )
             if rendered is None:
                 continue
