@@ -6,7 +6,12 @@ import pytest
 from engine.tracker.xm import XMParseError, load_xm, tracker_packet_at
 
 
-def make_xm(path: Path, *, tempo_effect: tuple[int, int] | None = None) -> Path:
+def make_xm(
+    path: Path,
+    *,
+    tempo_effect: tuple[int, int] | None = None,
+    order_list: tuple[int, ...] = (0, 1),
+) -> Path:
     header = bytearray(336)
     header[:17] = b"Extended Module: "
     header[17:37] = b"Tracker fixture".ljust(20, b"\0")
@@ -14,8 +19,8 @@ def make_xm(path: Path, *, tempo_effect: tuple[int, int] | None = None) -> Path:
     header[38:58] = b"MilkyTracker 1.05.01".ljust(20, b"\0")
     struct.pack_into("<H", header, 58, 0x0104)
     struct.pack_into("<I", header, 60, 276)
-    struct.pack_into("<8H", header, 64, 2, 0, 2, 2, 2, 1, 6, 125)
-    header[80:82] = bytes((0, 1))
+    struct.pack_into("<8H", header, 64, len(order_list), 0, 2, 2, 2, 1, 6, 125)
+    header[80:80 + len(order_list)] = bytes(order_list)
 
     events = []
     for row in range(64):
@@ -77,7 +82,9 @@ def test_serialised_tracker_packet_matches_live_packet(tmp_path):
 
 
 def test_tracker_packets_expose_row_activity_and_pattern_reprises(tmp_path):
-    module = load_xm(make_xm(tmp_path / "fixture.xm"))
+    module = load_xm(make_xm(
+        tmp_path / "fixture.xm", order_list=(0, 0, 1)
+    ))
     packet = module.visual_packet(0.1)
     cues = module.visual_data()["cues"]
 
