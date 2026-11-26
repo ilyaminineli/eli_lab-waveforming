@@ -129,3 +129,60 @@ def test_stream_storage_falls_back_to_memory_when_resampling_is_needed(tmp_path)
     )
     assert source.storage_mode == "memory"
     assert source.samples is not None
+
+
+
+def test_director_uses_tracker_cues_for_scene_state_and_accents():
+    director = CompositionDirector("SEMI-AUTO")
+    packet = {
+        "position": 1.0,
+        "master_features": {},
+        "tracker_cue": {
+            "order": 10,
+            "pattern": 7,
+            "progress": 0.0,
+            "density": 0.15,
+            "row_activity": 0.4,
+            "transition_strength": 0.8,
+            "pattern_reprise": True,
+        },
+    }
+
+    first = director.update(packet, 1.0)
+    packet["position"] = 1.3
+    settled = director.update(packet, 1.3)
+
+    assert first.tracker_order == 10
+    assert first.tracker_pattern == 7
+    assert first.tracker_transition == 0.8
+    assert first.tracker_activity == 0.4
+    assert settled.tracker_reprise is True
+    assert settled.state == "INSTABILITY"
+    assert settled.energy > 0.0
+    assert settled.motion_scale > 1.0
+    assert settled.accent_amount > 0.0
+    assert settled.request_variation is False
+
+
+def test_auto_director_can_request_tracker_boundary_variation():
+    director = CompositionDirector("AUTO", variation_cooldown=5.0)
+    packet = {
+        "position": 1.0,
+        "master_features": {},
+        "tracker_cue": {
+            "order": 4,
+            "pattern": 3,
+            "progress": 0.0,
+            "density": 0.18,
+            "row_activity": 0.5,
+            "transition_strength": 0.9,
+            "pattern_reprise": False,
+        },
+    }
+
+    director.update(packet, 1.0)
+    packet["position"] = 1.3
+    output = director.update(packet, 1.3)
+
+    assert output.state == "EMERGENCE"
+    assert output.request_variation is True
