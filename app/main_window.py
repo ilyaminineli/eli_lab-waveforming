@@ -56,6 +56,7 @@ from engine.visual.preview_worker import (
     PreviewRenderWorker,
     is_newer_preview_frame,
 )
+from engine.visual.scene import VisualScene, VisualScore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -157,6 +158,8 @@ class MainWindow(QMainWindow):
         self._tracker_data: dict = {}
         self._tracker_duration = 0.0
         self.layer_stack = LayerStack()
+        self.visual_scene = VisualScene()
+        self.visual_score = VisualScore()
         self._auto_composed = False
         self._gpu_preview_disabled = False
         self._loading_project = False
@@ -698,6 +701,31 @@ class MainWindow(QMainWindow):
         self._refresh_layer_list(layer.layer_id)
         self._render_frame()
 
+    def _sync_visual_graph(self) -> VisualScene:
+        """Keep the persistent scene graph aligned with renderer layers and XM voices."""
+        self.visual_scene.synchronize_layers(
+            self.layer_stack.layers, self._tracker_data
+        )
+        source_score_id = str(self._tracker_data.get("score_id", ""))
+        if (
+            not self.visual_score.cues
+            or self.visual_score.source_score_id != source_score_id
+        ):
+            self.visual_score = VisualScore.from_tracker_data(
+                self._tracker_data,
+                self.visual_scene.scene_id,
+                max(float(self.timeline.duration), float(self._tracker_duration)),
+            )
+        else:
+            self.visual_score.bind_scene(self.visual_scene.scene_id)
+            self.visual_score.duration = max(
+                float(self.visual_score.duration),
+                float(self.timeline.duration),
+                float(self._tracker_duration),
+            )
+        self.visual_scene.score_position = max(0.0, float(self._last_position))
+        return self.visual_scene
+
     def _available_generator_names(self) -> list[str]:
         names = self.compositor.generator_names()
         if not self._tracker_data:
@@ -1177,13 +1205,16 @@ class MainWindow(QMainWindow):
         )
         if not filename:
             return
+        self._sync_visual_graph()
         data = {
             "format": "eli_lab.waveforming",
-            "version": 1,
+            "version": 2,
             "director_mode": self.director.mode,
             "auto_composed": self._auto_composed,
             "settings": asdict(self._settings),
             "layers": self.layer_stack.to_list(),
+            "visual_scene": self.visual_scene.to_dict(),
+            "visual_score": self.visual_score.to_dict(),
             "timeline": self.timeline.to_dict(),
             "tracker_data": self._tracker_data,
             "screen": self.screen.currentText(),
@@ -1304,6 +1335,18 @@ class MainWindow(QMainWindow):
                     layer.source_id = ""
             elif layer.source_id:
                 layer.source_id = source_id_map.get(layer.source_id, "")
+        saved_scene = data.get("visual_scene")
+        self.visual_scene = (
+            VisualScene.from_dict(saved_scene)
+            if isinstance(saved_scene, dict)
+            else VisualScene()
+        )
+        saved_visual_score = data.get("visual_score")
+        self.visual_score = (
+            VisualScore.from_dict(saved_visual_score)
+            if isinstance(saved_visual_score, dict)
+            else VisualScore()
+        )
         self.timeline = Timeline.from_dict(data.get("timeline"))
         if self._tracker_data:
             self.timeline.bpm = float(self._tracker_data.get("bpm", self.timeline.bpm))
@@ -1333,6 +1376,7 @@ class MainWindow(QMainWindow):
         )
         self._refresh_layer_list(selected)
         self._update_timeline_duration()
+        self._sync_visual_graph()
         self._update_status()
         self._update_time_label()
         self._loading_project = False
@@ -1457,6 +1501,7 @@ class MainWindow(QMainWindow):
             director_mode=self.director.mode,
             tracker_data=self._tracker_data,
             render_scale=render_scale,
+            visual_scene=self._sync_visual_graph().to_dict(),
         )
         self._export_progress.canceled.connect(self._export_worker.cancel)
         self._export_worker.progress.connect(self._on_export_progress)
@@ -1579,6 +1624,7 @@ class MainWindow(QMainWindow):
         self._render_frame()
 
     def _render_frame(self, *_args) -> None:
+        visual_scene_data = self._sync_visual_graph().to_dict()
         self._render_sequence += 1
         audio_seconds = self._last_position
         seconds = float(self._preview_animation_seconds)
@@ -1641,6 +1687,7 @@ class MainWindow(QMainWindow):
                 and not self._gpu_preview_disabled
                 and not self.feedback_enabled.isChecked()
             ),
+            visual_scene=visual_scene_data,
         )
         if force_cpu_preview:
             self._force_cpu_preview_frames = max(0, self._force_cpu_preview_frames - 1)
