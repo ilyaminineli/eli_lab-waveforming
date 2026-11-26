@@ -47,6 +47,7 @@ jobs:
           from engine.visual.layers import VisualLayer
           from engine.visual.compositor import VisualCompositor
           from engine.visual.scene import VisualScene, VisualScore
+          from engine.visual.project import VisualProject
           from engine.visual.transitions import (
               SceneTransition, SceneTransitionController,
           )
@@ -223,5 +224,63 @@ jobs:
               )
               assert round_trip.transition_id == transition.transition_id
               assert round_trip.family == "dissolve"
-          print("XM → scene graph → visual score → scene lifecycle: OK")
+
+              # M13: a project retains independent scene layers and stable identities.
+              visual_project = VisualProject.from_legacy(
+                  restored_scene, [layer.to_dict() for layer in layers]
+              )
+              duplicate = visual_project.duplicate_scene(restored_scene.scene_id)
+              original_layer_ids = {
+                  item["layer_id"]
+                  for item in visual_project.layers_for_scene(restored_scene.scene_id)
+              }
+              duplicate_layer_ids = {
+                  item["layer_id"]
+                  for item in visual_project.layers_for_scene(duplicate.scene_id)
+              }
+              assert original_layer_ids.isdisjoint(duplicate_layer_ids)
+              original_object_ids = {
+                  item.object_id for item in restored_scene.objects
+              }
+              duplicate_object_ids = {
+                  item.object_id for item in duplicate.objects
+              }
+              assert original_object_ids.isdisjoint(duplicate_object_ids)
+              assert duplicate.metadata["duplicated_from_scene_id"] == restored_scene.scene_id
+              assert all(
+                  item.layer_id in duplicate_layer_ids
+                  for item in duplicate.objects
+              )
+
+              route = visual_project.set_cue_route(
+                  visual_score.cues[0].cue_id,
+                  duplicate.scene_id,
+                  source_scene_id=restored_scene.scene_id,
+                  family="dissolve",
+                  duration_seconds=1.25,
+              )
+              assert route["target_scene_id"] == duplicate.scene_id
+              assert visual_project.route_for_cue(
+                  visual_score.cues[0].cue_id
+              )["family"] == "dissolve"
+
+              project_round_trip = VisualProject.from_dict(
+                  json.loads(json.dumps(visual_project.to_dict()))
+              )
+              assert project_round_trip.active_scene_id == restored_scene.scene_id
+              assert len(project_round_trip.scenes) == 2
+              assert project_round_trip.layers_for_scene(
+                  duplicate.scene_id
+              ) == visual_project.layers_for_scene(duplicate.scene_id)
+              assert project_round_trip.route_for_cue(
+                  visual_score.cues[0].cue_id
+              )["target_scene_id"] == duplicate.scene_id
+
+              selected = project_round_trip.select_scene(duplicate.scene_id)
+              assert selected.state == "ACTIVE"
+              assert project_round_trip.active_scene.state == "ACTIVE"
+              assert project_round_trip.get_scene(
+                  restored_scene.scene_id
+              ).state == "HELD"
+          print("XM → score cues → multi-scene project → transition lifecycle: OK")
           PY
