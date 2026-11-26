@@ -829,7 +829,8 @@ jobs:
                           "source_path_ids": ["a"],
                           "target_path_ids": ["b"],
                           "anchors": [
-                              {"source_t": 0.8, "target_t": 0.2},
+                              {"source_t": 0.3, "target_t": 0.7},
+                              {"source_t": 0.7, "target_t": 0.3},
                           ],
                       }],
                   )
