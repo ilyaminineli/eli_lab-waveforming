@@ -411,6 +411,7 @@ jobs:
               assert pair_round_trip.outgoing["layers"][0]["layer_id"] == layers[0].layer_id
               assert pair_round_trip.incoming["layers"][0]["layer_id"] == layers[1].layer_id
               assert pair_round_trip.render_mode == "crossfade"
+              assert pair_round_trip.path_correspondence == pair_contract.path_correspondence
 
               black = Image.new("RGBA", (4, 4), (0, 0, 0, 255))
               white = Image.new("RGBA", (4, 4), (255, 255, 255, 255))
@@ -655,6 +656,18 @@ jobs:
                       "source_object_id": vector_source_object.object_id,
                       "target_object_id": vector_target_object.object_id,
                   }],
+                  "path_correspondence": [{
+                      "source_object_id": vector_source_object.object_id,
+                      "target_object_id": vector_target_object.object_id,
+                      "mode": "pair",
+                      "source_path_ids": ["orbit:0"],
+                      "target_path_ids": ["mobius:row:0"],
+                      "anchors": [
+                          {"source_t": 0.0, "target_t": 0.0},
+                          {"source_t": 0.35, "target_t": 0.62},
+                          {"source_t": 1.0, "target_t": 1.0},
+                      ],
+                  }],
               }
               vector_contract = ScenePairRenderContract.from_project(
                   vector_project, vector_sample
@@ -668,6 +681,9 @@ jobs:
               assert vector_frame.size == (96, 72)
               assert vector_compositor.last_profile["scene_pair"]["vector_morph_object_count"] == 1
               assert vector_compositor.last_profile["scene_pair"]["vector_morph_path_count"] > 0
+              assert vector_compositor.last_profile["scene_pair"]["authored_path_map_count"] == 1
+              assert vector_compositor.last_profile["scene_pair"]["split_path_map_count"] == 0
+              assert vector_compositor.last_profile["scene_pair"]["merge_path_map_count"] == 0
 
               path_bank = GeneratorBank()
               vector_generator_names = (
@@ -699,6 +715,127 @@ jobs:
               path_image = render_vector_paths(interpolated_paths, (320, 240))
               assert path_image.size == (320, 240)
               assert path_image.getchannel("A").getbbox() is not None
+
+              anchor_source = {
+                  "path_id": "source:curve", "group": "curve", "closed": False,
+                  "points": [[0.0, 0.0], [0.5, 0.0], [1.0, 0.0]],
+                  "width": 1.0, "color": [238, 238, 234], "alpha": 160,
+              }
+              anchor_target = {
+                  "path_id": "target:curve", "group": "curve", "closed": False,
+                  "points": [[0.0, 1.0], [0.5, 1.0], [1.0, 1.0]],
+                  "width": 1.0, "color": [238, 238, 234], "alpha": 160,
+              }
+              anchored_paths = interpolate_vector_paths(
+                  [anchor_source], [anchor_target], 0.5,
+                  path_correspondence=[{
+                      "source_path_ids": ["source:curve"],
+                      "target_path_ids": ["target:curve"],
+                      "mode": "pair",
+                      "anchors": [
+                          {"source_t": 0.0, "target_t": 0.0},
+                          {"source_t": 0.5, "target_t": 0.25},
+                          {"source_t": 1.0, "target_t": 1.0},
+                      ],
+                  }],
+              )
+              assert len(anchored_paths) == 1
+              assert min(
+                  ((point[0] - 0.375) ** 2 + (point[1] - 0.5) ** 2) ** 0.5
+                  for point in anchored_paths[0]["points"]
+              ) < 1e-6
+
+              split_targets = [
+                  {
+                      **anchor_target, "path_id": f"target:split:{index}",
+                      "points": [[0.0, 1.0], [0.5, 1.0 + index * 0.2], [1.0, 1.0]],
+                  }
+                  for index in range(2)
+              ]
+              split_map = [{
+                  "source_path_ids": ["source:curve"],
+                  "target_path_ids": ["target:split:0", "target:split:1"],
+                  "mode": "split",
+              }]
+              split_paths_start = interpolate_vector_paths(
+                  [anchor_source], split_targets, 0.0,
+                  path_correspondence=split_map,
+              )
+              split_paths_mid = interpolate_vector_paths(
+                  [anchor_source], split_targets, 0.5,
+                  path_correspondence=split_map,
+              )
+              assert len(split_paths_start) == len(split_paths_mid) == 2
+              assert all(item["correspondence_mode"] == "split" for item in split_paths_mid)
+              assert all(abs(item["alpha"] - 80.0) < 1e-6 for item in split_paths_start)
+
+              merge_sources = [
+                  {
+                      **anchor_source, "path_id": f"source:merge:{index}",
+                      "points": [[0.0, index * 0.2], [0.5, index * 0.2], [1.0, index * 0.2]],
+                  }
+                  for index in range(2)
+              ]
+              merge_map = [{
+                  "source_path_ids": ["source:merge:0", "source:merge:1"],
+                  "target_path_ids": ["target:curve"],
+                  "mode": "merge",
+              }]
+              merge_paths_end = interpolate_vector_paths(
+                  merge_sources, [anchor_target], 1.0,
+                  path_correspondence=merge_map,
+              )
+              assert len(merge_paths_end) == 2
+              assert all(item["correspondence_mode"] == "merge" for item in merge_paths_end)
+              assert all(abs(item["alpha"] - 80.0) < 1e-6 for item in merge_paths_end)
+              assert merge_paths_end[0]["points"] == merge_paths_end[1]["points"]
+
+              try:
+                  interpolate_vector_paths(
+                      [anchor_source], [anchor_target], 0.5,
+                      path_correspondence=[{
+                          "source_path_ids": ["missing:path"],
+                          "target_path_ids": ["target:curve"],
+                          "mode": "pair",
+                      }],
+                  )
+                  raise AssertionError("Unknown authored path ID was accepted.")
+              except ValueError as exc:
+                  assert "unavailable path IDs" in str(exc)
+
+              authored_transition = SceneTransition(
+                  source_scene_id="author-source",
+                  target_scene_id="author-target",
+                  family="morph",
+                  path_correspondence=[{
+                      "source_object_id": "object-source",
+                      "target_object_id": "object-target",
+                      "source_path_ids": ["source:curve"],
+                      "target_path_ids": ["target:curve"],
+                  }],
+              )
+              assert authored_transition.object_correspondence[0]["kind"] == "path_map"
+              assert authored_transition.sample(1.0)["path_correspondence"][0]["mode"] == "pair"
+              authored_round_trip = SceneTransition.from_dict(authored_transition.to_dict())
+              assert authored_round_trip.path_correspondence == authored_transition.path_correspondence
+              try:
+                  SceneTransition(
+                      source_scene_id="author-source",
+                      target_scene_id="author-target",
+                      family="morph",
+                      path_correspondence=[{
+                          "source_object_id": "object-source",
+                          "target_object_id": "object-target",
+                          "source_path_ids": ["a"],
+                          "target_path_ids": ["b"],
+                          "anchors": [
+                              {"source_t": 0.8, "target_t": 0.2},
+                          ],
+                      }],
+                  )
+                  raise AssertionError("Non-monotonic path anchors were accepted.")
+              except ValueError as exc:
+                  assert "strictly increasing" in str(exc)
 
               # Other future families retain lifecycle-only rendering and skip
               # the hidden incoming scene.
