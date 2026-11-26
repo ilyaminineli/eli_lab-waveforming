@@ -59,12 +59,12 @@ jobs:
           pattern = struct.pack("<IBHH", 9, 0, 1, len(events)) + events
           instrument = bytearray(33)
           struct.pack_into("<I", instrument, 0, 33)
-          instrument[4:26] = b"Smoke Instrument".ljust(22, b"\\0")
+          instrument[4:26] = b"Smoke Instrument".ljust(22, b"\0")
           struct.pack_into("<H", instrument, 27, 1)
           struct.pack_into("<I", instrument, 29, 40)
           sample_header = bytearray(40)
           struct.pack_into("<I", sample_header, 0, 2)
-          sample_header[18:40] = b"smoke-sample.wav".ljust(22, b"\\0")
+          sample_header[18:40] = b"smoke-sample.wav".ljust(22, b"\0")
           with tempfile.TemporaryDirectory() as folder:
               module_path = Path(folder) / "smoke.xm"
               module_path.write_bytes(
