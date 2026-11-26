@@ -132,15 +132,6 @@ See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implement
 
 See [docs/M6_XM_TRACKER_WORKFLOW.md](docs/M6_XM_TRACKER_WORKFLOW.md).
 
-## M8 — Tracker event modulation
-
-- The active XM cue exposes current row index, row note count/activity, pattern density, cue transition strength and pattern reprise state.
-- Tracker note activity and order transitions modulate the shared visual metrics (energy, transient response and pitch centroid) used by existing generative instruments.
-- Audio-derived metrics remain active and are blended conservatively with the tracker score; tracker-only visual preview is also supported.
-- The same cue resolver drives live preview and deterministic offline export.
-
-See [docs/M8_TRACKER_EVENT_MODULATION.md](docs/M8_TRACKER_EVENT_MODULATION.md).
-
 ## M7 — Balanced preview and render profiling
 
 - Default preview is BALANCED at **480×360 / 8 FPS**, with ECO and LOW profiles retained.
@@ -150,6 +141,15 @@ See [docs/M8_TRACKER_EVENT_MODULATION.md](docs/M8_TRACKER_EVENT_MODULATION.md).
 - These measurements are intended to guide further optimisation; no universal FPS guarantee is implied.
 
 See [docs/M7_RENDER_PROFILE.md](docs/M7_RENDER_PROFILE.md).
+
+## M8 — Tracker event modulation
+
+- The active XM cue exposes current row index, row note count/activity, pattern density, cue transition strength and pattern reprise state.
+- Tracker note activity and order transitions modulate the shared visual metrics (energy, transient response and pitch centroid) used by existing generative instruments.
+- Audio-derived metrics remain active and are blended conservatively with the tracker score; tracker-only visual preview is also supported.
+- The same cue resolver drives live preview and deterministic offline export.
+
+See [docs/M8_TRACKER_EVENT_MODULATION.md](docs/M8_TRACKER_EVENT_MODULATION.md).
 
 ## Canvas and performance
 
