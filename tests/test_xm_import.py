@@ -14,7 +14,7 @@ def make_xm(path: Path, *, tempo_effect: tuple[int, int] | None = None) -> Path:
     header[38:58] = b"MilkyTracker 1.05.01".ljust(20, b"\0")
     struct.pack_into("<H", header, 58, 0x0104)
     struct.pack_into("<I", header, 60, 276)
-    struct.pack_into("<8H", header, 64, 2, 0, 2, 2, 0, 1, 6, 125)
+    struct.pack_into("<8H", header, 64, 2, 0, 2, 2, 2, 1, 6, 125)
     header[80:82] = bytes((0, 1))
 
     events = []
@@ -39,6 +39,7 @@ def test_parser_reads_order_cues_and_empty_pattern(tmp_path):
     module = load_xm(make_xm(tmp_path / "fixture.xm"))
 
     assert module.channels == 2
+    assert module.instrument_count == 2
     assert module.bpm == 125
     assert module.speed == 6
     assert module.orders == (0, 1)
@@ -114,6 +115,7 @@ def test_real_uploaded_total_fvckery_module(tmp_path):
     module = load_xm(path)
     assert module.tracker.startswith("MilkyTracker")
     assert module.channels == 14
+    assert module.instrument_count == 10
     assert module.bpm == 173
     assert module.speed == 6
     assert len(module.orders) == 24
