@@ -7,6 +7,7 @@ skipped; this module is a visual-score importer, not an XM audio player.
 """
 
 import bisect
+import hashlib
 import math
 import struct
 from dataclasses import asdict, dataclass
@@ -87,9 +88,27 @@ class XMModule:
         index = bisect.bisect_right(starts, max(0.0, float(seconds))) - 1
         return self.cues[max(0, min(index, len(self.cues) - 1))]
 
+    @property
+    def score_id(self) -> str:
+        """Stable content-derived ID for this tracker score."""
+        digest = hashlib.sha256()
+        digest.update(self.title.encode("utf-8", "replace"))
+        digest.update(self.tracker.encode("utf-8", "replace"))
+        digest.update(bytes((self.channels, self.bpm, self.speed)))
+        digest.update(bytes(self.orders))
+        for pattern in self.patterns:
+            for row in pattern:
+                for event in row:
+                    digest.update(bytes((
+                        event.note, event.instrument, event.volume,
+                        event.effect, event.parameter,
+                    )))
+        return "xm-" + digest.hexdigest()[:16]
+
     def channel_profiles(self) -> list[dict[str, Any]]:
         """Describe each real XM channel and its predominant instrument/sample identity."""
         profiles: list[dict[str, Any]] = []
+        score_id = self.score_id
         instrument_map = {item.index: item for item in self.instruments}
         for channel_index in range(self.channels):
             note_values: list[int] = []
@@ -123,6 +142,7 @@ class XMModule:
             )
             profiles.append({
                 "channel": channel_index + 1,
+                "voice_id": f"{score_id}:channel:{channel_index + 1:02d}",
                 "label": f"CH {channel_index + 1:02d}",
                 "instrument_id": dominant_instrument,
                 "instrument_name": instrument.name if instrument else "",
@@ -200,6 +220,7 @@ class XMModule:
             for item in self.instruments
         ]
         return {
+            "score_id": self.score_id,
             "title": self.title,
             "tracker": self.tracker,
             "channels": self.channels,
@@ -259,6 +280,10 @@ def tracker_packet_at(
     cue["pattern_reprise"] = bool(cue.get("pattern_reprise", False))
 
     profiles = data.get("channel_profiles") or []
+    instrument_map = {
+        int(item.get("index", 0)): item
+        for item in (data.get("instruments") or [])
+    }
     instrument_rows = cue.get("instruments") or []
     volume_rows = cue.get("volumes") or []
     effect_rows = cue.get("effects") or []
@@ -306,6 +331,7 @@ def tracker_packet_at(
         note_age = row_total + 1
         recent_hits = 0
         volume = 0.82
+        volume_found = False
         for scan_row in range(row_index, -1, -1):
             if scan_row < len(note_rows) and channel_index < len(note_rows[scan_row]):
                 note_value = int(note_rows[scan_row][channel_index])
@@ -318,9 +344,9 @@ def tracker_packet_at(
                     held_instrument = instrument_value
             if scan_row < len(volume_rows) and channel_index < len(volume_rows[scan_row]):
                 volume_command = int(volume_rows[scan_row][channel_index])
-                if 0x10 <= volume_command <= 0x50:
+                if 0x10 <= volume_command <= 0x50 and not volume_found:
                     volume = (volume_command - 0x10) / 64.0
-                    break
+                    volume_found = True
         recent_start = max(0, row_index - 15)
         for scan_row in range(recent_start, row_index + 1):
             if scan_row < len(note_rows) and channel_index < len(note_rows[scan_row]):
@@ -370,9 +396,21 @@ def tracker_packet_at(
                 0xD: "NOTE_DELAY",
                 0xE: "PATTERN_DELAY",
             }.get(current_parameter >> 4, "EXTENDED")
+        resolved_instrument = current_instrument or held_instrument or int(
+            profile.get("instrument_id", 0)
+        )
+        resolved_sample = instrument_map.get(resolved_instrument, {})
+        sample_names = resolved_sample.get("sample_names") or []
+        resolved_sample_name = (
+            sample_names[0] if sample_names
+            else resolved_sample.get("name", profile.get("sample_name", ""))
+        )
         channel_states.append({
             **profile,
             "channel": channel_index + 1,
+            "voice_id": profile.get(
+                "voice_id", f"xm:channel:{channel_index + 1:02d}"
+            ),
             "current_note": current_note,
             "held_note": held_note,
             "pitch": (held_note - 1) / 95.0 if held_note else 0.0,
@@ -382,7 +420,8 @@ def tracker_packet_at(
             "activity": float(max(0.0, min(1.0, activity))),
             "note_density": float(max(0.0, min(1.0, note_density))),
             "recent_hits": recent_hits,
-            "instrument_id": current_instrument or held_instrument,
+            "instrument_id": resolved_instrument,
+            "sample_name": str(resolved_sample_name or ""),
             "volume_command": current_volume,
             "volume": float(max(0.0, min(1.0, volume))),
             "effect": current_effect,
