@@ -45,7 +45,7 @@ jobs:
           from engine.tracker.xm import load_xm, tracker_packet_at
           from engine.visual.generators import GeneratorBank, GeneratorSettings
 
-          # A tiny valid XM: two tracker channels, one note event, no samples.
+          # A tiny valid XM: two tracker channels, one note, one named sample.
           header = bytearray(336)
           header[:17] = b"Extended Module: "
           header[17:37] = b"CI channel smoke".ljust(20, b"\0")
@@ -69,12 +69,10 @@ jobs:
               module_path = Path(folder) / "smoke.xm"
               module_path.write_bytes(
                   bytes(header) + pattern + bytes(instrument)
-                  + bytes(sample_header) + b"\\0\\0"
+                  + bytes(sample_header) + b"\0\0"
               )
               module = load_xm(module_path)
               score = module.visual_data()
-              print("XM instruments:", module.instruments)
-              print("XM channels:", score["channel_profiles"])
               assert module.channels == 2
               assert module.instrument_count == 1
               assert module.instruments[0].sample_names == ("smoke-sample.wav",)
