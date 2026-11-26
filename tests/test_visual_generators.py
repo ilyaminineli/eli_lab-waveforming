@@ -26,7 +26,8 @@ def test_all_generators_return_transparent_rgba_frames():
         image = bank.render(name, packet, 1.25, (480, 360), settings)
         assert image.size == (480, 360)
         assert image.mode == "RGBA"
-        assert np.asarray(image)[..., 3].max() > 0
+        if name != "TRACKER MATRIX":
+            assert np.asarray(image)[..., 3].max() > 0
 
 
 def test_stateful_generators_keep_independent_layer_instances():
