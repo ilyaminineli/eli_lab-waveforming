@@ -20,6 +20,7 @@ def is_newer_preview_frame(sequence: int, displayed_sequence: int) -> bool:
 
 class PreviewSignals(QObject):
     frame_ready = Signal(object, float, int)
+    profile_ready = Signal(object)
     render_error = Signal(str)
 
 
@@ -181,6 +182,8 @@ class PreviewRenderWorker(threading.Thread):
                             feedback_decay=request["feedback_decay"],
                             feedback_shift=request["feedback_shift"],
                         )
+                    if self._compositor is not None:
+                        self.signals.profile_ready.emit(dict(self._compositor.last_profile))
                     self.signals.frame_ready.emit(
                         image, request["audio_seconds"], request["sequence"]
                     )
