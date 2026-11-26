@@ -44,6 +44,10 @@ jobs:
 
           from engine.tracker.xm import load_xm, tracker_packet_at
           from engine.visual.generators import GeneratorBank, GeneratorSettings
+          from engine.visual.layers import VisualLayer
+          from engine.visual.compositor import VisualCompositor
+          from engine.visual.scene import VisualScene, VisualScore
+          import json
 
           # A tiny valid XM: two tracker channels, one note, one named sample.
           header = bytearray(336)
@@ -93,5 +97,62 @@ jobs:
               )
               assert image.size == (320, 240)
               assert image.getchannel("A").getbbox() is not None
-          print("XM parser → channel states → tracker ensemble: OK")
+
+              layers = [
+                  VisualLayer(name="XM VOICES", generator="TRACKER ENSEMBLE"),
+                  VisualLayer(name="ENVIRONMENT", generator="GEOMETRIC PLATE"),
+              ]
+              scene = VisualScene(name="SMOKE SCENE")
+              scene.synchronize_layers(layers, score)
+              assert len(scene.objects) == 2
+              ensemble = next(
+                  obj for obj in scene.objects
+                  if obj.metadata.get("generator") == "TRACKER ENSEMBLE"
+              )
+              assert len([
+                  binding for binding in ensemble.source_bindings
+                  if binding.get("type") == "tracker_channel"
+              ]) == 2
+              original_object_id = ensemble.object_id
+              layers[0].opacity = 0.72
+              scene.synchronize_layers(layers, score)
+              ensemble = next(
+                  obj for obj in scene.objects
+                  if obj.layer_id == layers[0].layer_id
+              )
+              assert ensemble.object_id == original_object_id
+              scene.synchronize_layers(list(reversed(layers)), score)
+              assert scene.layer_order == [
+                  layers[1].layer_id, layers[0].layer_id
+              ]
+              scene_data = json.loads(json.dumps(scene.to_dict()))
+              restored_scene = VisualScene.from_dict(scene_data)
+              assert restored_scene.layer_order == scene.layer_order
+              assert next(
+                  obj for obj in restored_scene.objects
+                  if obj.layer_id == layers[0].layer_id
+              ).object_id == original_object_id
+              ordered = VisualCompositor._order_layers_from_scene(
+                  layers, restored_scene.to_dict()
+              )
+              assert [item.layer_id for item in ordered] == scene.layer_order
+
+              visual_score = VisualScore.from_tracker_data(
+                  score, scene.scene_id, module.duration
+              )
+              assert len(visual_score.cues) == len(score["cues"])
+              restored_score = VisualScore.from_dict(
+                  json.loads(json.dumps(visual_score.to_dict()))
+              )
+              assert restored_score.source_score_id == score["score_id"]
+              assert restored_score.scene_ids == [scene.scene_id]
+              assert restored_score.cues[0].cue_type == "scene_open" or (
+                  restored_score.cues[0].cue_type in ("pattern_enter", "pattern_return")
+              )
+
+              # Legacy projects without graph data are reconstructed from layers.
+              migrated_scene = VisualScene()
+              migrated_scene.synchronize_layers(layers, score)
+              assert len(migrated_scene.objects) == len(layers)
+          print("XM → channel voices → scene graph → visual score: OK")
           PY
