@@ -411,6 +411,9 @@ class MainWindow(QMainWindow):
         self.transition_family = QComboBox()
         self.transition_family.addItems(sorted(TRANSITION_FAMILIES))
         self.transition_family.setCurrentText("dissolve")
+        self.transition_family.setToolTip(
+            "M12 transition contract only in M13. Pixel-level effects are added in M14."
+        )
         self.transition_duration = QDoubleSpinBox()
         self.transition_duration.setRange(0.0, 120.0)
         self.transition_duration.setDecimals(2)
@@ -419,6 +422,9 @@ class MainWindow(QMainWindow):
         scene_form.addRow("TRANSITION", self.transition_family)
         scene_form.addRow("DURATION (S)", self.transition_duration)
         self.scene_transition_button = QPushButton("COMMIT TRANSITION")
+        self.scene_transition_button.setToolTip(
+            "Commit through the M12 state machine. Until M14, the renderer switches scenes at completion without blending them."
+        )
         self.cue_route_button = QPushButton("ROUTE CURRENT XM CUE")
         scene_form.addRow(self.scene_transition_button)
         scene_form.addRow(self.cue_route_button)
