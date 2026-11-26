@@ -447,13 +447,15 @@ jobs:
               pair_compositor.size = (4, 4)
               pair_compositor._feedback = None
               pair_compositor._last_time = None
+              pair_compositor._frame_cache = {"No guide": (0, 0, 4, 4)}
+              pair_compositor.generators = GeneratorBank()
               pair_compositor.last_profile = {}
               rendered_scene_ids = []
               def fake_scene_render(
                   self, packet, seconds, layers=None, settings=None,
                   screen="No guide", feedback_enabled=False,
                   feedback_amount=0.35, feedback_decay=0.90,
-                  feedback_shift=0.0, visual_scene=None,
+                  feedback_shift=0.0, visual_scene=None, vector_overrides=None,
               ):
                   self.last_profile = {
                       "scene_ms": 0.5, "layer_count": len(layers or []),
