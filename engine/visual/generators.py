@@ -46,6 +46,14 @@ class VisualMetrics:
         tracker_instruments = np.asarray(tracker.get("instruments") or [], dtype=np.uint8)
         if tracker_instruments.ndim != 2 or tracker_notes is None or tracker_instruments.shape != tracker_notes.shape:
             tracker_instruments = None
+        tracker_values = {
+            "tracker_notes": tracker_notes,
+            "tracker_instruments": tracker_instruments,
+            "tracker_progress": float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0)),
+            "tracker_order": int(tracker.get("order", -1)),
+            "tracker_pattern": int(tracker.get("pattern", -1)),
+            "tracker_density": float(np.clip(tracker.get("density", 0.0), 0.0, 1.0)),
+        }
         frame_map = packet.get("frames", {})
         group_map = packet.get("group_frames", {})
         source_ids = list(packet.get("source_ids") or frame_map.keys())
@@ -60,20 +68,12 @@ class VisualMetrics:
             indices = [0]
         elif source_id:
             if source_id not in frame_map:
-                return cls()
+                return cls(**tracker_values)
             frames = [frame_map[source_id]]
             indices = [source_ids.index(source_id)] if source_id in source_ids else [0]
         else:
             frames = list(frame_map.values())
             indices = list(range(len(frames)))
-        tracker_values = {
-            "tracker_notes": tracker_notes,
-            "tracker_instruments": tracker_instruments,
-            "tracker_progress": float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0)),
-            "tracker_order": int(tracker.get("order", -1)),
-            "tracker_pattern": int(tracker.get("pattern", -1)),
-            "tracker_density": float(np.clip(tracker.get("density", 0.0), 0.0, 1.0)),
-        }
         if not frames:
             return cls(**tracker_values)
 
