@@ -968,35 +968,54 @@ class VisualCompositor:
             if isinstance(item, dict)
         ]
 
-        outgoing_frame = self.render(
-            packet=packet,
-            seconds=seconds,
-            layers=outgoing_layers,
-            settings=settings,
-            screen=screen,
-            feedback_enabled=False,
-            visual_scene=outgoing_scene,
-        )
-        outgoing_profile = dict(self.last_profile)
-        incoming_frame = self.render(
-            packet=packet,
-            seconds=seconds,
-            layers=incoming_layers,
-            settings=settings,
-            screen=screen,
-            feedback_enabled=False,
-            visual_scene=incoming_scene,
-        )
-        incoming_profile = dict(self.last_profile)
+        if contract.render_mode == "crossfade":
+            outgoing_frame = self.render(
+                packet=packet,
+                seconds=seconds,
+                layers=outgoing_layers,
+                settings=settings,
+                screen=screen,
+                feedback_enabled=False,
+                visual_scene=outgoing_scene,
+            )
+            outgoing_profile = dict(self.last_profile)
+            incoming_frame = self.render(
+                packet=packet,
+                seconds=seconds,
+                layers=incoming_layers,
+                settings=settings,
+                screen=screen,
+                feedback_enabled=False,
+                visual_scene=incoming_scene,
+            )
+            incoming_profile = dict(self.last_profile)
+            frame = blend_scene_pair_frames(
+                outgoing_frame, incoming_frame, contract
+            )
+            profiles = (outgoing_profile, incoming_profile)
+        else:
+            # Cut and lifecycle-only future families do not needlessly render
+            # the hidden side. They use the same contract but only one scene.
+            if contract.completed:
+                selected_scene, selected_records = incoming_scene, incoming_layers
+            else:
+                selected_scene, selected_records = outgoing_scene, outgoing_layers
+            frame = self.render(
+                packet=packet,
+                seconds=seconds,
+                layers=selected_records,
+                settings=settings,
+                screen=screen,
+                feedback_enabled=False,
+                visual_scene=selected_scene,
+            )
+            profiles = (dict(self.last_profile),)
 
         # render() intentionally resets feedback on standalone, non-feedback
         # frames; restore the pair's history and apply feedback to the final
         # resolved image exactly once.
         self._feedback = previous_feedback
         self._last_time = previous_time
-        frame = blend_scene_pair_frames(
-            outgoing_frame, incoming_frame, contract
-        )
 
         if self._last_time is not None and seconds < self._last_time:
             self._feedback = None
@@ -1034,26 +1053,21 @@ class VisualCompositor:
         self._last_time = float(seconds)
 
         total_ms = (perf_counter() - started) * 1000.0
+        scene_ms = sum(
+            float(profile.get("scene_ms", 0.0)) for profile in profiles
+        )
         self.last_profile = {
-            "scene_ms": (
-                float(outgoing_profile.get("scene_ms", 0.0))
-                + float(incoming_profile.get("scene_ms", 0.0))
-            ),
-            "compose_ms": max(
-                0.0,
-                total_ms
-                - float(outgoing_profile.get("scene_ms", 0.0))
-                - float(incoming_profile.get("scene_ms", 0.0)),
-            ),
+            "scene_ms": scene_ms,
+            "compose_ms": max(0.0, total_ms - scene_ms),
             "frame_ms": total_ms,
-            "layer_count": (
-                int(outgoing_profile.get("layer_count", 0))
-                + int(incoming_profile.get("layer_count", 0))
+            "layer_count": sum(
+                int(profile.get("layer_count", 0)) for profile in profiles
             ),
-            "layers": (
-                list(outgoing_profile.get("layers", []))
-                + list(incoming_profile.get("layers", []))
-            ),
+            "layers": [
+                layer
+                for profile in profiles
+                for layer in profile.get("layers", [])
+            ],
             "backend": "CPU_SCENE_PAIR",
             "scene_pair": {
                 "transition_id": contract.transition_id,
