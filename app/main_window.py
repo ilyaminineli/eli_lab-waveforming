@@ -18,7 +18,7 @@ from app.timeline_widget import TimelineWidget
 from engine.audio.feature_bus import FeatureBus
 from engine.audio.playback import PlaybackEngine, MAX_AUDIO_SOURCES
 from engine.audio.source import AudioSource
-from engine.project.session import scan_audio_tree
+from engine.project.session import scan_audio_tree, scan_tracker_tree
 from engine.render.ffmpeg import resolve_ffmpeg
 from engine.render.offline import OfflineRenderWorker
 from engine.timeline import Timeline
@@ -247,14 +247,20 @@ class MainWindow(QMainWindow):
         source_heading = QHBoxLayout()
         source_title = QLabel("SOUND SOURCES")
         source_title.setObjectName("section")
-        add_source = QPushButton("+ ADD SOURCE")
+        add_source = QPushButton("+ AUDIO")
+        add_source.setToolTip("Import audio files / stems")
         add_source.clicked.connect(self.import_audio)
-        add_folder = QPushButton("+ IMPORT FOLDER")
+        add_folder = QPushButton("+ FOLDER")
+        add_folder.setToolTip("Import audio stems and any XM tracker score from a folder")
         add_folder.clicked.connect(self.import_audio_folder)
+        add_tracker = QPushButton("+ XM")
+        add_tracker.setToolTip("Import an XM tracker score (not an audio source)")
+        add_tracker.clicked.connect(self.import_tracker)
         source_heading.addWidget(source_title)
         source_heading.addStretch()
         source_heading.addWidget(add_folder)
         source_heading.addWidget(add_source)
+        source_heading.addWidget(add_tracker)
         left.addLayout(source_heading)
 
         source_panel = QFrame()
@@ -738,12 +744,18 @@ class MainWindow(QMainWindow):
         )
         if not filename:
             return
+        loaded, error = self._load_tracker_path(Path(filename))
+        if not loaded:
+            QMessageBox.warning(self, "XM import failed", error)
+
+    def _load_tracker_path(self, path: Path) -> tuple[bool, str]:
+        """Load one XM score without passing it through the audio decoder."""
+        path = Path(path)
         try:
-            module = load_xm(Path(filename))
+            module = load_xm(path)
             tracker_data = module.visual_data()
         except Exception as exc:
-            QMessageBox.warning(self, "XM import failed", str(exc))
-            return
+            return False, f"{path.name}: {exc}"
 
         self._tracker_data = tracker_data
         self._tracker_duration = module.duration
@@ -776,15 +788,16 @@ class MainWindow(QMainWindow):
             message += " · FLOW EFFECTS: TIMING APPROXIMATED"
         self.status.setText(message)
         self.status.setToolTip(
-            f"{module.title}\n{module.tracker}\n"
+            f"{module.title} · {path.name}\\n{module.tracker}\\n"
             f"{module.effect_count} effect commands; "
             f"{module.flow_control_effect_count} order/loop flow commands."
         )
+        return True, ""
 
     def import_audio(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Import audio sources", "",
-            "Audio files (*.wav *.flac *.aiff *.aif *.ogg *.mp3);;All files (*)",
+            self, "Import audio sources or XM score", "",
+            "Audio / tracker files (*.wav *.flac *.aiff *.aif *.ogg *.mp3 *.xm);;All files (*)",
         )
         self._import_audio_paths([Path(path) for path in paths])
 
@@ -792,10 +805,16 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Import audio folder", "")
         if not folder:
             return
-        grouped = scan_audio_tree(Path(folder))
-        paths = [path for members in grouped.values() for path in members]
+        root = Path(folder)
+        grouped = scan_audio_tree(root)
+        audio_paths = [path for members in grouped.values() for path in members]
+        tracker_paths = scan_tracker_tree(root)
+        paths = [*audio_paths, *tracker_paths]
         if not paths:
-            QMessageBox.information(self, "Import audio folder", "No supported audio files were found.")
+            QMessageBox.information(
+                self, "Import folder",
+                "No supported audio files or XM tracker scores were found.",
+            )
             return
         self._import_audio_paths(paths)
 
@@ -810,15 +829,33 @@ class MainWindow(QMainWindow):
                 or is_default_placeholder_composition(self.layer_stack.layers)
         )
         imported = 0
+        tracker_loaded = False
         errors: list[str] = []
         limit_reached = False
-        for path in paths:
+        tracker_paths = [Path(path) for path in paths if Path(path).suffix.lower() == ".xm"]
+        audio_paths = [Path(path) for path in paths if Path(path).suffix.lower() != ".xm"]
+
+        # An XM is a tracker score, never an audio file. When users select it
+        # from the audio dialog or a mixed folder, route it to the score parser.
+        if tracker_paths:
+            loaded, error = self._load_tracker_path(tracker_paths[0])
+            if loaded:
+                tracker_loaded = True
+            else:
+                errors.append(error)
+            for extra in tracker_paths[1:]:
+                errors.append(
+                    f"{extra.name}: only one XM score can be active in a project; "
+                    "import it separately to replace the current score."
+                )
+
+        for path in audio_paths:
             if len(self.sources) >= MAX_AUDIO_SOURCES:
                 limit_reached = True
                 break
             try:
                 source = AudioSource.from_file(
-                    Path(path), target_sample_rate=self.audio.sample_rate
+                    path, target_sample_rate=self.audio.sample_rate
                 )
                 track_id = self.audio.add_source(source)
                 self.sources[track_id] = source
@@ -826,7 +863,7 @@ class MainWindow(QMainWindow):
                 self.source_rows.insertWidget(self.source_rows.count() - 1, row)
                 imported += 1
             except Exception as exc:
-                errors.append(f"{Path(path).name}: {exc}")
+                errors.append(f"{path.name}: {exc}")
 
         if limit_reached:
             QMessageBox.information(
@@ -849,11 +886,19 @@ class MainWindow(QMainWindow):
             self._update_time_label()
             self._update_timeline_duration()
             if rebuild_auto_composition:
+                # Build a source-linked generative layout as soon as the first
+                # stems arrive; users should not have to discover AUTO COMPOSE.
                 self.auto_compose()
             else:
                 self._render_frame()
             # Generate an initial spectral snapshot even before playback starts.
             self.audio.request_preview_analysis()
+        elif tracker_loaded:
+            # A score-only project is still a valid visual session. Keep its
+            # status and timeline visible even before audio is attached.
+            self._update_status()
+            self._update_time_label()
+            self._render_frame()
 
     def _refresh_source_options(self) -> None:
         if not hasattr(self, "layer_source"):
@@ -1465,10 +1510,14 @@ class MainWindow(QMainWindow):
     def _update_status(self) -> None:
         count = len(self.sources)
         state = "PLAYING" if self.audio.is_playing else "PAUSED" if self._last_position > 0 else "READY"
-        self.status.setText(
-            f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
-            if count else "NO AUDIO LOADED"
-        )
+        if count:
+            self.status.setText(
+                f"{state}  ·  {count:02d} / {MAX_AUDIO_SOURCES:02d} SOURCES"
+            )
+        elif self._tracker_data:
+            self.status.setText("TRACKER LOADED  ·  NO AUDIO SOURCES")
+        else:
+            self.status.setText("NO AUDIO LOADED")
 
     def toggle_playback(self) -> None:
         if self.audio.is_playing:
