@@ -4,11 +4,11 @@
 
 ## Contract
 
-Assembly and erosion are derived render operations. They do not rewrite VisualScene objects, scene lifecycle state, layer snapshots, or cue routes. The compositor derives a deterministic fragment layout from the transition seed, transition ID, stable object/layer identity, and normalized progress. Sampling the same contract at the same progress always produces the same layout.
+Assembly and erosion are derived render operations. They do not rewrite VisualScene objects, scene lifecycle state, layer snapshots, or cue routes. The compositor derives a deterministic fragment layout from the seed persisted in the scene-pair metadata, transition ID, stable layer identity and normalized eased progress. The application should copy `SceneTransition.seed` into the scene-pair metadata when building the render contract. Sampling the same contract at the same progress always produces the same layout.
 
 ## Assembly
 
-The incoming scene is rendered as a set of deterministic fragments. At progress 0 fragments are displaced and attenuated; as progress approaches 1 they converge to their source positions and recover their original alpha. At the endpoint the rendered frame is exactly the incoming scene render.
+The incoming scene is initially absent. A deterministic subset of tiles appears as the transition progresses; those tiles converge from displaced positions and recover their original alpha. At the endpoint the rendered frame is exactly the incoming scene render.
 
 ## Erosion
 
@@ -16,7 +16,7 @@ The outgoing scene is rendered as deterministic fragments. At progress 0 the fra
 
 ## Determinism and safety
 
-The seed is derived from the persisted transition seed, transition ID and stable layer ID using SHA-256. Each fragment's motion is calculated directly from its index and the eased progress; no global RNG, wall clock, mutable particle simulation or source-scene mutation is used. Fragment count is bounded to limit CPU cost. Zero progress and completed progress have explicit endpoint fast paths.
+SHA-256 derives fragment ranks and motion offsets from the persisted transition seed, transition ID and stable layer IDs. Each fragment's motion is calculated directly from its index and the eased progress; no global RNG, wall clock, mutable particle simulation or source-scene mutation is used. Fragment count is bounded to limit CPU cost. Zero progress and completed progress have explicit endpoint fast paths.
 
 Assembly/erosion render only their relevant scene side. Raster and vector generators share the same fragment compositor after normal layer rendering, so all generator families are supported without inventing vector topology.
 
