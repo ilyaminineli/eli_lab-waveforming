@@ -439,6 +439,7 @@ class OfflineRenderWorker(QThread):
                                             path_correspondence=list(
                                                 route.get("path_correspondence", [])
                                             ),
+                                            metadata=dict(route.get("metadata", {})),
                                             trigger=trigger,
                                         )
                                         proposal = transition_controller.propose(
