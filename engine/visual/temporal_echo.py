@@ -202,7 +202,12 @@ class TemporalEchoHistoryBuffer:
                             (1, 0, -dx, 0, 1, -dy),
                             resample=Image.Resampling.BILINEAR,
                         )
-                    opacity = settings.strength * raw_weight / weight_total
+                    # Preserve absolute age decay when only one (or a few)
+                    # history samples are available; cap aggregate opacity at
+                    # the authored strength once the weighted stack exceeds 1.
+                    opacity = (
+                        settings.strength * raw_weight / max(1.0, weight_total)
+                    )
                     overlays.append((sample_image, (0, 0), opacity))
 
         scaled_size = (
