@@ -219,7 +219,7 @@ The guide's longer-term Visual Instrument model remains the target. The first pe
 - **VisualCue / VisualEvent:** structural XM order cues are represented with explicit musical time; note/phrase/performer event scheduling remains planned.
 - **VisualRole / VisualMotif / VisualPhrase:** basic object roles and scene attention groups exist; reusable motif and phrase grammar remains planned.
 - **MappingRule / SourceBinding:** source-binding records exist for audio routes and XM channel identities; an executable rule engine is still planned.
-- **SceneTransition:** scene lifecycle fields exist, but the state machine and transition execution are the next milestone.
+- **SceneTransition:** declarative transition contracts, lifecycle validation, proposal/commit separation, deterministic progress sampling and interruption policies are implemented; application-level multi-scene execution and visual interpolation remain planned.
 - **VisualSnapshot / ShowManifest:** deterministic snapshots, recovery and live-show packaging remain planned.
 
 The scene's canonical layer order is consumed by preview and offline rendering. `VisualLayer` remains the rendering unit for this compatibility step; a logical VisualObject containing multiple layers is future work.
@@ -245,6 +245,8 @@ The director should propose candidate scene changes separately from committing t
 - VisualScene serialization, canonical layer order, attention grouping, and audio/XM source bindings.
 - VisualScore serialization with timed XM order-entry and pattern-return cues.
 - Scene graph layer order applied in live preview and offline rendering.
+- Validated scene lifecycle state machine and declarative SceneTransition contracts.
+- Proposal/commit controller, deterministic preparation/transformation/establishment phases, and complete/cancel/reject interruption policies.
 - Version-2 project persistence with version-1 migration from the existing layer stack and tracker data.
 
 ### Still planned — do not treat as implemented
@@ -253,9 +255,10 @@ The director should propose candidate scene changes separately from committing t
 - General tracker formats beyond XM.
 - Editable VisualBrief and VisualIdentity models.
 - Multi-layer logical objects, authorable relationship graph and motif lineage tools.
-- Scene state-machine execution, transition contracts and cue-driven scene changes.
+- Multi-scene project collection and active-scene persistence.
+- Cue-driven transition nomination/commit and visual interpolation in the compositor.
 - Editable per-channel MappingRule profiles and channel solo/mute/focus controls.
-- Cue/phrase-based scene transitions with preparation, transformation and establishment phases.
+- Cue/phrase-based scene transitions with renderer-side preparation, transformation and establishment effects.
 - A GPU-native tracker ensemble and multi-resolution simulation cache.
 - Live MIDI/OSC operator controls and a full show/venue output manager.
 - Benchmarks on the target Windows hardware and 4,000-frame export comparisons.
