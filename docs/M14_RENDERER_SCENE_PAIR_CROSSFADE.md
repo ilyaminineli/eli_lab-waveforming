@@ -51,14 +51,9 @@ Particle, cellular, reaction-diffusion, interference and other raster/simulation
 
 ## 4. Compositor
 
-`VisualCompositor.render_scene_pair()` renders both scene snapshots independently using the same:
+`VisualCompositor.render_scene_pair()` applies family-specific rendering while sharing one tracker/audio feature packet, show time, generator settings and screen guide.
 
-- tracker/audio feature packet;
-- visual show time;
-- generator settings and screen guide;
-- compositor dimensions.
-
-Each side uses its own canonical scene layer order and independent layer IDs, so per-layer generators retain their own simulation identity. The rendered images are then passed through the shared blend function. Temporal feedback is applied once to the final pair image, not once to each side; this avoids feedback from one scene being accumulated separately into the other.
+For dissolve, each side uses its own canonical scene layer order and layer IDs, then the two completed RGBA frames are blended. For morph, matched vector-capable objects generate source/target path sets using their own audio-source bindings; the interpolated paths are rendered once in the intermediate scene. Each object uses the effective local mask region for path normalization. Temporal feedback is applied once to the final resolved frame, not separately to outgoing and incoming contributions.
 
 The resulting profile reports the transition ID/family/mode/phase/progress, source and target scene IDs, both weights, total timing and both scenes' layer timings.
 
@@ -90,6 +85,7 @@ The CI smoke path checks:
 - contract JSON round-trip;
 - exact outgoing endpoint, 50/50 midpoint and incoming endpoint pixel values;
 - the compositor's two-scene rendering orchestration and crossfade output;
+- vector path generation for all declared vector-capable line/edge generators, raster-only fallback, Phase Orbit-to-Mobius path matching and real intermediate-frame rendering;
 - explicit hold behavior for unimplemented transition families;
 - the existing XM, M11, M12 and M13 smoke coverage;
 - Python compile and GLSL shader validation.
@@ -100,7 +96,7 @@ This first M14 increment implements the pair-rendering architecture and dissolve
 
 - Scene-pair rendering is CPU-side; a future GPU-native pair compositor can optimize it.
 - `assembly`, `erosion`, `mask_reveal`, `displacement` and `temporal_echo` currently hold the outgoing frame until lifecycle completion.
-- Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction, path splitting/merging and semantic anchor editing remain future work.
+- Generator path morphing currently targets line/edge families listed above. Raster simulations use the object-level fallback; topology-aware fluid contour extraction, path splitting/merging and semantic anchor editing remain future work. Path matches are currently deterministic nearest-centroid matches within a compatible path group, not manually authored landmark correspondences.
 - Correspondence is one-to-one. Split/merge mapping and explicit object transfer/merge policies remain future work.
 - There is no independent preparation or establishment image treatment yet; the M12 phase sample is exposed to the compositor.
 - Runtime transition checkpoints and replay of manually authored transitions in offline export are not implemented.

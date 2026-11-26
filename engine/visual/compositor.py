@@ -943,12 +943,12 @@ class VisualCompositor:
         feedback_decay: float = 0.90,
         feedback_shift: float = 0.0,
     ) -> Image.Image:
-        """Render both scene snapshots, then apply the transition as a frame blend.
+        """Resolve and render a transition pair using its family-specific compositor.
 
-        Both sides use the same packet, show time, settings and screen guide.
-        Temporal feedback is applied once to the resolved pair, not separately
-        to each side, so a dissolve cannot leak stale outgoing pixels into the
-        incoming scene.
+        Dissolve renders both scene snapshots and blends complete frames. Morph
+        constructs one intermediate object/path scene, preserving the screen
+        plate and paper surface as a single continuous background. Temporal
+        feedback is applied once to the resolved frame.
         """
         contract = (
             scene_pair
@@ -977,11 +977,11 @@ class VisualCompositor:
             morph_scene, morph_records = build_object_morph_state(contract)
             morph_layers = [VisualLayer.from_dict(item) for item in morph_records if isinstance(item, dict)]
             frame_box = self._frame_box(screen)
-            vector_size = (
-                (self.size[0], self.size[1])
-                if any(layer.mask_mode == "FULL" for layer in morph_layers)
-                else (max(1, frame_box[2] - frame_box[0]), max(1, frame_box[3] - frame_box[1]))
+            frame_local_size = (
+                max(1, frame_box[2] - frame_box[0]),
+                max(1, frame_box[3] - frame_box[1]),
             )
+            morph_layer_by_id = {layer.layer_id: layer for layer in morph_layers}
             outgoing_objects = {str(item.get("object_id","")): item for item in contract.outgoing["scene"].get("objects", [])}
             incoming_objects = {str(item.get("object_id","")): item for item in contract.incoming["scene"].get("objects", [])}
             outgoing_records = {str(item.get("layer_id","")): item for item in contract.outgoing.get("layers", [])}
@@ -993,6 +993,14 @@ class VisualCompositor:
                 source_record = outgoing_records.get(str(source_object.get("layer_id","")), {})
                 target_record = incoming_records.get(str(target_object.get("layer_id","")), {})
                 if not source_record or not target_record: continue
+                layer_id = str(source_record.get("layer_id",""))
+                intermediate_layer = morph_layer_by_id.get(layer_id)
+                if intermediate_layer is None: continue
+                vector_size = (
+                    (self.size[0], self.size[1])
+                    if intermediate_layer.mask_mode == "FULL"
+                    else frame_local_size
+                )
                 source_paths = self.generators.vector_geometry(
                     str(source_record.get("generator","")), packet, seconds, vector_size, settings,
                     source_id=str(source_record.get("source_id","")) or None,
@@ -1003,7 +1011,6 @@ class VisualCompositor:
                 )
                 # Raster-only generators keep the object-transform fallback.
                 if source_paths is None or target_paths is None: continue
-                layer_id = str(source_record.get("layer_id",""))
                 vector_overrides[layer_id] = interpolate_vector_paths(source_paths, target_paths, contract.eased_progress)
                 vector_path_counts.append(len(vector_overrides[layer_id]))
             frame = self.render(

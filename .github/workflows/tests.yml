@@ -670,6 +670,21 @@ jobs:
               assert vector_compositor.last_profile["scene_pair"]["vector_morph_path_count"] > 0
 
               path_bank = GeneratorBank()
+              vector_generator_names = (
+                  "PHASE ORBIT", "PHASE LATTICE", "GEOMETRIC FIELD",
+                  "GEOMETRIC PLATE", "AXONOMETRIC FIELD", "POLYHEDRAL FIELD",
+                  "MOBIUS FIELD",
+              )
+              for generator_name in vector_generator_names:
+                  geometry = path_bank.vector_geometry(
+                      generator_name, {}, 0.0, (160, 120), GeneratorSettings()
+                  )
+                  assert geometry and all(
+                      len(path.get("points", [])) >= 2 for path in geometry
+                  )
+              assert path_bank.vector_geometry(
+                  "PARTICLE FIELD", {}, 0.0, (160, 120), GeneratorSettings()
+              ) is None
               source_paths = path_bank.vector_geometry(
                   "PHASE ORBIT", {}, 0.0, (320, 240), GeneratorSettings()
               )
