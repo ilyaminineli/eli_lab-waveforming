@@ -769,7 +769,8 @@ class MainWindow(QMainWindow):
 
         message = (
             f"XM SCORE LOADED · {module.channels} CH · "
-            f"{len(module.orders)} ORDERS · {module.bpm} BPM"
+            f"{module.instrument_count} INST · {len(module.orders)} ORDERS · "
+            f"{module.bpm} BPM"
         )
         if module.flow_control_effect_count:
             message += " · FLOW EFFECTS: TIMING APPROXIMATED"
