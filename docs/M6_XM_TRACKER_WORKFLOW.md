@@ -120,6 +120,7 @@ AUTO COMPOSE and automatic variation until tracker data is imported.
 
 ## Next
 
-M8 — Perceptual scene director: use tracker order/pattern transitions, channel
-activity and audio novelty to choose restrained scene mutations and beat-aligned
-transitions without rebuilding the whole composition every frame.
+M8 — Tracker event modulation and cue transitions is implemented in
+[docs/M8_TRACKER_EVENT_MODULATION.md](M8_TRACKER_EVENT_MODULATION.md). M9 is the
+perceptual scene director: turn the new transition/reprise/activity signals into
+scene-level decisions and beat/bar-aware visual mutations.
