@@ -4,6 +4,21 @@
 
 Initial profiling and low-risk performance improvements implemented.
 
+## Screen and layer compositing order
+
+Screen plates are the visual canvas background, not a foreground overlay. The live
+CPU compositor, OpenGL scene compositor and offline renderer now all composite in
+the same order:
+
+1. black canvas base and screen artwork;
+2. generated visual layers, in layer-stack order;
+3. temporal feedback and final output handling.
+
+The previous preview implementation appended the screen plate after generated
+layers, and the CPU/offline paths alpha-composited it after the generated stack.
+Opaque grain/registration artwork therefore concealed the generators. The corrected
+ordering keeps the screen material visible underneath the generated ink.
+
 ## Live render profile
 
 The preview worker reports:
