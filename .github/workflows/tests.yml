@@ -46,7 +46,9 @@ jobs:
           from engine.visual.generators import GeneratorBank, GeneratorSettings
           from engine.visual.layers import VisualLayer
           from engine.visual.compositor import VisualCompositor
-          from engine.visual.scene import VisualScene, VisualScore
+          from engine.visual.scene import (
+              VisualRelationship, VisualScene, VisualScore,
+          )
           from engine.visual.project import VisualProject
           from engine.visual.transitions import (
               SceneTransition, SceneTransitionController,
@@ -226,10 +228,36 @@ jobs:
               assert round_trip.family == "dissolve"
 
               # M13: a project retains independent scene layers and stable identities.
+              object_ids = [item.object_id for item in restored_scene.objects]
+              restored_scene.relationships = [
+                  VisualRelationship(
+                      source_object_id=object_ids[0],
+                      target_object_id=object_ids[1],
+                      kind="accompanies",
+                  )
+              ]
+              restored_scene.attention_plan = {
+                  "primary": object_ids[0],
+                  "secondary": [object_ids[1]],
+                  "background": [],
+              }
               visual_project = VisualProject.from_legacy(
                   restored_scene, [layer.to_dict() for layer in layers]
               )
               duplicate = visual_project.duplicate_scene(restored_scene.scene_id)
+              duplicate_object_ids = {item.object_id for item in duplicate.objects}
+              assert duplicate.attention_plan["primary"] in duplicate_object_ids
+              assert set(duplicate.attention_plan["secondary"]).issubset(
+                  duplicate_object_ids
+              )
+              assert all(
+                  rel.source_object_id in duplicate_object_ids
+                  and rel.target_object_id in duplicate_object_ids
+                  for rel in duplicate.relationships
+              )
+              assert duplicate.relationships[0].relationship_id != (
+                  restored_scene.relationships[0].relationship_id
+              )
               original_layer_ids = {
                   item["layer_id"]
                   for item in visual_project.layers_for_scene(restored_scene.scene_id)
