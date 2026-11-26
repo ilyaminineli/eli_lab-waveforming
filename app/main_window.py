@@ -2043,9 +2043,7 @@ class MainWindow(QMainWindow):
 
     def _render_frame(self, *_args) -> None:
         self._advance_scene_transitions(self._last_position)
-        visual_scene_data = self._sync_visual_graph().to_dict()
-        visual_scene_data["resolved_state"] = self._resolved_scene_state()
-        scene_pair_data = self._scene_pair_for_render()
+        self._sync_visual_graph()
         self._render_sequence += 1
         audio_seconds = self._last_position
         seconds = float(self._preview_animation_seconds)
@@ -2073,6 +2071,12 @@ class MainWindow(QMainWindow):
             self._settings.seed = seed
             self.preview_worker.request_reset()
             self._refresh_layer_list(selected_id)
+
+        # Capture the final state after any director variation so both scene
+        # snapshots and the active layer graph refer to the same frame revision.
+        visual_scene_data = self._sync_visual_graph().to_dict()
+        visual_scene_data["resolved_state"] = self._resolved_scene_state()
+        scene_pair_data = self._scene_pair_for_render()
 
         base_settings = self.timeline.settings_at(seconds, self._settings)
         effective_settings = GeneratorSettings(
