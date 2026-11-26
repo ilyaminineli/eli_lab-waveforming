@@ -460,8 +460,8 @@ class MainWindow(QMainWindow):
         self.transition_family.addItems(sorted(TRANSITION_FAMILIES))
         self.transition_family.setCurrentText("dissolve")
         self.transition_family.setToolTip(
-            "DISSOLVE crossfades complete frames. MORPH deforms matched VisualObjects and "
-            "supported generator paths, fading unmatched paths. CUT switches at completion."
+            "DISSOLVE crossfades complete frames. MORPH deforms matched objects/paths. "
+            "ASSEMBLY and EROSION use deterministic fragments; TEMPORAL ECHO uses a timestamped history trail."
         )
         self.transition_duration = QDoubleSpinBox()
         self.transition_duration.setRange(0.0, 120.0)
@@ -571,8 +571,8 @@ class MainWindow(QMainWindow):
 
         self.scene_transition_button = QPushButton("COMMIT TRANSITION")
         self.scene_transition_button.setToolTip(
-            "Commit through M12. DISSOLVE blends frames; MORPH deforms matched objects and "
-            "line-generator paths. Other transition families remain lifecycle-only for now."
+            "Commit through M12. DISSOLVE blends, MORPH deforms paths, ASSEMBLY/EROSION fragment, "
+            "and TEMPORAL ECHO uses its independent timestamped history buffer."
         )
         self.path_map_button = QPushButton("EDIT MORPH PATH MAP")
         self.path_map_button.setToolTip(
@@ -2379,7 +2379,7 @@ class MainWindow(QMainWindow):
                     self._tracker_clock_origin = target
                     self._tracker_clock_started = now
                     self._last_cue_scan_position = -1e-6
-                    self.preview_worker.request_reset()
+                    self.preview_worker.request_reset(reset_temporal_echo=True)
                 else:
                     target = duration
                     self._tracker_playing = False
@@ -2577,7 +2577,7 @@ class MainWindow(QMainWindow):
             # Audio loop playback wraps the score clock; let cue scanning begin
             # again from the start of the new pass.
             self._last_cue_scan_position = -1e-6
-            self.preview_worker.request_reset()
+            self.preview_worker.request_reset(reset_temporal_echo=True)
             self.feature_bus.reset()
             self.director.reset()
             self._last_packet = {}
