@@ -319,6 +319,8 @@ class SceneTransition:
             "completed": raw >= 1.0,
             "object_correspondence": [dict(item) for item in self.object_correspondence],
             "path_correspondence": [dict(item) for item in self.path_correspondence],
+            "metadata": dict(self.metadata),
+            "seed": int(self.seed),
         }
 
     def to_dict(self) -> dict:
