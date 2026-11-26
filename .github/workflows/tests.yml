@@ -48,9 +48,9 @@ jobs:
           # A tiny valid XM: two tracker channels, one note event, no samples.
           header = bytearray(336)
           header[:17] = b"Extended Module: "
-          header[17:37] = b"CI channel smoke".ljust(20, b"\\0")
+          header[17:37] = b"CI channel smoke".ljust(20, b"\0")
           header[37] = 0x1A
-          header[38:58] = b"MilkyTracker".ljust(20, b"\\0")
+          header[38:58] = b"MilkyTracker".ljust(20, b"\0")
           struct.pack_into("<H", header, 58, 0x0104)
           struct.pack_into("<I", header, 60, 276)
           struct.pack_into("<8H", header, 64, 1, 0, 2, 1, 0, 1, 6, 125)
