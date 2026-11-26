@@ -29,10 +29,23 @@ class VisualMetrics:
     energies: np.ndarray | None = None
     correlation: np.ndarray | None = None
     source_count: int = 0
+    tracker_notes: np.ndarray | None = None
+    tracker_instruments: np.ndarray | None = None
+    tracker_progress: float = 0.0
+    tracker_order: int = -1
+    tracker_pattern: int = -1
+    tracker_density: float = 0.0
 
     @classmethod
     def from_packet(cls, packet: dict | None, source_id: str | None = None) -> "VisualMetrics":
         packet = packet or {}
+        tracker = packet.get("tracker_cue") or {}
+        tracker_notes = np.asarray(tracker.get("notes") or [], dtype=np.uint8)
+        if tracker_notes.ndim != 2:
+            tracker_notes = None
+        tracker_instruments = np.asarray(tracker.get("instruments") or [], dtype=np.uint8)
+        if tracker_instruments.ndim != 2 or tracker_notes is None or tracker_instruments.shape != tracker_notes.shape:
+            tracker_instruments = None
         frame_map = packet.get("frames", {})
         group_map = packet.get("group_frames", {})
         source_ids = list(packet.get("source_ids") or frame_map.keys())
@@ -100,6 +113,12 @@ class VisualMetrics:
             energies=energies,
             correlation=corr,
             source_count=len(frames),
+            tracker_notes=tracker_notes,
+            tracker_instruments=tracker_instruments,
+            tracker_progress=float(np.clip(tracker.get("progress", 0.0), 0.0, 1.0)),
+            tracker_order=int(tracker.get("order", -1)),
+            tracker_pattern=int(tracker.get("pattern", -1)),
+            tracker_density=float(np.clip(tracker.get("density", 0.0), 0.0, 1.0)),
         )
 
 
@@ -811,16 +830,89 @@ class PolyhedralField(VisualGenerator):
         return image
 
 
+class TrackerMatrix(VisualGenerator):
+    """Render the current XM pattern as a restrained note/channel matrix."""
+
+    name = "TRACKER MATRIX"
+
+    def render(self, metrics, seconds, size, settings):
+        w, h = size
+        image = self._blank(size)
+        notes = metrics.tracker_notes
+        if notes is None or notes.ndim != 2 or not notes.size:
+            return image
+
+        rows, channels = notes.shape
+        left, right = w * 0.075, w * 0.94
+        top, bottom = h * 0.105, h * 0.91
+        grid_w, grid_h = right - left, bottom - top
+        cell_w, cell_h = grid_w / max(1, channels), grid_h / max(1, rows)
+        draw = ImageDraw.Draw(image)
+
+        # Sparse channel rails and row guides stay legible at small preview sizes.
+        rail = (170, 178, 190, 72)
+        guide = (170, 178, 190, 25)
+        for channel in range(channels + 1):
+            x = int(left + channel * cell_w)
+            draw.line((x, int(top), x, int(bottom)), fill=rail if channel % 4 == 0 else guide, width=1)
+        for row in range(0, rows + 1, 8):
+            y = int(top + row * cell_h)
+            draw.line((int(left), y, int(right), y), fill=rail if row % 16 == 0 else guide, width=1)
+
+        palette = (
+            (104, 145, 190, 220),
+            (188, 166, 106, 220),
+            (159, 135, 178, 220),
+            (174, 184, 192, 205),
+        )
+        instruments = metrics.tracker_instruments
+        for row in range(rows):
+            for channel in range(channels):
+                note = int(notes[row, channel])
+                if not 1 <= note <= 96:
+                    continue
+                instrument = int(instruments[row, channel]) if instruments is not None else channel
+                x0 = int(left + channel * cell_w + max(1.0, cell_w * 0.13))
+                x1 = int(left + (channel + 1) * cell_w - max(1.0, cell_w * 0.13))
+                pitch = (note - 1) / 95.0
+                bar_h = max(1.0, cell_h * (0.34 + pitch * 0.46))
+                y_center = top + (row + 0.5) * cell_h
+                y0, y1 = int(y_center - bar_h * 0.5), int(y_center + bar_h * 0.5)
+                colour = palette[(max(1, instrument) - 1) % len(palette)]
+                draw.rectangle((x0, y0, max(x0 + 1, x1), max(y0 + 1, y1)), fill=colour)
+
+        # The playhead advances through the 64-row pattern at tracker row timing.
+        playhead_y = int(top + metrics.tracker_progress * grid_h)
+        draw.line((int(left), playhead_y, int(right), playhead_y),
+                  fill=(245, 245, 238, 210), width=max(1, int(min(w, h) / 300)))
+        cap = max(2, int(cell_w * 0.16))
+        draw.rectangle((int(left) - cap, playhead_y - 1, int(left) - 1, playhead_y + 1),
+                       fill=(245, 245, 238, 230))
+        draw.rectangle((int(right) + 1, playhead_y - 1, int(right) + cap, playhead_y + 1),
+                       fill=(245, 245, 238, 230))
+
+        # Activity ticks identify the currently participating channels.
+        for channel in range(channels):
+            if np.any(notes[:, channel]):
+                x = int(left + (channel + 0.5) * cell_w)
+                draw.line((x, int(top * 0.40), x, int(top * 0.82)),
+                          fill=palette[channel % len(palette)], width=max(1, int(cell_w * 0.22)))
+        return image
+
+
 class GeneratorBank:
     def __init__(self):
         self._generators: dict[str, VisualGenerator] = {}
         self._generator_types: dict[str, type[VisualGenerator]] = {}
         self._instances: dict[tuple[str, str], VisualGenerator] = {}
+        self._metrics_packet: dict | None = None
+        self._metrics_cache: dict[str, VisualMetrics] = {}
         for generator in (
                 InterferenceField(), PhaseOrbit(), ParticleField(), CellularSystem(),
                 PhaseLattice(), ReactionDiffusion(), LorenzAttractor(),
                 SpectralTopography(), Phyllotaxis(), MobiusField(),
                 GeometricPlate(), GeometricField(), AxonometricField(), PolyhedralField(),
+                TrackerMatrix(),
         ):
             self._generators[generator.name] = generator
             self._generator_types[generator.name] = type(generator)
@@ -847,6 +939,16 @@ class GeneratorBank:
             if isinstance(generator, (CellularSystem, ReactionDiffusion)):
                 generator.reset()
 
+    def _metrics_for(self, packet: dict | None, source_id: str | None) -> VisualMetrics:
+        # All layers in a frame share one immutable audio/tracker packet.
+        if packet is not self._metrics_packet:
+            self._metrics_packet = packet
+            self._metrics_cache = {}
+        key = source_id or ""
+        if key not in self._metrics_cache:
+            self._metrics_cache[key] = VisualMetrics.from_packet(packet, source_id=source_id)
+        return self._metrics_cache[key]
+
     def render(self, name: str, packet: dict | None, seconds: float,
                size: tuple[int, int], settings: GeneratorSettings,
                state_key: str | None = None, source_id: str | None = None) -> Image.Image:
@@ -858,5 +960,5 @@ class GeneratorBank:
             if key not in self._instances:
                 self._instances[key] = self._generator_types[selected]()
             generator = self._instances[key]
-        metrics = VisualMetrics.from_packet(packet, source_id=source_id)
+        metrics = self._metrics_for(packet, source_id)
         return generator.render(metrics, seconds, size, settings)
