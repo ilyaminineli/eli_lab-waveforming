@@ -249,7 +249,7 @@ def load_xm(path: str | Path) -> XMModule:
         for row in rows:
             # Fxx changes speed (1..31) or tempo (32..255) for this row and onward.
             for channel_index, event in enumerate(row):
-                if event.effect:
+                if event.effect or event.parameter:
                     effect_count += 1
                     if event.effect in flow_effects:
                         flow_control_effect_count += 1
