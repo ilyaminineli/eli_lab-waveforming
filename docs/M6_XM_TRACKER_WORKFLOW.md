@@ -120,7 +120,9 @@ AUTO COMPOSE and automatic variation until tracker data is imported.
 
 ## Next
 
-M8 — Tracker event modulation and cue transitions is implemented in
-[docs/M8_TRACKER_EVENT_MODULATION.md](M8_TRACKER_EVENT_MODULATION.md). M9 is the
-perceptual scene director: turn the new transition/reprise/activity signals into
-scene-level decisions and beat/bar-aware visual mutations.
+M8 — Tracker event modulation is implemented in
+[docs/M8_TRACKER_EVENT_MODULATION.md](M8_TRACKER_EVENT_MODULATION.md), and M9 —
+Perceptual scene director is implemented in
+[docs/M9_PERCEPTUAL_SCENE_DIRECTOR.md](M9_PERCEPTUAL_SCENE_DIRECTOR.md). M10 is the
+scene recipe and transition system: reusable structural roles, transition curves,
+seed locking and beat/bar-aware scene changes.
