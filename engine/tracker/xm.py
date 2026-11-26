@@ -78,6 +78,8 @@ class XMModule:
     def visual_data(self) -> dict[str, Any]:
         """Return a compact, JSON-serialisable score for projects and render workers."""
         cue_data = []
+        seen_patterns: set[int] = set()
+        previous: XMOrderCue | None = None
         for cue in self.cues:
             rows = self.patterns[cue.pattern]
             item = cue.to_dict(tuple(
@@ -88,7 +90,24 @@ class XMModule:
                 [event.instrument if event.has_note else 0 for event in row]
                 for row in rows
             ]
+            if previous is None:
+                transition = 0.55 if cue.note_count else 0.15
+            else:
+                pattern_change = 1.0 if cue.pattern != previous.pattern else 0.2
+                density_change = abs(cue.density - previous.density)
+                channel_change = abs(
+                    len(cue.active_channels) - len(previous.active_channels)
+                ) / max(1, self.channels)
+                transition = min(
+                    1.0,
+                    0.12 + pattern_change * 0.35
+                    + density_change * 0.8 + channel_change * 0.5,
+                )
+            item["transition_strength"] = float(transition)
+            item["pattern_reprise"] = cue.pattern in seen_patterns
             cue_data.append(item)
+            seen_patterns.add(cue.pattern)
+            previous = cue
         return {
             "title": self.title,
             "tracker": self.tracker,
@@ -103,23 +122,7 @@ class XMModule:
         }
 
     def visual_packet(self, seconds: float) -> dict[str, Any] | None:
-        cue = self.cue_at(seconds)
-        if cue is None:
-            return None
-        rows = self.patterns[cue.pattern]
-        payload = cue.to_dict(tuple(
-            tuple(event.note if event.has_note else 0 for event in row)
-            for row in rows
-        ))
-        payload["instruments"] = [
-            [event.instrument if event.has_note else 0 for event in row]
-            for row in rows
-        ]
-        span = max(1e-9, cue.end_seconds - cue.start_seconds)
-        payload["progress"] = max(
-            0.0, min(1.0, (float(seconds) - cue.start_seconds) / span)
-        )
-        return payload
+        return tracker_packet_at(self.visual_data(), seconds)
 
 
 def tracker_packet_at(data: dict[str, Any] | None, seconds: float) -> dict[str, Any] | None:
@@ -134,10 +137,32 @@ def tracker_packet_at(data: dict[str, Any] | None, seconds: float) -> dict[str, 
     index = bisect.bisect_right(starts, position) - 1
     cue = dict(cues[max(0, min(index, len(cues) - 1))])
     span = max(1e-9, float(cue.get("end_seconds", 0.0)) - float(cue.get("start_seconds", 0.0)))
-    cue["progress"] = max(
+    progress = max(
         0.0,
         min(1.0, (position - float(cue.get("start_seconds", 0.0))) / span),
     )
+    cue["progress"] = progress
+
+    note_rows = cue.get("notes") or []
+    row_counts = cue.get("row_note_counts") or []
+    row_total = len(note_rows) or len(row_counts)
+    row_index = min(row_total - 1, int(progress * row_total)) if row_total else 0
+    row_notes = note_rows[row_index] if note_rows and row_index < len(note_rows) else []
+    row_note_count = (
+        int(row_counts[row_index])
+        if row_index < len(row_counts)
+        else sum(1 for note in row_notes if 1 <= int(note) <= 96)
+    )
+    channel_count = max(1, int(data.get("channels", len(row_notes) or 1)))
+    row_progress = (progress * row_total) - row_index if row_total else 0.0
+    cue["row_index"] = row_index
+    cue["row_progress"] = max(0.0, min(1.0, row_progress))
+    cue["row_note_count"] = row_note_count
+    cue["row_activity"] = max(0.0, min(1.0, row_note_count / channel_count))
+    cue["transition_strength"] = float(
+        max(0.0, min(1.0, cue.get("transition_strength", 0.0)))
+    )
+    cue["pattern_reprise"] = bool(cue.get("pattern_reprise", False))
     return cue
 
 
