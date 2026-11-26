@@ -791,7 +791,7 @@ class MainWindow(QMainWindow):
             message += " · FLOW EFFECTS: TIMING APPROXIMATED"
         self.status.setText(message)
         self.status.setToolTip(
-            f"{module.title} · {path.name}\\n{module.tracker}\\n"
+            f"{module.title} · {path.name}\n{module.tracker}\n"
             f"{module.effect_count} effect commands; "
             f"{module.flow_control_effect_count} order/loop flow commands."
         )
