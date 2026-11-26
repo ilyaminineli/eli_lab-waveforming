@@ -50,6 +50,7 @@ class OfflineRenderWorker(QThread):
         director_mode: str = "SEMI-AUTO",
         tracker_data: dict | None = None,
         render_scale: float = 0.5,
+        visual_scene: dict | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -91,6 +92,7 @@ class OfflineRenderWorker(QThread):
         )
         self.feedback = dict(feedback or {})
         self.tracker_data = dict(tracker_data or {})
+        self.visual_scene = dict(visual_scene or {})
         self.director_mode = (
             director_mode if director_mode in CompositionDirector.MODES else "SEMI-AUTO"
         )
@@ -384,6 +386,7 @@ class OfflineRenderWorker(QThread):
                             feedback_amount=float(self.feedback.get("amount", 0.28)),
                             feedback_decay=float(self.feedback.get("decay", 0.88)),
                             feedback_shift=float(self.feedback.get("shift", 0.0)),
+                            visual_scene=self.visual_scene,
                         )
                         if process.stdin is None:
                             raise RuntimeError(
