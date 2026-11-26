@@ -20,7 +20,7 @@ Example:
     "enabled": true,
     "history_seconds": 0.48,
     "max_samples": 8,
-    "sample_interval_seconds": 0.041667,
+    "sample_interval_seconds": 0.125,
     "strength": 0.42,
     "decay": 0.72,
     "offset_x": 0.0,
@@ -38,7 +38,7 @@ Example:
 |---|---|
 | `history_seconds` | Maximum age retained in the buffer |
 | `max_samples` | Hard upper bound on stored frames (2–32) |
-| `sample_interval_seconds` | Time unit used by the decay curve |
+| `sample_interval_seconds` | Fixed cadence for capturing history frames and time unit used by the decay curve |
 | `strength` | Total opacity budget distributed across available historical samples |
 | `decay` | Per-sample-interval decay factor (0–0.99) |
 | `offset_x`, `offset_y` | Additional normalized horizontal/vertical displacement at the oldest history age |
@@ -51,7 +51,7 @@ The desktop scene panel exposes these controls when `TEMPORAL ECHO` is selected.
 
 ## Sampling and composition
 
-Each rendered transition sample is timestamped with the project/show-time passed to `render_scene_pair()`. Before the current base frame is stored, the buffer:
+Each rendered transition sample is timestamped with the project/show-time passed to `render_scene_pair()`. The buffer captures at the configured timestamp interval (default 125 ms, aligned with the app's balanced 8 FPS preview profile); intervening render frames do not add redundant history samples. Before the current base frame is stored, the buffer:
 
 1. removes samples older than `history_seconds`;
 2. computes each remaining sample's age from timestamps, not wall-clock time or render-call count;
