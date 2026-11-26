@@ -21,6 +21,9 @@ from engine.visual.composition_director import CompositionDirector, vary_composi
 from engine.visual.compositor import PROJECT_SIZE, VisualCompositor
 from engine.visual.generators import GeneratorSettings
 from engine.visual.layers import VisualLayer
+from engine.visual.project import VisualProject
+from engine.visual.scene import VisualScore
+from engine.visual.transitions import SceneTransition, SceneTransitionController
 
 
 class OfflineRenderWorker(QThread):
@@ -51,6 +54,8 @@ class OfflineRenderWorker(QThread):
         tracker_data: dict | None = None,
         render_scale: float = 0.5,
         visual_scene: dict | None = None,
+        visual_project: dict | None = None,
+        visual_score: dict | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -93,6 +98,8 @@ class OfflineRenderWorker(QThread):
         self.feedback = dict(feedback or {})
         self.tracker_data = dict(tracker_data or {})
         self.visual_scene = dict(visual_scene or {})
+        self.visual_project_data = dict(visual_project or {})
+        self.visual_score_data = dict(visual_score or {})
         self.director_mode = (
             director_mode if director_mode in CompositionDirector.MODES else "SEMI-AUTO"
         )
@@ -298,6 +305,35 @@ class OfflineRenderWorker(QThread):
                 compositor.reset_feedback()
                 analyzers = {}
 
+                # Offline export resolves the same persistent scene collection
+                # and XM cue routes as live preview. Transition families remain
+                # lifecycle contracts here; visual interpolation is a later milestone.
+                project_model = (
+                    VisualProject.from_dict(self.visual_project_data)
+                    if self.visual_project_data else None
+                )
+                score_model = (
+                    VisualScore.from_dict(self.visual_score_data)
+                    if self.visual_score_data else None
+                )
+                transition_controller = SceneTransitionController()
+                scene_layers: dict[str, list[VisualLayer]] = {}
+                pending_cue_routes: list[dict] = []
+                last_cue_scan_position = -1e-6
+                if project_model is not None:
+                    for scene in project_model.scenes:
+                        transition_controller.register_scene(
+                            scene,
+                            active=(scene.scene_id == project_model.active_scene_id),
+                        )
+                    scene_layers = {
+                        scene_id: [
+                            VisualLayer.from_dict(record)
+                            for record in records
+                        ]
+                        for scene_id, records in project_model.layer_snapshots.items()
+                    }
+
                 try:
                     analysis_stride = max(
                         1, int(math.ceil(self.fps / min(8.0, float(self.fps))))
@@ -338,21 +374,140 @@ class OfflineRenderWorker(QThread):
                         tracker_cue = tracker_packet_at(self.tracker_data, seconds)
                         if tracker_cue is not None:
                             packet["tracker_cue"] = tracker_cue
+
+                        active_transition_sample = transition_controller.sample(seconds)
+                        if (
+                            active_transition_sample is not None
+                            and active_transition_sample.get("completed")
+                            and project_model is not None
+                        ):
+                            project_model.active_scene_id = (
+                                transition_controller.active_scene_id
+                            )
+
+                        if project_model is not None and score_model is not None:
+                            crossed_cues = [
+                                cue for cue in score_model.cues
+                                if last_cue_scan_position < float(cue.time) <= seconds + 1e-6
+                            ]
+                            last_cue_scan_position = seconds
+                            for cue in crossed_cues:
+                                route = project_model.route_for_cue(cue.cue_id)
+                                if route is not None:
+                                    pending_cue_routes.append({
+                                        "cue": cue.to_dict(),
+                                        "route": route,
+                                    })
+
+                            if not transition_controller.transition_active:
+                                while pending_cue_routes:
+                                    pending = pending_cue_routes.pop(0)
+                                    cue_data = pending["cue"]
+                                    route = pending["route"]
+                                    source_id = str(route.get("source_scene_id", ""))
+                                    target_id = str(route.get("target_scene_id", ""))
+                                    if (
+                                        source_id != transition_controller.active_scene_id
+                                        or target_id == source_id
+                                    ):
+                                        continue
+                                    trigger = {
+                                        "type": "tracker_cue",
+                                        "cue_id": cue_data.get("cue_id", ""),
+                                        "order": cue_data.get("payload", {}).get("order"),
+                                        "pattern": cue_data.get("payload", {}).get("pattern"),
+                                        "cue_time": cue_data.get("time", 0.0),
+                                    }
+                                    try:
+                                        transition = SceneTransition(
+                                            source_scene_id=source_id,
+                                            target_scene_id=target_id,
+                                            family=str(route.get("family", "dissolve")),
+                                            duration_seconds=float(
+                                                route.get("duration_seconds", 2.0)
+                                            ),
+                                            easing=str(route.get("easing", "smoothstep")),
+                                            interruption_policy=str(
+                                                route.get("interruption_policy", "cancel")
+                                            ),
+                                            outgoing_policy=str(
+                                                route.get("outgoing_policy", "archive")
+                                            ),
+                                            trigger=trigger,
+                                        )
+                                        proposal = transition_controller.propose(
+                                            transition,
+                                            proposed_at=float(cue_data.get("time", seconds)),
+                                            rationale="XM order/pattern cue route",
+                                        )
+                                        transition_controller.commit(
+                                            proposal.proposal_id,
+                                            start_time=float(cue_data.get("time", seconds)),
+                                        )
+                                        project_model.add_transition(transition)
+                                        break
+                                    except (ValueError, RuntimeError):
+                                        continue
+
+                            active_transition_sample = transition_controller.sample(seconds)
+                            if (
+                                active_transition_sample is not None
+                                and active_transition_sample.get("completed")
+                            ):
+                                project_model.active_scene_id = (
+                                    transition_controller.active_scene_id
+                                )
+
                         director_output = director.update(packet, seconds)
                         packet["director_output"] = {
                             "glitch_amount": director_output.glitch_amount,
                             "accent_amount": director_output.accent_amount,
                             "state": director_output.state,
                         }
-                        if director_output.request_variation and self.layers:
+                        active_scene_id = (
+                            project_model.active_scene_id
+                            if project_model is not None else ""
+                        )
+                        frame_layers = (
+                            scene_layers.get(active_scene_id, [])
+                            if project_model is not None else self.layers
+                        )
+                        if director_output.request_variation and frame_layers:
                             # A frame-derived seed makes automatic offline changes reproducible.
                             seed = (
                                 int(self.settings.seed) + frame_index * 104729
                             ) & 0x7FFFFFFF
-                            self.layers = vary_composition(
-                                self.layers, compositor.generator_names(), seed
+                            frame_layers = vary_composition(
+                                frame_layers, compositor.generator_names(), seed
                             )
+                            if project_model is not None:
+                                scene_layers[active_scene_id] = frame_layers
+                                project_model.store_layers(
+                                    active_scene_id,
+                                    [layer.to_dict() for layer in frame_layers],
+                                )
+                            else:
+                                self.layers = frame_layers
                             self.settings.seed = seed
+
+                        frame_scene = self.visual_scene
+                        if project_model is not None:
+                            active_scene = project_model.get_scene(active_scene_id)
+                            frame_scene = (
+                                active_scene.to_dict()
+                                if active_scene is not None else {}
+                            )
+                            frame_scene["resolved_state"] = {
+                                "project_id": project_model.project_id,
+                                "active_scene_id": active_scene_id,
+                                "scene_states": {
+                                    scene.scene_id: scene.state
+                                    for scene in project_model.scenes
+                                },
+                                "transition_active": transition_controller.transition_active,
+                                "transition": dict(active_transition_sample or {}),
+                                "pending_cue_routes": len(pending_cue_routes),
+                            }
                         frame_settings = self.timeline.settings_at(
                             seconds, self.settings
                         )
@@ -379,14 +534,14 @@ class OfflineRenderWorker(QThread):
                         image = compositor.render(
                             packet=packet,
                             seconds=seconds,
-                            layers=self.layers,
+                            layers=frame_layers,
                             settings=frame_settings,
                             screen=self.screen,
                             feedback_enabled=bool(self.feedback.get("enabled", False)),
                             feedback_amount=float(self.feedback.get("amount", 0.28)),
                             feedback_decay=float(self.feedback.get("decay", 0.88)),
                             feedback_shift=float(self.feedback.get("shift", 0.0)),
-                            visual_scene=self.visual_scene,
+                            visual_scene=frame_scene,
                         )
                         if process.stdin is None:
                             raise RuntimeError(
