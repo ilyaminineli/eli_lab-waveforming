@@ -52,7 +52,7 @@ M11's `VisualScoreCue` records provide stable cue IDs and the XM order/pattern/t
 
 The **ROUTE CURRENT XM CUE** control maps the most recent visual-score cue at the playhead to the selected target scene. This is intentionally explicit: the importer does not guess which visual scene should follow a musical pattern.
 
-During playback the application detects cue crossings, queues routed cues while another transition is active, and ignores a route if its declared source scene is no longer active. An eligible route creates a `SceneTransition`, calls `SceneTransitionController.propose()`, then commits the returned proposal through `commit()`. The controller remains the authority for source/target validation and lifecycle changes.
+During playback the application detects cue crossings, queues routed cues while another transition is active, and ignores a route if its declared source scene is no longer active. Cue scanning detects playhead wraparound and starts a new pass from the beginning, so opening cues remain eligible on looped playback. An eligible route creates a `SceneTransition`, calls `SceneTransitionController.propose()`, then commits the returned proposal through `commit()`. The controller remains the authority for source/target validation and lifecycle changes.
 
 The live preview samples transitions on its show-time clock. Offline rendering uses score time, the same project routes and the same M12 controller, so XM-driven scene changes are deterministic for a fixed project and export configuration.
 
