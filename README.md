@@ -120,6 +120,28 @@ The supplied target machine is an AMD Ryzen AI 5 330 at 2.00 GHz with Radeon 820
 
 See [docs/M5_TIMELINE_RENDERING.md](docs/M5_TIMELINE_RENDERING.md) for implementation details, export assumptions and acceptance checks.
 
+## M6 — XM tracker-driven visuals
+
+- Import XM tracker scores from PROJECT → Import XM tracker score… (Ctrl+Shift+M).
+- Extract order/pattern cues, note rows, instrument assignments and active channels.
+- Set timeline tempo from the module and add independently styled TRACKER order markers.
+- Save tracker cue/note maps inside the .wfp project; live preview and offline export use the same cue packet.
+- **TRACKER MATRIX** visual instrument renders channel/row note activity with instrument-coloured cells and a pattern playhead.
+- The importer reads metadata only; it does not play XM samples. Import the corresponding audio separately for playback and spectral response.
+- Fxx speed/tempo changes are included in cue timing. Bxx/Dxx/E6x control-flow commands are not yet simulated and are flagged as approximate timing.
+
+See [docs/M6_XM_TRACKER_WORKFLOW.md](docs/M6_XM_TRACKER_WORKFLOW.md).
+
+## M7 — Balanced preview and render profiling
+
+- Default preview is BALANCED at **480×360 / 8 FPS**, with ECO and LOW profiles retained.
+- The preview header displays measured scene/frame time; hover to inspect individual layer costs.
+- Generator feature metrics are cached per frame and source route, avoiding repeated aggregation when multiple layers share the same audio feature packet.
+- Profiling distinguishes CPU scene preparation from final CPU composition. The OpenGL profile currently measures scene preparation, not completed GPU draw time.
+- These measurements are intended to guide further optimisation; no universal FPS guarantee is implied.
+
+See [docs/M7_RENDER_PROFILE.md](docs/M7_RENDER_PROFILE.md).
+
 ## Canvas and performance
 
 - Project coordinate system: **1920 × 1440** (4:3).
