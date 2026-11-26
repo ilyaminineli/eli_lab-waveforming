@@ -858,6 +858,78 @@ jobs:
               except ValueError as exc:
                   assert "strictly increasing" in str(exc)
 
+              # M14 assembly/erosion are seeded, stateless derived renders.
+              from copy import deepcopy
+              lifecycle_source = Image.new("RGBA", (48, 36), (0, 0, 0, 0))
+              from PIL import ImageDraw
+              ImageDraw.Draw(lifecycle_source).rectangle(
+                  (8, 7, 39, 28), fill=(235, 235, 230, 255)
+              )
+              assembly_empty, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.0, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-target"],
+                  assembly=True,
+              )
+              assembly_full, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=1.0, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-target"],
+                  assembly=True,
+              )
+              assert assembly_empty.getchannel("A").getbbox() is None
+              assert assembly_full.tobytes() == lifecycle_source.tobytes()
+              assembly_mid_a, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.45, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-target"],
+                  assembly=True,
+              )
+              assembly_mid_b, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.45, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-target"],
+                  assembly=True,
+              )
+              assert assembly_mid_a.tobytes() == assembly_mid_b.tobytes()
+              erosion_full, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.0, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-source"],
+                  assembly=False,
+              )
+              erosion_empty, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=1.0, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-source"],
+                  assembly=False,
+              )
+              assert erosion_full.tobytes() == lifecycle_source.tobytes()
+              assert erosion_empty.getchannel("A").getbbox() is None
+              erosion_mid_a, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.45, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-source"],
+                  assembly=False,
+              )
+              erosion_mid_b, _ = VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.45, seed=17,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-source"],
+                  assembly=False,
+              )
+              assert erosion_mid_a.tobytes() == erosion_mid_b.tobytes()
+              assert VisualCompositor._lifecycle_fragment_frame(
+                  lifecycle_source, progress=0.45, seed=18,
+                  transition_id="lifecycle-smoke", layer_ids=["layer-source"],
+                  assembly=False,
+              )[0].tobytes() != erosion_mid_a.tobytes()
+
+              for lifecycle_family, lifecycle_mode in (
+                  ("assembly", "assembly"), ("erosion", "erosion"),
+              ):
+                  lifecycle_contract = ScenePairRenderContract.from_dict({
+                      **pair_contract.to_dict(),
+                      "family": lifecycle_family,
+                      "metadata": {"seed": 17},
+                  })
+                  assert lifecycle_contract.render_mode == lifecycle_mode
+                  assert ScenePairRenderContract.from_dict(
+                      json.loads(json.dumps(lifecycle_contract.to_dict()))
+                  ).metadata["seed"] == 17
+
               # Other future families retain lifecycle-only rendering and skip
               # the hidden incoming scene.
               hold_contract = ScenePairRenderContract.from_dict({
