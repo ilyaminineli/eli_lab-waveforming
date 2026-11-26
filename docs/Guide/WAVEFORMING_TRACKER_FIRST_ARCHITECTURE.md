@@ -248,6 +248,11 @@ The director should propose candidate scene changes separately from committing t
 - Validated scene lifecycle state machine and declarative SceneTransition contracts.
 - Proposal/commit controller, deterministic preparation/transformation/establishment phases, and complete/cancel/reject interruption policies.
 - Version-2 project persistence with version-1 migration from the existing layer stack and tracker data.
+- Version-3 `VisualProject` persistence with multiple scene graphs, an active-scene ID, independent layer snapshots, transition contracts and explicit cue routes; older M11/M12 single-scene projects migrate to a one-scene collection.
+- Scene selection with HELD/ACTIVE lifecycle changes and structural scene duplication with fresh scene/layer/object IDs, graph-reference remapping and lineage.
+- Explicit mapping from stable XM order/pattern cue IDs to target scenes and transition contracts. Eligible cue crossings are queued and proposed/committed through the M12 controller in live preview and offline export.
+- Scene collection and basic transition-authoring controls in the app.
+- Resolved project/scene lifecycle and transition samples passed to live/offline compositor results.
 
 ### Still planned — do not treat as implemented
 
@@ -255,10 +260,12 @@ The director should propose candidate scene changes separately from committing t
 - General tracker formats beyond XM.
 - Editable VisualBrief and VisualIdentity models.
 - Multi-layer logical objects, authorable relationship graph and motif lineage tools.
-- Multi-scene project collection and active-scene persistence.
-- Cue-driven transition nomination/commit and visual interpolation in the compositor.
+- Actual pixel-level dissolve/crossfade, morph, assembly, erosion, mask reveal, displacement and temporal-echo renderers; current M13 transitions update lifecycle and switch scenes on completion, without visual interpolation.
+- Transfer/merge of preserved VisualObjects between scenes.
+- Automatic semantic candidate-generation from XM phrase/pattern meaning; current cue routing is explicitly authored.
+- Manual transition show-time checkpoints and offline replay; offline currently replays score-cue routes.
 - Editable per-channel MappingRule profiles and channel solo/mute/focus controls.
-- Cue/phrase-based scene transitions with renderer-side preparation, transformation and establishment effects.
+- Performer overrides, transition reversal and visual-safety constraint evaluation during interpolation.
 - A GPU-native tracker ensemble and multi-resolution simulation cache.
 - Live MIDI/OSC operator controls and a full show/venue output manager.
 - Benchmarks on the target Windows hardware and 4,000-frame export comparisons.
