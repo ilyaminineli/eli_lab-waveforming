@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from math import cos, radians, sin
 from dataclasses import asdict
 from pathlib import Path
 from time import monotonic, time_ns
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QAbstractItemView,
     QDoubleSpinBox,
+    QSpinBox,
     QProgressDialog,
 )
 
@@ -468,6 +470,105 @@ class MainWindow(QMainWindow):
         self.transition_duration.setValue(2.0)
         scene_form.addRow("TRANSITION", self.transition_family)
         scene_form.addRow("DURATION (S)", self.transition_duration)
+
+        self.temporal_echo_box = QGroupBox("TEMPORAL ECHO CONTROLS")
+        echo_form = QFormLayout(self.temporal_echo_box)
+
+        def echo_pair(label_a, widget_a, label_b, widget_b):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label_a))
+            row.addWidget(widget_a, 1)
+            row.addWidget(QLabel(label_b))
+            row.addWidget(widget_b, 1)
+            return row
+
+        self.echo_strength = QDoubleSpinBox()
+        self.echo_strength.setRange(0.0, 1.0)
+        self.echo_strength.setDecimals(2)
+        self.echo_strength.setSingleStep(0.05)
+        self.echo_strength.setValue(0.42)
+        self.echo_decay = QDoubleSpinBox()
+        self.echo_decay.setRange(0.0, 0.99)
+        self.echo_decay.setDecimals(2)
+        self.echo_decay.setSingleStep(0.05)
+        self.echo_decay.setValue(0.72)
+        echo_form.addRow(echo_pair(
+            "STRENGTH", self.echo_strength, "DECAY", self.echo_decay
+        ))
+
+        self.echo_history_seconds = QDoubleSpinBox()
+        self.echo_history_seconds.setRange(0.05, 8.0)
+        self.echo_history_seconds.setDecimals(2)
+        self.echo_history_seconds.setSingleStep(0.05)
+        self.echo_history_seconds.setValue(0.48)
+        self.echo_max_samples = QSpinBox()
+        self.echo_max_samples.setRange(2, 32)
+        self.echo_max_samples.setValue(8)
+        echo_form.addRow(echo_pair(
+            "HISTORY (S)", self.echo_history_seconds,
+            "MAX SAMPLES", self.echo_max_samples,
+        ))
+
+        self.echo_offset_x = QDoubleSpinBox()
+        self.echo_offset_x.setRange(-1.0, 1.0)
+        self.echo_offset_x.setDecimals(3)
+        self.echo_offset_x.setSingleStep(0.01)
+        self.echo_offset_y = QDoubleSpinBox()
+        self.echo_offset_y.setRange(-1.0, 1.0)
+        self.echo_offset_y.setDecimals(3)
+        self.echo_offset_y.setSingleStep(0.01)
+        echo_form.addRow(echo_pair(
+            "OFFSET X", self.echo_offset_x, "OFFSET Y", self.echo_offset_y
+        ))
+
+        self.echo_direction_angle = QDoubleSpinBox()
+        self.echo_direction_angle.setRange(0.0, 359.9)
+        self.echo_direction_angle.setDecimals(1)
+        self.echo_direction_angle.setSingleStep(5.0)
+        self.echo_direction_angle.setValue(0.0)
+        self.echo_directional_persistence = QDoubleSpinBox()
+        self.echo_directional_persistence.setRange(0.0, 1.0)
+        self.echo_directional_persistence.setDecimals(3)
+        self.echo_directional_persistence.setSingleStep(0.01)
+        self.echo_directional_persistence.setValue(0.025)
+        echo_form.addRow(echo_pair(
+            "DIRECTION°", self.echo_direction_angle,
+            "PERSISTENCE", self.echo_directional_persistence,
+        ))
+
+        self.echo_sample_interval = QDoubleSpinBox()
+        self.echo_sample_interval.setRange(0.005, 1.0)
+        self.echo_sample_interval.setDecimals(3)
+        self.echo_sample_interval.setSingleStep(0.005)
+        self.echo_sample_interval.setValue(1.0 / 24.0)
+        self.echo_history_scale = QDoubleSpinBox()
+        self.echo_history_scale.setRange(0.125, 1.0)
+        self.echo_history_scale.setDecimals(3)
+        self.echo_history_scale.setSingleStep(0.125)
+        self.echo_history_scale.setValue(0.5)
+        echo_form.addRow(echo_pair(
+            "SAMPLE STEP", self.echo_sample_interval,
+            "HISTORY SCALE", self.echo_history_scale,
+        ))
+
+        self.echo_blend_mode = QComboBox()
+        self.echo_blend_mode.addItems(["Screen", "Add", "Lighten", "Overlay", "Normal"])
+        echo_form.addRow("BLEND MODE", self.echo_blend_mode)
+        self.echo_direction_angle.setToolTip(
+            "Direction of the trail in degrees. 0° moves right; 90° moves down."
+        )
+        self.echo_directional_persistence.setToolTip(
+            "Maximum normalized travel along the direction vector over the history window."
+        )
+        self.echo_offset_x.setToolTip(
+            "Additional normalized horizontal offset at the oldest history age."
+        )
+        self.echo_offset_y.setToolTip(
+            "Additional normalized vertical offset at the oldest history age."
+        )
+        scene_form.addRow(self.temporal_echo_box)
+        self.temporal_echo_box.setVisible(False)
+
         self.scene_transition_button = QPushButton("COMMIT TRANSITION")
         self.scene_transition_button.setToolTip(
             "Commit through M12. DISSOLVE blends frames; MORPH deforms matched objects and "
@@ -495,6 +596,10 @@ class MainWindow(QMainWindow):
         self.scene_transition_button.clicked.connect(self.commit_scene_transition)
         self.path_map_button.clicked.connect(self.edit_morph_path_map)
         self.cue_route_button.clicked.connect(self.route_current_xm_cue)
+        self.transition_family.currentTextChanged.connect(
+            self._update_transition_effect_controls
+        )
+        self._update_transition_effect_controls(self.transition_family.currentText())
 
         self.complexity.valueChanged.connect(self._settings_changed)
         self.motion.valueChanged.connect(self._settings_changed)
@@ -1075,6 +1180,34 @@ class MainWindow(QMainWindow):
         )
         self._render_frame()
 
+    def _update_transition_effect_controls(self, family: str) -> None:
+        """Show family-specific controls only when their renderer is selected."""
+        if hasattr(self, "temporal_echo_box"):
+            self.temporal_echo_box.setVisible(str(family).lower() == "temporal_echo")
+
+    def _temporal_echo_metadata(self) -> dict:
+        """Serialize the visible temporal-echo controls into a transition record."""
+        angle = radians(float(self.echo_direction_angle.value()))
+        return {
+            "temporal_echo": {
+                "enabled": True,
+                "history_seconds": float(self.echo_history_seconds.value()),
+                "max_samples": int(self.echo_max_samples.value()),
+                "sample_interval_seconds": float(self.echo_sample_interval.value()),
+                "strength": float(self.echo_strength.value()),
+                "decay": float(self.echo_decay.value()),
+                "offset_x": float(self.echo_offset_x.value()),
+                "offset_y": float(self.echo_offset_y.value()),
+                "direction_x": float(cos(angle)),
+                "direction_y": float(sin(angle)),
+                "directional_persistence": float(
+                    self.echo_directional_persistence.value()
+                ),
+                "history_scale": float(self.echo_history_scale.value()),
+                "blend_mode": str(self.echo_blend_mode.currentText()),
+            },
+        }
+
     def _transition_contract(
         self, target_scene_id: str, *, trigger: dict | None = None,
         route: dict | None = None
@@ -1089,10 +1222,17 @@ class MainWindow(QMainWindow):
             and draft.get("source_scene_id") == source_scene_id
             and draft.get("target_scene_id") == target_scene_id
         )
+        family = str(route.get("family") or self.transition_family.currentText())
+        transition_metadata = route.get("metadata")
+        if not isinstance(transition_metadata, dict) or not transition_metadata:
+            transition_metadata = (
+                self._temporal_echo_metadata()
+                if family == "temporal_echo" else {}
+            )
         return SceneTransition(
             source_scene_id=source_scene_id,
             target_scene_id=target_scene_id,
-            family=str(route.get("family") or self.transition_family.currentText()),
+            family=family,
             duration_seconds=float(
                 route.get("duration_seconds", self.transition_duration.value())
             ),
@@ -1111,6 +1251,7 @@ class MainWindow(QMainWindow):
                     draft.get("path_correspondence", []) if use_draft else []
                 )
             ),
+            metadata=dict(transition_metadata),
             trigger=dict(trigger or {"type": "manual"}),
         )
 
@@ -1206,6 +1347,10 @@ class MainWindow(QMainWindow):
                 source_scene_id=self.visual_project.active_scene_id,
                 family=self.transition_family.currentText(),
                 duration_seconds=self.transition_duration.value(),
+                metadata=(
+                    self._temporal_echo_metadata()
+                    if self.transition_family.currentText() == "temporal_echo" else {}
+                ),
                 object_correspondence=(
                     draft.get("object_correspondence", []) if use_draft else []
                 ),
