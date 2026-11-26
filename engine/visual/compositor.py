@@ -829,6 +829,9 @@ class VisualCompositor:
                 }
             )
         scene_ms = (perf_counter() - frame_started) * 1000.0
+        scene_data = visual_scene if isinstance(visual_scene, dict) else {}
+        resolved_state = scene_data.get("resolved_state")
+        resolved_state = dict(resolved_state) if isinstance(resolved_state, dict) else {}
         self.last_profile = {
             "scene_ms": scene_ms,
             "compose_ms": 0.0,
@@ -836,6 +839,9 @@ class VisualCompositor:
             "layer_count": len(layer_profiles),
             "layers": layer_profiles,
             "backend": "OPENGL_SPEC" if gpu_native else "CPU",
+            # Keep lifecycle and transition resolution visible to the same
+            # compositor path used by live preview and deterministic export.
+            "resolved_scene_state": resolved_state,
         }
         return {
             "background": background,
@@ -843,6 +849,7 @@ class VisualCompositor:
             "size": self.size,
             "time": float(seconds),
             "screen": screen,
+            "resolved_scene_state": resolved_state,
             "profile": self.last_profile,
         }
 
